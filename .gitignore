@@ -1,0 +1,10 @@
+/Alina
+/alina
+/bin/
+/dist/
+*.test
+coverage.out
+.env
+.env.*
+!.env.example
+.DS_Store
