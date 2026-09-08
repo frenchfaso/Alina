@@ -1,0 +1,233 @@
+package alina
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/robfig/cron/v3"
+)
+
+type ScheduledTask struct {
+	ID       string    `json:"id"`
+	Name     string    `json:"name"`
+	Cron     string    `json:"cron"`
+	Timezone string    `json:"timezone"`
+	Prompt   string    `json:"prompt"`
+	Owner    string    `json:"owner"`
+	Kind     string    `json:"kind"`
+	Enabled  bool      `json:"enabled"`
+	CatchUp  bool      `json:"catch_up"`
+	Next     time.Time `json:"next"`
+	LastJob  string    `json:"last_job,omitempty"`
+}
+type Scheduler struct {
+	mu     sync.Mutex
+	Dir    string
+	Engine *Engine
+	tasks  map[string]ScheduledTask
+}
+
+func parseSchedule(spec, tz string) (cron.Schedule, error) {
+	if _, err := time.LoadLocation(tz); err != nil {
+		return nil, err
+	}
+	if strings.Contains(spec, "TZ=") || len(spec) > 100 {
+		return nil, errors.New("invalid cron expression")
+	}
+	if strings.HasPrefix(spec, "@every ") {
+		d, err := time.ParseDuration(strings.TrimPrefix(spec, "@every "))
+		if err != nil || d < time.Minute {
+			return nil, errors.New("minimum schedule interval is one minute")
+		}
+	}
+	return cron.ParseStandard("CRON_TZ=" + tz + " " + spec)
+}
+func NewScheduler(dir string, e *Engine) (*Scheduler, error) {
+	s := &Scheduler{Dir: dir, Engine: e, tasks: map[string]ScheduledTask{}}
+	b, err := os.ReadFile(filepath.Join(dir, "tasks.json"))
+	if err == nil {
+		err = json.Unmarshal(b, &s.tasks)
+	} else if os.IsNotExist(err) {
+		err = nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if s.tasks == nil {
+		s.tasks = map[string]ScheduledTask{}
+	}
+	for id, t := range s.tasks {
+		if !safeID(id) || id != t.ID {
+			return nil, errors.New("invalid stored task ID")
+		}
+		if _, err = parseSchedule(t.Cron, t.Timezone); err != nil {
+			return nil, err
+		}
+	}
+	c := e.Config
+	dream, exists := s.tasks["dream"]
+	if !exists || dream.Cron != c.Memory.DreamCron || dream.Timezone != c.Timezone {
+		schedule, err := parseSchedule(c.Memory.DreamCron, c.Timezone)
+		if err != nil {
+			return nil, err
+		}
+		dream = ScheduledTask{ID: "dream", Name: "Dream", Cron: c.Memory.DreamCron, Timezone: c.Timezone, Prompt: "Consolidate memory and reflect on soul.", Owner: "system", Kind: "dream", Next: schedule.Next(time.Now())}
+	}
+	dream.Enabled = c.Memory.Enabled && c.Memory.Dream
+	dream.CatchUp = c.Memory.CatchUp
+	s.tasks["dream"] = dream
+	if err = s.save(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+func (s *Scheduler) save() error { return writeJSON(filepath.Join(s.Dir, "tasks.json"), s.tasks) }
+func (s *Scheduler) List() []ScheduledTask {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []ScheduledTask{}
+	for _, t := range s.tasks {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+func (s *Scheduler) Add(name, spec, prompt, owner string, catchup bool) (ScheduledTask, error) {
+	if len(strings.TrimSpace(name)) == 0 || len(name) > 100 || len(strings.TrimSpace(prompt)) == 0 || len(prompt) > 16000 {
+		return ScheduledTask{}, errors.New("invalid task name or prompt")
+	}
+	tz := s.Engine.Config.Timezone
+	schedule, err := parseSchedule(spec, tz)
+	if err != nil {
+		return ScheduledTask{}, err
+	}
+	next := schedule.Next(time.Now())
+	if next.IsZero() {
+		return ScheduledTask{}, errors.New("schedule has no future occurrence")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.tasks) >= 100 {
+		return ScheduledTask{}, errors.New("maximum 100 scheduled tasks")
+	}
+	t := ScheduledTask{ID: randomID(), Name: name, Cron: spec, Timezone: tz, Prompt: prompt, Owner: owner, Kind: "chat", Enabled: true, CatchUp: catchup, Next: next}
+	s.tasks[t.ID] = t
+	if err = s.save(); err != nil {
+		delete(s.tasks, t.ID)
+		return ScheduledTask{}, err
+	}
+	return t, nil
+}
+func (s *Scheduler) Change(id, action, owner string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok || owner != "" && t.Owner != owner {
+		return errors.New("task not found")
+	}
+	if id == "dream" {
+		return errors.New("configure the built-in dream through alina setup")
+	}
+	old := t
+	switch action {
+	case "remove":
+		delete(s.tasks, id)
+	case "pause":
+		t.Enabled = false
+		s.tasks[id] = t
+	case "resume":
+		t.Enabled = true
+		sched, err := parseSchedule(t.Cron, t.Timezone)
+		if err != nil {
+			return err
+		}
+		t.Next = sched.Next(time.Now())
+		s.tasks[id] = t
+	default:
+		return errors.New("use pause, resume or remove")
+	}
+	if err := s.save(); err != nil {
+		s.tasks[id] = old
+		return err
+	}
+	return nil
+}
+func (s *Scheduler) Tick(now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, t := range s.tasks {
+		if !t.Enabled || t.Next.After(now) {
+			continue
+		}
+		schedule, err := parseSchedule(t.Cron, t.Timezone)
+		if err != nil {
+			return err
+		}
+		next := schedule.Next(now)
+		if next.IsZero() {
+			continue
+		}
+		if t.LastJob != "" {
+			if j, ok := s.Engine.Get(t.LastJob); ok && !terminalStatus(j.Status) {
+				continue
+			}
+		}
+		if t.CatchUp || now.Sub(t.Next) < time.Minute {
+			// The same scheduled occurrence always has the same ID. A crash after
+			// submission but before checkpoint cannot replay it on restart.
+			key := "cron-" + contentID(t.ID + "/" + t.Next.UTC().Format(time.RFC3339))[:32]
+			j, err := s.Engine.submit("task-"+t.ID+"-"+key[len(key)-8:], t.Owner, t.Prompt, key, t.Kind)
+			if err != nil {
+				return err
+			}
+			t.LastJob = j.ID
+		}
+		t.Next = next
+		old := s.tasks[id]
+		s.tasks[id] = t
+		if err = s.save(); err != nil {
+			s.tasks[id] = old
+			return err
+		}
+	}
+	return nil
+}
+func (s *Scheduler) Run(ctx context.Context) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	day := ""
+	for {
+		today := time.Now().In(s.Engine.Memory.loc).Format("2006-01-02")
+		if day != today {
+			if err := s.Engine.Memory.Render(time.Now()); err != nil {
+				log.Print("Memory rollover: ", err)
+			} else {
+				day = today
+			}
+		}
+		if err := s.Tick(time.Now()); err != nil {
+			log.Print("Scheduler: ", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+func formatTasks(tasks []ScheduledTask) string {
+	var b strings.Builder
+	for _, t := range tasks {
+		fmt.Fprintf(&b, "%s · %s · enabled=%t\n%s (%s) · next %s\n%s\n\n", t.ID, t.Name, t.Enabled, t.Cron, t.Timezone, t.Next.Format(time.RFC3339), t.Prompt)
+	}
+	return b.String()
+}

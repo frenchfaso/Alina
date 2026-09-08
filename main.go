@@ -1,7 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"github.com/frenchfaso/Alina/internal/alina"
+)
 
 func main() {
-	fmt.Println("Alina — start simple, stay simple.")
+	if err := alina.Main(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, "alina:", err)
+		os.Exit(1)
+	}
 }

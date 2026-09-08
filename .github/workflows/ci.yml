@@ -1,0 +1,33 @@
+name: Go
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race ./...
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [android/arm64, linux/arm64, freebsd/amd64, openbsd/amd64, netbsd/amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: |
+          export GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}" CGO_ENABLED=0
+          go build -trimpath -o /tmp/alina .
+        env:
+          TARGET: ${{ matrix.target }}
