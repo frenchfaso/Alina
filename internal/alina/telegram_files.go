@@ -68,7 +68,7 @@ func (t *Telegram) receiveFile(ctx context.Context, updateID int64, file tgFile)
 		return Attachment{}, err
 	}
 	defer inbox.Close()
-	key := fmt.Sprintf("tg%x-%s", updateID, contentID(file.ID)[:16])
+	key := t.updateKey(updateID) + "-" + contentID(file.ID)[:16]
 	// Do not use the original name as a path. Keep a safe extension for tools.
 	ext := strings.ToLower(filepath.Ext(file.Name))
 	if len(ext) > 12 || strings.ContainsAny(ext, "/\\\x00\r\n") || strings.Trim(ext, ".abcdefghijklmnopqrstuvwxyz0123456789") != "" {

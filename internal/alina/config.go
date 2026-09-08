@@ -13,7 +13,7 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.7.0-poc"
+const Version = "0.8.0-poc"
 
 // Codex ChatGPT model catalog, 2026-09-08. These are backend limits, not
 // the larger public API window. ContextTokens remains user configurable.
@@ -68,6 +68,7 @@ type SearchConfig struct {
 	OpenAIModel string `json:"openai_model,omitempty"`
 }
 type TelegramConfig struct {
+	Binding string `json:"binding,omitempty"`
 	Enabled bool   `json:"enabled"`
 	Token   string `json:"token,omitempty"`
 	OwnerID int64  `json:"owner_id,omitempty"`
@@ -168,6 +169,9 @@ func (c Config) Validate() error {
 	}
 	if c.Search.Default != "openai" && c.Search.Default != "tavily" && c.Search.Default != "brave" && c.Search.Default != "none" {
 		return errors.New("invalid search provider")
+	}
+	if c.Telegram.Binding != "" && (!safeID(c.Telegram.Binding) || len(c.Telegram.Binding) > 32) {
+		return errors.New("invalid Telegram binding")
 	}
 	if c.Telegram.Enabled && (c.Telegram.Token == "" || c.Telegram.OwnerID <= 0) {
 		return errors.New("Telegram requires a bot token and a positive owner ID")

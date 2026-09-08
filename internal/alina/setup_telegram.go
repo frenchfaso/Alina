@@ -4,48 +4,88 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
+	"net/http"
 	"time"
 )
 
 func (w *wizard) telegram(c *TelegramConfig) error {
-	c.Enabled = w.yes("Abilitare il bot Telegram", c.Enabled)
-	if !c.Enabled {
+	if !w.yes("Abilitare il bot Telegram", c.Enabled) {
+		c.Enabled = false
 		return w.err
 	}
-	fmt.Fprintln(w.out, "\n1. Apri https://t.me/BotFather in Telegram.\n2. Invia /newbot e scegli nome e username del bot.\n3. Copia qui il token ricevuto. Usa un bot dedicato ad Alina.\nAlina accetta soltanto il proprietario in chat privata.")
-	c.Token = w.secret("Token Telegram", c.Token)
-	if w.yes("Verificare il bot e rilevare il tuo ID con un codice di associazione", true) {
+	return w.connectTelegram(c, newHTTPClient(), true)
+}
+
+func (w *wizard) connectTelegram(c *TelegramConfig, client *http.Client, edit bool) error {
+	old := *c
+	if edit {
+		fmt.Fprintln(w.out, "Telegram · crea un bot dedicato: https://t.me/BotFather → /newbot.")
+	}
+	for {
+		if edit || c.Token == "" {
+			c.Token = w.secret("Token Telegram", c.Token)
+		}
 		if w.err != nil {
 			return w.err
 		}
-		tg := NewTelegram("", *c, nil, newHTTPClient())
+		if c.Token == "" {
+			c.Enabled, c.OwnerID = false, 0
+			return nil
+		}
+		tg := NewTelegram("", *c, nil, client)
 		var me struct {
 			Username string `json:"username"`
 		}
-		if err := tg.api(w.ctx, "getMe", nil, &me); err != nil {
-			return fmt.Errorf("Telegram token verification failed: %w", err)
+		err := tg.api(w.ctx, "getMe", nil, &me)
+		if err == nil && me.Username == "" {
+			err = errors.New("Telegram bot username missing")
 		}
-		code := "alina-" + randomID()
-		fmt.Fprintf(w.out, "Bot verificato: @%s\nApri https://t.me/%s?start=%s e premi Avvia.\nAttendo fino a 2 minuti; nessun messaggio viene inviato dal setup.\n", me.Username, me.Username, code)
-		ctx, cancel := context.WithTimeout(w.ctx, 2*time.Minute)
-		defer cancel()
-		owner, err := pairTelegram(ctx, tg, code)
-		if err != nil {
-			return err
+		if err == nil {
+			var webhook struct {
+				URL string `json:"url"`
+			}
+			err = tg.api(w.ctx, "getWebhookInfo", nil, &webhook)
+			if err == nil && webhook.URL != "" {
+				err = errors.New("questo bot usa un webhook; usa un bot dedicato ad Alina")
+			}
 		}
-		c.OwnerID = owner
-		fmt.Fprintln(w.out, "Proprietario associato:", owner)
-	} else {
-		id := w.ask("Il tuo Telegram user ID numerico (oppure rilancia setup per l'associazione guidata)", strconv.FormatInt(c.OwnerID, 10))
-		var err error
-		c.OwnerID, err = strconv.ParseInt(id, 10, 64)
-		if err != nil {
-			return errors.New("invalid Telegram user ID")
+		if err == nil && (c.Token != old.Token || c.OwnerID <= 0 || !old.Enabled) {
+			code := "alina-" + randomID()
+			fmt.Fprintf(w.out, "Apri https://t.me/%s?start=%s e premi Avvia (entro 2 minuti).\n", me.Username, code)
+			ctx, cancel := context.WithTimeout(w.ctx, 2*time.Minute)
+			c.OwnerID, err = pairTelegram(ctx, tg, code)
+			cancel()
+			if err == nil {
+				c.Binding = randomID()
+			}
+		}
+		if err == nil {
+			c.Enabled = true
+			fmt.Fprintf(w.out, "Telegram collegato · @%s\n", me.Username)
+			return nil
+		}
+		if w.ctx.Err() != nil {
+			return w.ctx.Err()
+		}
+		fmt.Fprintln(w.out, "Telegram non collegato:", err)
+		switch w.choice("1 riprova · 2 cambia token · 3 configura dopo", "1", "1", "2", "3") {
+		case "1":
+			edit = false
+		case "2":
+			edit = true
+		case "3":
+			*c = old
+			// Keep the previous credentials for a later retry, but do not
+			// claim that an unverified integration is ready.
+			c.Enabled = false
+			return nil
+		}
+		if w.err != nil {
+			return w.err
 		}
 	}
-	return w.err
 }
+
 func pairTelegram(ctx context.Context, tg *Telegram, code string) (int64, error) {
 	var offset int64
 	for ctx.Err() == nil {
@@ -57,6 +97,11 @@ func pairTelegram(ctx context.Context, tg *Telegram, code string) (int64, error)
 			offset = u.ID + 1
 			m := u.Message
 			if m != nil && m.From.ID > 0 && m.From.ID == m.Chat.ID && m.Chat.Type == "private" && m.Text == "/start "+code {
+				// Confirm only through the pairing message, leaving later
+				// messages available to the daemon on its first poll.
+				if err := tg.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 0, "allowed_updates": []string{"message", "callback_query"}}, nil); err != nil {
+					return 0, err
+				}
 				return m.From.ID, nil
 			}
 		}

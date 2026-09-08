@@ -513,7 +513,7 @@ func TestSetupPersistenceAndEOF(t *testing.T) {
 	d := t.TempDir()
 	input := "1\n\n\n\n\n" + d + "\nn\nn\nnone\nn\nn\nn\n\nn\nUTC\n\nn\ndeclared\nn\ns\n"
 	var out bytes.Buffer
-	if e := Setup(context.Background(), d, bufio.NewReader(strings.NewReader(input)), &out); e != nil {
+	if e := SetupAdvanced(context.Background(), d, bufio.NewReader(strings.NewReader(input)), &out); e != nil {
 		t.Fatal(e, out.String())
 	}
 	c, e := LoadConfig(d)
@@ -529,7 +529,7 @@ func TestSetupPersistenceAndEOF(t *testing.T) {
 		t.Fatal("secret file permissions")
 	}
 	before, _ := os.ReadFile(filepath.Join(d, "config.json"))
-	if e = Setup(context.Background(), d, bufio.NewReader(strings.NewReader("")), &out); e == nil {
+	if e = SetupAdvanced(context.Background(), d, bufio.NewReader(strings.NewReader("")), &out); e == nil {
 		t.Fatal("EOF accepted")
 	}
 	after, _ := os.ReadFile(filepath.Join(d, "config.json"))

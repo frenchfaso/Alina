@@ -16,6 +16,7 @@ import (
 )
 
 type telegramState struct {
+	Binding   string            `json:"binding,omitempty"`
 	Offset    int64             `json:"offset"`
 	Sessions  map[string]string `json:"sessions"`
 	Delivered map[string]string `json:"delivered"`
@@ -66,11 +67,18 @@ func NewTelegram(dir string, c TelegramConfig, e *Engine, client *http.Client) *
 		client = newHTTPClient()
 	}
 	t := &Telegram{Dir: dir, Config: c, Engine: e, Client: client, state: telegramState{Sessions: map[string]string{}, Delivered: map[string]string{}}}
+	if dir == "" {
+		return t
+	}
 	b, er := os.ReadFile(filepath.Join(dir, "telegram.json"))
 	if er == nil {
 		t.stateErr = json.Unmarshal(b, &t.state)
 	} else if !os.IsNotExist(er) {
 		t.stateErr = er
+	}
+	if t.state.Binding != c.Binding {
+		t.state = telegramState{Binding: c.Binding}
+		t.stateErr = nil
 	}
 	if t.state.Sessions == nil {
 		t.state.Sessions = map[string]string{}
@@ -79,6 +87,22 @@ func NewTelegram(dir string, c TelegramConfig, e *Engine, client *http.Client) *
 		t.state.Delivered = map[string]string{}
 	}
 	return t
+}
+
+// A new pairing isolates delivery receipts and update IDs from an old bot.
+// Empty bindings retain compatibility with existing installations.
+func (t *Telegram) owner() string {
+	owner := fmt.Sprintf("telegram:%d", t.Config.OwnerID)
+	if t.Config.Binding != "" {
+		owner += ":" + t.Config.Binding
+	}
+	return owner
+}
+func (t *Telegram) updateKey(id int64) string {
+	if t.Config.Binding == "" {
+		return fmt.Sprintf("tg%x", id)
+	}
+	return "tg" + contentID(fmt.Sprintf("%s:%d", t.Config.Binding, id))[:16]
 }
 func (t *Telegram) endpoint(method string) string {
 	base := t.BaseURL
@@ -182,7 +206,7 @@ func (t *Telegram) Run(ctx context.Context) {
 	}
 }
 func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
-	owner := fmt.Sprintf("telegram:%d", t.Config.OwnerID)
+	owner := t.owner()
 	if u.Callback != nil {
 		c := u.Callback
 		if c.From.ID != t.Config.OwnerID || c.Message == nil || c.Message.Chat.Type != "private" || c.Message.Chat.ID != t.Config.OwnerID {
@@ -272,12 +296,15 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	session := t.state.Sessions[chat]
 	if session == "" {
 		session = "tg-" + chat
+		if t.Config.Binding != "" {
+			session += "-" + t.Config.Binding
+		}
 		t.state.Sessions[chat] = session
 	}
 	t.mu.Unlock()
 	// Stable update IDs prevent a crash before offset persistence from replaying
 	// a submitted command. Compact IDs also fit Telegram's callback_data limit.
-	key := fmt.Sprintf("tg%x", u.ID)
+	key := t.updateKey(u.ID)
 	if received, err := t.Engine.steeringReceived(key, owner); err != nil {
 		return err
 	} else if received {
@@ -324,7 +351,7 @@ func (t *Telegram) notify(ctx context.Context) {
 			return
 		case <-tick.C:
 		}
-		for _, j := range t.Engine.Jobs(fmt.Sprintf("telegram:%d", t.Config.OwnerID)) {
+		for _, j := range t.Engine.Jobs(t.owner()) {
 			stamp := ""
 			text := ""
 			var keyboard any

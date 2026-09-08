@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -40,7 +39,9 @@ func Main(args []string) error {
 	case "help", "--help", "-h":
 		fmt.Fprintln(out, `Alina — start simple, stay simple.
 
-  alina setup                  Configurazione interattiva
+  alina setup                  Collega, verifica e avvia
+  alina setup telegram         Collega o cambia il bot
+  alina setup --advanced       Impostazioni avanzate
   alina login [device|browser]  Login ChatGPT dedicato
   alina serve                  Avvia il servizio in foreground
   alina chat [session]         Chat testuale con il servizio
@@ -66,7 +67,7 @@ func Main(args []string) error {
   alina doctor [--live]        Diagnostica (live usa gli account configurati)
 
 ALINA_HOME cambia la directory di configurazione e stato.
-Il servizio deve essere riavviato dopo setup.`)
+Esegui setup con il servizio fermo; --no-start configura senza avviare.`)
 		return nil
 	case "intentions":
 		var r []Intention
@@ -78,7 +79,7 @@ Il servizio deve essere riavviato dopo setup.`)
 	case "memory", "dream", "tasks":
 		return stateCLI(ctx, dir, args, in, out)
 	case "setup":
-		return Setup(ctx, dir, in, out)
+		return setupCLI(ctx, dir, args[1:], in, out)
 	case "login":
 		if e := requireStopped(dir); e != nil {
 			return e
@@ -350,25 +351,37 @@ func (w *wizard) yes(label string, def bool) bool {
 	if def {
 		d = "s"
 	}
-	s := strings.ToLower(w.ask(label+" (s/n)", d))
-	return s == "s" || s == "y" || s == "yes" || s == "si"
+	for w.err == nil {
+		switch strings.ToLower(w.ask(label+" (s/n)", d)) {
+		case "s", "si", "sì", "y", "yes":
+			return w.err == nil
+		case "n", "no":
+			return false
+		}
+		fmt.Fprintln(w.out, "Scrivi s oppure n.")
+	}
+	return false
 }
 func (w *wizard) secret(label, existing string) string {
 	if w.err != nil {
 		return existing
 	}
-	fmt.Fprint(w.out, label+" (vuoto mantiene, - cancella): ")
+	hint := "Invio per dopo"
+	if existing != "" {
+		hint = "Invio mantiene; - cancella"
+	}
+	fmt.Fprintf(w.out, "%s (%s): ", label, hint)
 	var s string
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		b, e := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(w.out)
+	if w.out == os.Stdout && term.IsTerminal(int(os.Stdin.Fd())) {
+		line, e := terminalSecret(w.ctx, w.in, w.out)
 		if e != nil {
+			fmt.Fprintln(w.out)
 			w.err = e
 			return existing
 		}
-		s = string(b)
+		s = line
 	} else {
-		line, e := w.in.ReadString('\n')
+		line, e := readLine(w.ctx, w.in)
 		if e != nil {
 			w.err = e
 			return existing
@@ -383,161 +396,6 @@ func (w *wizard) secret(label, existing string) string {
 		return ""
 	}
 	return s
-}
-func Setup(ctx context.Context, dir string, in *bufio.Reader, out io.Writer) error {
-	if e := requireStopped(dir); e != nil {
-		return e
-	}
-	c, e := LoadConfig(dir)
-	if e != nil && !os.IsNotExist(e) {
-		return e
-	}
-	if os.IsNotExist(e) {
-		c.NetworkPolicy = "declared"
-	}
-	w := &wizard{ctx: ctx, in: in, out: out}
-	fmt.Fprintln(out, "Alina · configurazione\nI segreti restano nel file locale config.json (permessi 0600).\nNessuna modifica ai servizi o ai pacchetti del sistema.")
-	choice := "1"
-	if c.Provider == "opencode-go" {
-		choice = "2"
-	}
-	choice = w.ask("Provider principale: 1 ChatGPT Plus/Pro, 2 OpenCode Go", choice)
-	if choice != "1" && choice != "2" {
-		return errors.New("choose provider 1 or 2")
-	}
-	if choice == "1" {
-		if c.Provider != "chatgpt" {
-			c.Model = defaultModel
-			c.ContextTokens = astraContextTokens
-		}
-		c.Provider = "chatgpt"
-	} else {
-		if c.Provider != "opencode-go" {
-			c.Model = "glm-5.1"
-			c.ContextTokens = 32768
-		}
-		c.Provider = "opencode-go"
-	}
-	c.Model = w.ask("Model ID (deve essere disponibile nel tuo account)", c.Model)
-	if c.Model == defaultModel {
-		fmt.Fprintf(out, "Astra: contesto %d token; compattazione oltre il 95%%.\n", c.ContextTokens)
-		c.ReasoningEffort = w.ask("Reasoning: low / medium / high / xhigh / max", c.ReasoningEffort)
-		c.Verbosity = w.ask("Verbosity: low / medium / high", c.Verbosity)
-		tokens, err := strconv.Atoi(w.ask("Context window (token)", strconv.Itoa(c.ContextTokens)))
-		if err != nil {
-			return err
-		}
-		c.ContextTokens = tokens
-	}
-	c.WorkDir = w.ask("Directory di lavoro", c.WorkDir)
-	if c.Provider == "opencode-go" || w.yes("Configurare anche OpenCode Go", c.OpenCodeKey != "") {
-		c.OpenCodeKey = w.secret("Chiave OpenCode Go", c.OpenCodeKey)
-		c.OpenCodeAPI = w.ask("Protocollo del modello OpenCode: chat / responses / messages", c.OpenCodeAPI)
-	}
-	login := w.yes("Eseguire ora il login ChatGPT dedicato ad Alina", false)
-	fmt.Fprintln(out, "\nWeb search: puoi configurare tutti e tre i provider.")
-	c.Search.Default = w.ask("Ricerca predefinita: openai / tavily / brave / none", c.Search.Default)
-	if w.yes("Configurare Tavily", c.Search.TavilyKey != "") {
-		c.Search.TavilyKey = w.secret("Chiave Tavily", c.Search.TavilyKey)
-	}
-	if w.yes("Configurare Brave Search", c.Search.BraveKey != "") {
-		c.Search.BraveKey = w.secret("Chiave Brave Search", c.Search.BraveKey)
-	}
-	fmt.Fprintln(out, "OpenAI search è predefinito e riusa il login ChatGPT di Alina: non serve una seconda chiave. Una API key separata è facoltativa e usa fatturazione API distinta dall'abbonamento.")
-	if w.yes("Configurare una API key OpenAI separata per search", c.Search.OpenAIKey != "") {
-		c.Search.OpenAIKey = w.secret("OpenAI API key", c.Search.OpenAIKey)
-	}
-	c.Search.OpenAIModel = w.ask("Modello OpenAI per search (vuoto = modello ChatGPT; - ripristina)", c.Search.OpenAIModel)
-	if c.Search.OpenAIModel == "-" {
-		c.Search.OpenAIModel = ""
-	}
-	if e = w.telegram(&c.Telegram); e != nil {
-		return e
-	}
-	c.Timezone = w.ask("Fuso orario IANA (es. Europe/Rome) oppure Local", c.Timezone)
-	c.Location = w.ask("Località opzionale per il contesto (- cancella)", c.Location)
-	if c.Location == "-" {
-		c.Location = ""
-	}
-	c.Memory.Enabled = w.yes("Abilitare memoria condivisa: archivio SQLite e note essenziali", c.Memory.Enabled)
-	if c.Memory.Enabled {
-		c.Memory.Dream = w.yes("Abilitare dream notturno e riflessione sul soul", c.Memory.Dream)
-		if c.Memory.Dream {
-			c.Memory.DreamCron = w.ask("Orario dream (cron a 5 campi)", c.Memory.DreamCron)
-			c.Memory.CatchUp = w.yes("Recuperare una sola esecuzione al risveglio se saltata", c.Memory.CatchUp)
-		}
-		fmt.Fprintln(out, "Gli embedding sono facoltativi. Inviano note e query al servizio scelto; API OpenAI con costo separato da ChatGPT. Senza embedding resta la ricerca testuale.")
-		if w.yes("Configurare un endpoint embedding OpenAI-compatible", c.Memory.EmbeddingURL != "") {
-			endpoint := c.Memory.EmbeddingURL
-			if endpoint == "" {
-				endpoint = "https://api.openai.com/v1/embeddings"
-			}
-			model := c.Memory.EmbeddingModel
-			if model == "" {
-				model = "text-embedding-3-small"
-			}
-			c.Memory.EmbeddingURL = w.ask("URL completo endpoint", endpoint)
-			c.Memory.EmbeddingModel = w.ask("Modello embedding", model)
-			c.Memory.EmbeddingKey = w.secret("Chiave embedding (facoltativa per server locale)", c.Memory.EmbeddingKey)
-		} else {
-			c.Memory.EmbeddingURL = ""
-			c.Memory.EmbeddingModel = ""
-			c.Memory.EmbeddingKey = ""
-		}
-	}
-
-	fmt.Fprintln(out, "\nRete: declared chiede consenso per download/installazioni dichiarati o riconosciuti; si affida alla collaborazione dell'agente. strict isola la rete e chiede consenso per ogni uso dalla shell.")
-	c.NetworkPolicy = w.ask("Politica rete: declared / strict", c.NetworkPolicy)
-	c.Autonomy.Enabled = w.yes("Consentire iniziative personali locali entro un budget", c.Autonomy.Enabled)
-	if c.Autonomy.Enabled {
-		c.Autonomy.Scope = w.ask("Ambito delle iniziative personali", c.Autonomy.Scope)
-		calls, err := strconv.Atoi(w.ask("Massimo chiamate al modello al giorno per iniziative", strconv.Itoa(c.Autonomy.MaxCalls)))
-		if err != nil {
-			return err
-		}
-		c.Autonomy.MaxCalls = calls
-		minutes, err := strconv.Atoi(w.ask("Minuti massimi per iniziativa", strconv.Itoa(c.Autonomy.Minutes)))
-		if err != nil {
-			return err
-		}
-		c.Autonomy.Minutes = minutes
-		c.Autonomy.Search = w.yes("Consentire websearch nelle iniziative personali", c.Autonomy.Search)
-	}
-
-	if w.err != nil {
-		return fmt.Errorf("setup cancelled: %w", w.err)
-	}
-	if e = c.Validate(); e != nil {
-		return e
-	}
-	fmt.Fprintf(out, "\nProvider: %s / %s\nDirectory: %s\nSearch: %s\nTelegram: %t\nConsensi: una volta / fino al riavvio / fino a revoca\n", c.Provider, c.Model, c.WorkDir, c.Search.Default, c.Telegram.Enabled)
-	if !w.yes("Salvare", true) {
-		return errors.New("setup cancelled")
-	}
-	if w.err != nil {
-		return w.err
-	}
-	if e = SaveConfig(dir, c); e != nil {
-		return e
-	}
-	fmt.Fprintln(out, "Salvato:", filepath.Join(dir, "config.json"))
-	if login {
-		a := Auth{Dir: dir, Client: newHTTPClient()}
-		method := w.ask("Login: device / browser", "device")
-		if w.err != nil {
-			return w.err
-		}
-		if method == "browser" {
-			e = a.LoginBrowser(ctx, in, out)
-		} else {
-			e = a.LoginDevice(ctx, out)
-		}
-		if e != nil {
-			return fmt.Errorf("config saved, login incomplete: %w", e)
-		}
-	}
-	fmt.Fprintln(out, "Avvia: alina serve\nIn un altro terminale: alina chat\nDiagnostica: alina doctor --live")
-	return nil
 }
 func doctor(ctx context.Context, dir string, live bool, out io.Writer) error {
 	c, e := LoadConfig(dir)

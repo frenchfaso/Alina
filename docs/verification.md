@@ -1,5 +1,31 @@
 # POC verification — 2026-09-09
 
+## Quick onboarding — 0.8
+
+The full suite passes with the macOS ARM64 race detector and natively on the
+Galaxy A15. The phone passes **93 tests**, including the opt-in public HTTPS
+smoke. Go vet, formatting, diff checks and CGO-free builds for Android/arm64,
+Linux/arm64 and FreeBSD/OpenBSD/NetBSD amd64 pass.
+
+New setup tests exercise the complete device-login and Telegram-pairing flow,
+existing account reuse, default capabilities, private files, configuration
+preservation, transient model/search failures, explicit fallback or deferral,
+EOF/cancellation, token retries, webhook conflicts and pairing isolation.
+Provider and Telegram requests use fixtures; no real accounts or messages were
+used. The quick setup itself performs real checks when the user runs it.
+
+PTY smoke tests on macOS and Termux verify hidden tokens, Ctrl-C/SIGTERM,
+restoration of terminal mode and no partial configuration save on cancellation.
+The disposable daemon smoke also passes initialization, advanced setup,
+private configuration, workspace persistence, idle reflection, one-shot tasks,
+soul fallback, FTS recall, SQLite integrity and resume. The phone's small smoke
+workload used 21,796 KiB RSS; this is not a peak-memory bound.
+
+Version 0.8 is installed at `~/alina-poc/bin/alina`, retaining 0.7 as
+`~/alina-poc/bin/alina-v07-c4f87ce3`. Android SHA-256:
+`d9105b698d39bc2ad1e29c58347d655b53b9f70fb58d81370d253fa1d7293bd7`.
+No packages, system services or permanent account configuration were changed.
+
 ## Web fetch and steering — 0.7
 
 All **84 offline tests** pass with the macOS ARM64 race detector and natively

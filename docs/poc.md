@@ -6,14 +6,36 @@ Alina. External commands remain the user's installed programs.
 ```sh
 go build -trimpath -o alina .
 ./alina setup
-./alina serve
 ```
 
-`setup` configures the default provider/model, working directory, all search
-providers, Telegram, network policy and optional personal exploration budgets. It does not install system packages or enable services.
+`setup` connects ChatGPT, pairs Telegram and checks the model and the selected
+search provider. The default path needs only the ChatGPT device login, a dedicated
+Telegram bot token and a tap on its pairing link. An existing login and verified
+bot are reused. It then offers to run Alina in the current terminal; Ctrl-C stops
+it. Use Telegram or `alina chat` in another terminal. It does not install packages
+or a background system service.
+
+New quick setups enable memory, the 03:00 dream, catch-up, personal exploration
+(12 model calls/day, five minutes/run, with search), and the declared network
+policy. Astra's existing model, reasoning and context defaults are retained.
+The host timezone is detected, including Android's system timezone. Repeating
+setup preserves existing custom settings and explicitly disabled features.
+
+`alina setup --advanced` retains provider/model selection, alternative search
+keys, work directory, memory/embedding settings and budgets. Run `alina setup`
+afterwards for connection checks. `alina setup telegram` pairs or replaces only
+the bot. `alina setup --no-start` configures without offering to launch; piped
+input never starts the daemon. Setup/login require the service to be stopped.
+
+Connection checks make a small model request and, when enabled, a search request
+using the configured accounts. They send no Telegram messages. Failures can be
+retried; account choices are saved before model/search checks so the setup can
+resume. Deferring Telegram or search is explicit and reported at the end.
+Optional embedding endpoints and document converters remain advanced options;
+quick setup does not install MarkItDown or claim those integrations were tested.
+
 Secrets are hidden in interactive terminals and saved with file mode `0600`.
 Files are private plaintext, not encrypted. Configuration updates are atomic.
-Run setup/login with the service stopped, then restart the service.
 
 ## Providers
 
@@ -28,7 +50,7 @@ Run setup/login with the service stopped, then restart the service.
   refreshes its own token and never imports another application's login.
   The subscription adapter follows the Codex-compatible protocol used by Pi;
   this is not a guarantee that a private backend will remain compatible.
-- **OpenCode Go:** enter the subscription API key and a model ID in setup.
+- **OpenCode Go:** enter the subscription API key and a model ID in `alina setup --advanced`.
   Select `chat`, `responses`, or `messages` according to that model's documented
   endpoint. Alina identifies itself with its own user agent and a stable
   `x-opencode-session`. The initial example is `glm-5.1` / `chat`; availability
@@ -86,11 +108,13 @@ continues without a client. Piped requests that need approval leave the job
 pending and print an `alina approve` command; EOF never means approval.
 
 Telegram uses Bot API long polling. Setup explains `/newbot` in BotFather,
-verifies the token using `getMe`, then offers pairing: open its generated link
+verifies the token using `getMe`, then pairs the owner: open its generated link
 and press Start in a private chat. A fresh random code identifies that chat;
 other users and groups cannot claim ownership without it. Pairing reads updates
-but sends no messages. Manual numeric owner ID entry is also available. Use a
-dedicated bot without another poller or webhook. Only messages
+but sends no messages. Updates through the pairing message are acknowledged;
+older commands are not executed on first startup. A new pairing isolates bot
+update IDs and delivery receipts from earlier pairings; archived history remains
+recallable. Use a dedicated bot without another poller or webhook. Only messages
 and buttons from that owner in a private chat are accepted. Groups and other
 users are ignored. Commands: `/status`, `/cancel ID`, `/new`, `/permissions`,
 `/revoke ID`, `/resume ID`, `/intentions`.
@@ -420,9 +444,11 @@ There are at most eight active intentions. They are exposed in the prompt and
 through `alina intentions` / Telegram `/intentions` and persist across restarts.
 They do not represent user requests or confer permissions.
 
-Setup can authorize a scope of personal exploration once. It defaults to disabled;
-when enabled, defaults are 12 model calls per calendar day and five minutes per
-run, with optional web search. Usage is reserved in SQLite before each inference,
+New quick setups enable personal exploration with 12 model calls per calendar
+day, five minutes per run and web search. The scope is local tools and useful
+procedures in Alina's personal workspace. Advanced setup can change or disable
+it; existing installations retain their choice. Raw configuration defaults keep
+exploration disabled until configured. Usage is reserved in SQLite before each inference,
 including checkpoint calls, so retries and restarts cannot reset the daily budget.
 An unsuccessful request still uses that reservation. This limits call count,
 not tokens or monetary cost. Dream has its own separate budget described above.
