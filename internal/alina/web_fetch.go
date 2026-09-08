@@ -129,7 +129,7 @@ func webFetch(ctx context.Context, client *http.Client, arguments string) (strin
 	if disposition, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Disposition")); strings.EqualFold(disposition, "attachment") {
 		return "", errors.New("response is a file attachment; request consent for a shell download")
 	}
-	media, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	media, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil {
 		return "", errors.New("missing or invalid web Content-Type")
 	}
@@ -146,7 +146,13 @@ func webFetch(ctx context.Context, client *http.Client, arguments string) (strin
 	if len(body) > maxBody {
 		return "", errors.New("web response exceeds 2 MiB")
 	}
-	reader, err := charset.NewReader(strings.NewReader(string(body)), resp.Header.Get("Content-Type"))
+	contentType := resp.Header.Get("Content-Type")
+	// HTML encoding sniffing defaults to Windows-1252 after an ASCII prefix.
+	// Apply it only to HTML; ordinary UTF-8 documents must retain their bytes.
+	if media != "text/html" && media != "application/xhtml+xml" && params["charset"] == "" {
+		contentType = media + "; charset=utf-8"
+	}
+	reader, err := charset.NewReader(strings.NewReader(string(body)), contentType)
 	if err != nil {
 		return "", errors.New("unsupported web character encoding")
 	}

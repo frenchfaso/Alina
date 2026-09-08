@@ -112,6 +112,9 @@ func newTestEngine(t *testing.T, m Model) *Engine {
 	t.Cleanup(e.Close)
 	return e
 }
+func (e *Engine) Submit(session, owner, input string) (Job, error) {
+	return e.SubmitKey(session, owner, input, "")
+}
 func awaitStatus(t *testing.T, e *Engine, id, status string) Job {
 	t.Helper()
 	deadline := time.Now().Add(8 * time.Second)

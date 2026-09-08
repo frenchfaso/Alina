@@ -12,9 +12,11 @@ import (
 )
 
 func SetupAdvanced(ctx context.Context, dir string, in *bufio.Reader, out io.Writer) error {
-	if e := requireStopped(dir); e != nil {
+	lock, e := lockDaemonState(dir)
+	if e != nil {
 		return e
 	}
+	defer lock.Close()
 	c, e := LoadConfig(dir)
 	if e != nil && !os.IsNotExist(e) {
 		return e

@@ -1,5 +1,32 @@
 # POC verification — 2026-09-09
 
+## Reliability and simplicity review — 0.9.1
+
+All **119 tests** pass natively on Galaxy A15 Termux, including the opt-in
+public HTTPS smoke (zero failures or skips). The full macOS ARM64 race suite,
+Go vet, formatting and diff checks pass. CGO-free builds pass for Android/arm64,
+Linux/arm64, macOS/arm64 and FreeBSD/OpenBSD/NetBSD amd64.
+
+Sixteen added regression tests cover exclusive setup/login locking, scheduler
+rollback and limits, repaired-file integrity checks, compact Telegram consent
+callbacks, idempotent resume, expired callbacks, a 61-job notification backlog
+with migrated receipts, explicit memory corrections citing old evidence, shared
+archive pagination, HTTP connection reuse, terminal SSE events, provider-protocol
+changes, UTF-8 web documents and rejection of trailing API JSON.
+
+Binary smoke tests on macOS and Termux pass configuration/CLI, daemon lifecycle,
+private correlated logs, safe repair, scheduling, recall and restart/resume.
+The phone's small smoke workload used **21,072 KiB RSS**; this is not a peak
+bound or a real-model performance measurement. Provider/OAuth/Telegram calls
+use fixtures; no live accounts or Telegram messages were used.
+
+Version 0.9.1 is installed at `~/alina-poc/bin/alina`; the prior 0.9 binary is
+retained as `~/alina-poc/bin/alina-v09-2141d750`. No Alina daemon was running,
+and no packages, system services or account configuration were changed.
+Android SHA-256:
+`40d169b5d9a57742aa2270cba3162282d86accb352cffa6134ab7f2f3b18e61f`.
+See the [review and architectural assessment](review-2026-09-09.md).
+
 ## Minimal CLI and operational logs — 0.9
 
 The full suite passes with the macOS ARM64 race detector and Go vet. Formatting

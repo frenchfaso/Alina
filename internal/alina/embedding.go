@@ -330,12 +330,6 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 			return MemoryPage{}, err
 		}
 		appendPart(text)
-	case "week":
-		text, err := m.week(ctx, now)
-		if err != nil {
-			return MemoryPage{}, err
-		}
-		appendPart(text)
 	default:
 		if part == "today" {
 			part = now.In(m.loc).Format("2006-01-02")
@@ -348,9 +342,27 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 				return MemoryPage{}, errors.New("invalid archive cursor")
 			}
 		}
-		if _, err := time.Parse("2006-01-02", part); err == nil || part == "archive" || after >= 0 {
-			appendPart("# " + part + "\n")
-			rows, err := m.DB.QueryContext(ctx, "SELECT id,stamp,session,job,role,content FROM journal WHERE (?<0 AND (day=? OR ?='archive')) OR (? >=0 AND rowid>?) ORDER BY rowid", after, part, part, after, after)
+		if _, err := time.Parse("2006-01-02", part); err == nil || part == "archive" || part == "week" || after >= 0 {
+			query := "SELECT id,stamp,session,job,role,content FROM journal"
+			var args []any
+			order := " ORDER BY rowid"
+			switch {
+			case part == "week":
+				appendPart("# Previous seven days · archive view\n")
+				query += " WHERE day>=? AND day<?"
+				args = []any{now.In(m.loc).AddDate(0, 0, -7).Format("2006-01-02"), now.In(m.loc).Format("2006-01-02")}
+				order = " ORDER BY day,rowid"
+			case after >= 0:
+				query += " WHERE rowid>?"
+				args = []any{after}
+			case part != "archive":
+				query += " WHERE day=?"
+				args = []any{part}
+			}
+			if part != "week" {
+				appendPart("# " + part + "\n")
+			}
+			rows, err := m.DB.QueryContext(ctx, query+order, args...)
 			if err != nil {
 				return MemoryPage{}, err
 			}
@@ -372,7 +384,7 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 			if err != nil {
 				return MemoryPage{}, err
 			}
-			if count == 0 && part != "archive" && after < 0 {
+			if count == 0 && part != "archive" && part != "week" && after < 0 {
 				var text string
 				if err = m.DB.QueryRowContext(ctx, "SELECT summary FROM days WHERE day=?", part).Scan(&text); err != nil {
 					return MemoryPage{}, err

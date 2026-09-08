@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/ncruces/go-sqlite3"
 	"io"
 	"log/slog"
 	"net"
@@ -18,6 +17,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/ncruces/go-sqlite3"
 )
 
 const logFileBytes = 2 << 20
@@ -348,9 +349,6 @@ func logsCLI(ctx context.Context, dir string, args []string, out io.Writer) erro
 				}
 				if err != nil {
 					return err
-				}
-				if len(raw) > 64<<10 {
-					return errors.New("log event exceeds read limit")
 				}
 				if match(raw) {
 					if _, err = out.Write(raw); err != nil {

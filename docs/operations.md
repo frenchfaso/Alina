@@ -1,6 +1,6 @@
 # Operating and debugging Alina
 
-Alina 0.9 has eight commands. The former commands are removed, without aliases.
+Alina 0.9.1 has eight commands. The former commands are removed, without aliases.
 Run `alina help` for the CLI and `alina api` for the local endpoint catalog.
 There is no additional runtime, remote log collector or telemetry service.
 
@@ -65,6 +65,9 @@ a credential. `[redacted]` in an exported configuration preserves an existing
 secret when that configuration is submitted again. Actual secrets should be
 provided through stdin rather than command arguments or shell history.
 
+Setup, login, configuration writes and live/repair diagnostics hold the same
+exclusive state lock as the daemon, including while it is still starting.
+
 An invalid field can be corrected with a patch. Syntactically damaged JSON is
 left untouched for explicit file repair. `setup --advanced` remains available
 for interactive preferences, and `setup telegram` for guided bot pairing.
@@ -124,3 +127,19 @@ and piped chat steer the current local chat job just like interactive input.
 For independent queued work, use `POST /v1/jobs` with `interactive:false` and a
 chosen session/request ID. The API sends only to the instance's Unix socket.
 EOF never accepts an approval, and there is no automatic retry of mutations.
+
+Recurring and one-shot schedules share limits of 100 enabled and 200 retained
+tasks. When space is needed, submitted inactive one-shots are removed from the
+schedule list; their job records and archive remain. Remove unused paused tasks
+explicitly. A failed save does not change the schedule list in memory.
+
+Memory corrections replace the explicit `supersedes` ID. Citing an older record
+does not hide the citing note; sources remain historical evidence. Correct other
+outdated notes explicitly rather than relying on cascading invalidation.
+
+Telegram delivery reads pending jobs from SQLite in batches, prioritizing
+approvals, independently of the 50-job status/history view. Delivery receipts
+also live in SQLite; existing JSON receipts migrate automatically. Retried
+Telegram `/resume` updates reuse the same job ID. Sending a message and saving
+its receipt cannot be one transaction: a crash between them can still duplicate
+a reply, and a partially sent long reply can repeat earlier chunks.

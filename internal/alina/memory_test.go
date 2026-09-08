@@ -228,3 +228,31 @@ func TestIdleDreamDoesNotRewriteSoul(t *testing.T) {
 		t.Fatal("idle dream spent model calls")
 	}
 }
+
+// Fixture writers: production journal writes go through recordMessage.
+func (m *Memory) Record(ctx context.Context, now time.Time, session, job, role, content string) error {
+	if !m.Config.Memory.Enabled || content == "" {
+		return nil
+	}
+	_, err := m.DB.ExecContext(ctx, "INSERT INTO journal VALUES(?,?,?,?,?,?,?)", randomID(), now.In(m.loc).Format("2006-01-02"), now.Format(time.RFC3339), session, job, role, m.redact(content))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (m *Memory) entries(ctx context.Context, day string) ([]MemoryEntry, error) {
+	rows, err := m.DB.QueryContext(ctx, "SELECT id,stamp,session,job,role,content FROM journal WHERE day=? ORDER BY rowid", day)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MemoryEntry
+	for rows.Next() {
+		var e MemoryEntry
+		if err = rows.Scan(&e.ID, &e.Time, &e.Session, &e.Job, &e.Role, &e.Content); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}

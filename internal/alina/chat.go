@@ -16,6 +16,8 @@ import (
 func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Writer) error {
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
+	client := LocalClient(dir)
+	defer client.CloseIdleConnections()
 	type lineResult struct {
 		text string
 		err  error
@@ -44,7 +46,7 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 		cancelCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		for id := range watch {
-			_ = localRequest(cancelCtx, dir, "POST", "/v1/jobs/"+id+"/cancel", nil, &map[string]any{})
+			_ = requestLocalJSON(cancelCtx, client, "POST", "/v1/jobs/"+id+"/cancel", nil, &map[string]any{})
 		}
 	}()
 	approvals := map[string]*Approval{}
@@ -80,13 +82,13 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 				fmt.Fprintln(out, "Conversazione (memoria condivisa):", session)
 			case "/status":
 				var status struct{ Jobs []Job }
-				err = localRequest(ctx, dir, "GET", "/v1/status", nil, &status)
+				err = requestLocalJSON(ctx, client, "GET", "/v1/status", nil, &status)
 				if err == nil {
 					fmt.Fprint(out, formatJobs(status.Jobs))
 				}
 			case "/permissions":
 				var grants []Grant
-				err = localRequest(ctx, dir, "GET", "/v1/grants", nil, &grants)
+				err = requestLocalJSON(ctx, client, "GET", "/v1/grants", nil, &grants)
 				if err == nil {
 					fmt.Fprintln(out, formatGrants(grants))
 				}
@@ -99,7 +101,7 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 				if fields[0] == "/cancel" {
 					method, path = "POST", "/v1/jobs/"+fields[1]+"/cancel"
 				}
-				err = localRequest(ctx, dir, method, path, nil, &map[string]any{})
+				err = requestLocalJSON(ctx, client, method, path, nil, &map[string]any{})
 			case "/approve":
 				if len(fields) != 2 || len(approvals) != 1 {
 					err = errors.New("use /approve 1|2|3|4 with one displayed approval; otherwise use the approval API command printed with the job")
@@ -111,14 +113,14 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 					break
 				}
 				for id, approval := range approvals {
-					err = localRequest(ctx, dir, "POST", "/v1/jobs/"+id+"/approve", map[string]string{"approval_id": approval.ID, "scope": scope}, &map[string]any{})
+					err = requestLocalJSON(ctx, client, "POST", "/v1/jobs/"+id+"/approve", map[string]string{"approval_id": approval.ID, "scope": scope}, &map[string]any{})
 					if err == nil {
 						delete(approvals, id)
 					}
 				}
 			default:
 				var j Job
-				err = localRequest(ctx, dir, "POST", "/v1/jobs", map[string]any{"session": session, "message": line, "request_id": randomID(), "interactive": true}, &j)
+				err = requestLocalJSON(ctx, client, "POST", "/v1/jobs", map[string]any{"session": session, "message": line, "request_id": randomID(), "interactive": true}, &j)
 				if err == nil {
 					if _, exists := watch[j.ID]; exists {
 						fmt.Fprintln(out, "Messaggio aggiunto ·", j.ID)
@@ -141,7 +143,7 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 			sort.Strings(ids)
 			for _, id := range ids {
 				var j Job
-				if err := localRequest(ctx, dir, "GET", "/v1/jobs/"+id, nil, &j); err != nil {
+				if err := requestLocalJSON(ctx, client, "GET", "/v1/jobs/"+id, nil, &j); err != nil {
 					return err
 				}
 				stamp := j.Status + ":" + j.Activity

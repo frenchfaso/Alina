@@ -13,7 +13,7 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.9.0-poc"
+const Version = "0.9.1-poc"
 
 // Codex ChatGPT model catalog, 2026-09-08. These are backend limits, not
 // the larger public API window. ContextTokens remains user configurable.
@@ -179,10 +179,9 @@ func (c Config) Validate() error {
 	if _, err := time.LoadLocation(c.Timezone); err != nil {
 		return fmt.Errorf("invalid timezone: %w", err)
 	}
-	if c.Memory.Dream {
-		if _, err := parseSchedule(c.Memory.DreamCron, c.Timezone); err != nil {
-			return err
-		}
+	// The scheduler loads this expression even while reflection is disabled.
+	if _, err := parseSchedule(c.Memory.DreamCron, c.Timezone); err != nil {
+		return err
 	}
 	if c.Memory.EmbeddingURL != "" {
 		if err := validateEmbedding(c.Memory); err != nil {
@@ -198,30 +197,11 @@ func SaveConfig(dir string, c Config) error {
 	return writeJSON(filepath.Join(dir, "config.json"), c)
 }
 func writeJSON(path string, v any) error {
-	if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
-		return e
-	}
 	b, e := json.MarshalIndent(v, "", "  ")
 	if e != nil {
 		return e
 	}
-	f, e := os.CreateTemp(filepath.Dir(path), ".alina-*")
-	if e != nil {
-		return e
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if _, e = f.Write(append(b, '\n')); e == nil {
-		e = f.Sync()
-	}
-	closeErr := f.Close()
-	if e != nil {
-		return e
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	return os.Rename(tmp, path)
+	return writeText(path, string(b)+"\n")
 }
 func randomID() string {
 	b := make([]byte, 12)

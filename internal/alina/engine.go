@@ -112,9 +112,6 @@ func (e *Engine) Close() {
 		e.Memory.DB.Close()
 	}
 }
-func (e *Engine) Submit(session, owner, input string) (Job, error) {
-	return e.SubmitKey(session, owner, input, "")
-}
 func (e *Engine) SubmitKey(session, owner, input, key string) (Job, error) {
 	return e.submit(session, owner, input, key, "chat")
 }
@@ -208,6 +205,12 @@ func cloneJob(j Job) Job {
 	return j
 }
 func (e *Engine) Resume(id, owner string) (Job, error) {
+	return e.resumeKey(id, owner, "")
+}
+
+// Telegram retries the same update after failed acknowledgement delivery.
+// Retain its request ID so resuming cannot replay work on those retries.
+func (e *Engine) resumeKey(id, owner, key string) (Job, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	old, ok := e.getLocked(id)
@@ -218,9 +221,9 @@ func (e *Engine) Resume(id, owner string) (Job, error) {
 		return Job{}, errors.New("cancel or finish the active job before resuming")
 	}
 	if old.Kind == "dream" || old.Kind == "reindex" {
-		return e.submitLocked(old.Session, old.Owner, old.Input, "", old.Kind, "")
+		return e.submitLocked(old.Session, old.Owner, old.Input, key, old.Kind, "")
 	}
-	return e.submitLocked(old.Session, old.Owner, "Resume job "+old.ID+". Original intention: "+truncate(old.Input, 20000)+"\nPrevious outcome: "+old.Status+" "+truncate(old.Error, 2000)+"\nRead the session checkpoint and verify the device's current state before taking another action. Tool calls without recorded results have unknown outcomes; do not blindly repeat them.", "", old.Kind, old.ID, old.Attachments...)
+	return e.submitLocked(old.Session, old.Owner, "Resume job "+old.ID+". Original intention: "+truncate(old.Input, 20000)+"\nPrevious outcome: "+old.Status+" "+truncate(old.Error, 2000)+"\nRead the session checkpoint and verify the device's current state before taking another action. Tool calls without recorded results have unknown outcomes; do not blindly repeat them.", key, old.Kind, old.ID, old.Attachments...)
 }
 func (e *Engine) Cancel(id, owner string) error {
 	e.mu.Lock()

@@ -14,7 +14,7 @@ type steeringInput struct {
 }
 
 // Interactive messages steer the oldest accepting chat in this conversation.
-// Explicit Submit/ask and scheduled work retain their ordinary FIFO behavior.
+// Explicit submissions and scheduled work retain their ordinary FIFO behavior.
 func (e *Engine) Receive(session, owner, input, key string, attachments ...Attachment) (Job, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

@@ -22,9 +22,11 @@ func setupCLI(ctx context.Context, dir string, args []string, in *bufio.Reader, 
 		if len(args) > 2 || len(args) == 2 && args[1] != "browser" {
 			return errors.New("usage: alina setup login [browser]")
 		}
-		if err := requireStopped(dir); err != nil {
+		lock, err := lockDaemonState(dir)
+		if err != nil {
 			return err
 		}
+		defer lock.Close()
 		auth := Auth{Dir: dir, Client: newHTTPClient()}
 		if len(args) == 2 {
 			return auth.LoginBrowser(ctx, in, out)
@@ -70,14 +72,12 @@ func setupCLI(ctx context.Context, dir string, args []string, in *bufio.Reader, 
 	return Serve(ctx, dir, c)
 }
 
-func Setup(ctx context.Context, dir string, in *bufio.Reader, out io.Writer) error {
-	return setupQuick(ctx, dir, in, out, newHTTPClient(), false)
-}
-
 func setupQuick(ctx context.Context, dir string, in *bufio.Reader, out io.Writer, client *http.Client, telegramOnly bool) error {
-	if err := requireStopped(dir); err != nil {
+	lock, err := lockDaemonState(dir)
+	if err != nil {
 		return err
 	}
+	defer lock.Close()
 	c, err := LoadConfig(dir)
 	fresh := os.IsNotExist(err)
 	if err != nil && !fresh {

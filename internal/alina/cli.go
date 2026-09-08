@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/signal"
 	"sort"
@@ -135,19 +134,23 @@ func printJSON(out io.Writer, v any) error {
 }
 
 func localRequest(ctx context.Context, dir, method, path string, body, out any) error {
-	return requestJSON(ctx, LocalClient(dir), method, "http://alina"+path, body, nil, out)
+	client := LocalClient(dir)
+	defer client.CloseIdleConnections()
+	return requestLocalJSON(ctx, client, method, path, body, out)
 }
 func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Writer) error {
+	client := LocalClient(dir)
+	defer client.CloseIdleConnections()
 	last := ""
 	for {
 		if ctx.Err() != nil {
 			c, stop := context.WithTimeout(context.Background(), 3*time.Second)
 			defer stop()
-			_ = localRequest(c, dir, "POST", "/v1/jobs/"+id+"/cancel", nil, &map[string]any{})
+			_ = requestLocalJSON(c, client, "POST", "/v1/jobs/"+id+"/cancel", nil, &map[string]any{})
 			return ctx.Err()
 		}
 		var j Job
-		if e := localRequest(ctx, dir, "GET", "/v1/jobs/"+id, nil, &j); e != nil {
+		if e := requestLocalJSON(ctx, client, "GET", "/v1/jobs/"+id, nil, &j); e != nil {
 			if ctx.Err() != nil {
 				continue
 			}
@@ -170,7 +173,7 @@ func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Write
 				if ctx.Err() != nil {
 					c, stop := context.WithTimeout(context.Background(), 3*time.Second)
 					defer stop()
-					_ = localRequest(c, dir, "POST", "/v1/jobs/"+id+"/cancel", nil, &map[string]any{})
+					_ = requestLocalJSON(c, client, "POST", "/v1/jobs/"+id+"/cancel", nil, &map[string]any{})
 				}
 				return e
 			}
@@ -178,7 +181,7 @@ func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Write
 			if scope == "" {
 				continue
 			}
-			if e = localRequest(ctx, dir, "POST", "/v1/jobs/"+id+"/approve", map[string]string{"approval_id": a.ID, "scope": scope}, &map[string]any{}); e != nil {
+			if e = requestLocalJSON(ctx, client, "POST", "/v1/jobs/"+id+"/approve", map[string]string{"approval_id": a.ID, "scope": scope}, &map[string]any{}); e != nil {
 				return e
 			}
 		}
@@ -238,15 +241,6 @@ func formatGrants(gs []Grant) string {
 	}
 	return b.String()
 }
-func requireStopped(dir string) error {
-	conn, e := net.DialTimeout("unix", socketPath(dir), time.Second)
-	if e == nil {
-		conn.Close()
-		return errors.New("stop 'alina serve' before changing configuration or login")
-	}
-	return nil
-}
-
 func readLine(ctx context.Context, in *bufio.Reader) (string, error) {
 	if ctx == nil {
 		return in.ReadString('\n')

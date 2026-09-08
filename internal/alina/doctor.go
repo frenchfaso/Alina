@@ -146,10 +146,11 @@ func diagnose(ctx context.Context, dir string, live, fix bool, out io.Writer, cl
 				err = os.Chmod(path, 0600)
 				if err == nil {
 					add("permissions:"+name, "ok", "", map[string]bool{"repaired": true})
-					continue
 				}
 			}
-			add("permissions:"+name, "error", "alina doctor --fix", errorInfo(err))
+			if !fix || err != nil {
+				add("permissions:"+name, "error", "alina doctor --fix", errorInfo(err))
+			}
 		}
 		if name == "telegram.json" || name == "tasks.json" || name == "grants.json" {
 			b, err := readSmallFile(path, 2<<20)

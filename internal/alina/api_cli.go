@@ -1,14 +1,15 @@
 package alina
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // This is the discoverable map of the existing local API, not another command
@@ -68,24 +69,35 @@ func apiCLI(ctx context.Context, dir string, args []string, in io.Reader, out io
 }
 
 func apiRequest(ctx context.Context, dir, method, path string, body any, out io.Writer) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+	var value any
+	if err := localRequest(ctx, dir, method, path, body, &value); err != nil {
+		return err
+	}
+	return printJSON(out, value)
+}
+
+// All local clients share response limits, error details and cancellation.
+// Interactive callers reuse one client for their polling lifetime.
+func requestLocalJSON(ctx context.Context, client *http.Client, method, path string, body, out any) error {
 	var input io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return err
 		}
-		input = strings.NewReader(string(data))
+		input = bytes.NewReader(data)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://alina"+path, input)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := LocalClient(dir).Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		return errors.New("Alina is not reachable; run alina doctor")
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("Alina is not reachable; run alina doctor: %w", &networkFailure{cause: err})
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20+1))
@@ -98,11 +110,10 @@ func apiRequest(ctx context.Context, dir, method, path string, body any, out io.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return &localAPIError{Status: resp.StatusCode, Message: strings.TrimSpace(string(data)), RequestID: resp.Header.Get("X-Alina-Request-ID")}
 	}
-	var value any
-	if err = json.Unmarshal(data, &value); err != nil {
+	if err = json.Unmarshal(data, out); err != nil {
 		return errors.New("local API returned invalid JSON")
 	}
-	return printJSON(out, value)
+	return nil
 }
 
 type localAPIError struct {

@@ -77,7 +77,6 @@ CREATE TABLE IF NOT EXISTS days (day TEXT PRIMARY KEY, summary TEXT NOT NULL, nu
 CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, day TEXT NOT NULL, text TEXT NOT NULL, sources TEXT NOT NULL, vector BLOB, space TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT 'memory');
 CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY, stamp TEXT, session TEXT, job TEXT, role TEXT);
 CREATE TABLE IF NOT EXISTS dreams (day TEXT PRIMARY KEY, completed TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS dream_chunks (id TEXT PRIMARY KEY, day TEXT, summary TEXT);
 CREATE TABLE IF NOT EXISTS facts (id TEXT PRIMARY KEY, day TEXT, stamp TEXT, kind TEXT, text TEXT, supersedes TEXT NOT NULL DEFAULT '', session TEXT, job TEXT);
 CREATE INDEX IF NOT EXISTS facts_supersedes ON facts(supersedes);
 CREATE TABLE IF NOT EXISTS intentions (id TEXT PRIMARY KEY, title TEXT, why TEXT, next TEXT, stop TEXT, status TEXT, updated TEXT);
@@ -173,52 +172,10 @@ func (m *Memory) redact(s string) string {
 	}
 	return tokenPattern.ReplaceAllString(s, "[redacted]")
 }
-func (m *Memory) Record(ctx context.Context, now time.Time, session, job, role, content string) error {
-	if !m.Config.Memory.Enabled || content == "" {
-		return nil
-	}
-	_, err := m.DB.ExecContext(ctx, "INSERT INTO journal VALUES(?,?,?,?,?,?,?)", randomID(), now.In(m.loc).Format("2006-01-02"), now.Format(time.RFC3339), session, job, role, m.redact(content))
-	if err != nil {
-		return err
-	}
-	return nil
-}
-func (m *Memory) entries(ctx context.Context, day string) ([]MemoryEntry, error) {
-	rows, err := m.DB.QueryContext(ctx, "SELECT id,stamp,session,job,role,content FROM journal WHERE day=? ORDER BY rowid", day)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []MemoryEntry
-	for rows.Next() {
-		var e MemoryEntry
-		if err = rows.Scan(&e.ID, &e.Time, &e.Session, &e.Job, &e.Role, &e.Content); err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
-}
 func entryText(e MemoryEntry) string {
 	return fmt.Sprintf("\n## %s · %s\nSession: %s · Job: %s · Source: %s\n\n%s\n", e.Time, e.Role, e.Session, e.Job, e.ID, e.Content)
 }
 
-// Date views are compatibility views of the archive, never memory tiers.
-func (m *Memory) week(ctx context.Context, now time.Time) (string, error) {
-	var out strings.Builder
-	out.WriteString("# Previous seven days · archive view\n")
-	for i := 7; i >= 1; i-- {
-		day := now.In(m.loc).AddDate(0, 0, -i).Format("2006-01-02")
-		entries, err := m.entries(ctx, day)
-		if err != nil {
-			return "", err
-		}
-		for _, e := range entries {
-			out.WriteString(entryText(e))
-		}
-	}
-	return out.String(), nil
-}
 func (m *Memory) Render(now time.Time) error {
 	text, err := m.FocusContext(context.Background(), now)
 	if err != nil {
@@ -256,9 +213,6 @@ func (m *Memory) Soul() (string, string) {
 		m.goodSoul = last
 	}
 	return m.goodSoul, "soul.md unavailable or outside 180 words / 1600 bytes; using last valid orientation"
-}
-func (m *Memory) Context(ctx context.Context, now time.Time) (string, error) {
-	return m.FocusContext(ctx, now)
 }
 func (m *Memory) RelevantContext(ctx context.Context, now time.Time, source string) (string, error) {
 	if !m.Config.Memory.Enabled {

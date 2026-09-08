@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -129,6 +130,10 @@ func handler(e *Engine) http.Handler {
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(v); err != nil {
 			http.Error(w, "invalid request", 400)
+			return false
+		}
+		if err := dec.Decode(new(any)); err != io.EOF {
+			http.Error(w, "request must contain one JSON value", 400)
 			return false
 		}
 		return true

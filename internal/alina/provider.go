@@ -152,7 +152,7 @@ func (p *Provider) anthropic(ctx context.Context, session string, msg []Message,
 			role = "user"
 			blocks = append(blocks, map[string]any{"type": "tool_result", "tool_use_id": m.CallID, "content": nonVisualText(m)})
 		} else {
-			if len(m.Raw) > 0 && m.Role == "assistant" {
+			if m.Role == "assistant" && rawProtocol(m.Raw) == "messages" {
 				for _, raw := range m.Raw {
 					var b any
 					if json.Unmarshal(raw, &b) == nil {
@@ -235,7 +235,7 @@ func responseInput(msg []Message) (string, []any) {
 			input = append(input, map[string]any{"type": "function_call_output", "call_id": m.CallID, "output": content})
 			continue
 		}
-		if m.Role == "assistant" && len(m.Raw) > 0 {
+		if m.Role == "assistant" && rawProtocol(m.Raw) == "responses" {
 			for _, raw := range m.Raw {
 				input = append(input, raw)
 			}
@@ -249,6 +249,24 @@ func responseInput(msg []Message) (string, []any) {
 		}
 	}
 	return system, input
+}
+
+// A provider change keeps the shared transcript, but raw wire items belong to
+// their original protocol. Other adapters rebuild from parsed text/tool calls.
+func rawProtocol(items []json.RawMessage) string {
+	for _, item := range items {
+		var tag struct{ Type string }
+		if json.Unmarshal(item, &tag) != nil {
+			return ""
+		}
+		switch tag.Type {
+		case "message", "function_call", "reasoning", "web_search_call":
+			return "responses"
+		case "text", "tool_use", "thinking", "redacted_thinking":
+			return "messages"
+		}
+	}
+	return ""
 }
 
 type responseBody struct {
@@ -354,12 +372,13 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 			case "response.completed", "response.done":
 				result = ev.Response
 				done = true
+				return io.EOF // Terminal event, even if the peer keeps the connection open.
 			case "response.failed", "response.incomplete", "error":
 				return errors.New("provider stream failed or incomplete")
 			}
 			return nil
 		})
-		if e != nil {
+		if e != nil && !(done && errors.Is(e, io.EOF)) {
 			return Message{}, e
 		}
 		if !done {

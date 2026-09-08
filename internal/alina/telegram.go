@@ -18,7 +18,7 @@ type telegramState struct {
 	Binding   string            `json:"binding,omitempty"`
 	Offset    int64             `json:"offset"`
 	Sessions  map[string]string `json:"sessions"`
-	Delivered map[string]string `json:"delivered"`
+	Delivered map[string]string `json:"delivered,omitempty"` // Legacy receipts, migrated to SQLite.
 }
 type Telegram struct {
 	Config   TelegramConfig
@@ -213,14 +213,29 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		}
 		parts := strings.Split(c.Data, ":")
 		answer := "Richiesta non valida"
-		if len(parts) == 4 && parts[0] == "a" {
-			if e := t.Engine.Approve(parts[1], parts[2], parts[3], owner); e == nil {
-				answer = "Scelta registrata"
-			} else {
-				answer = e.Error()
+		if len(parts) == 3 && parts[0] == "a" {
+			answer = "Consenso scaduto o non più in attesa"
+			for _, job := range t.Engine.Jobs(owner) {
+				if job.Approval == nil || job.Approval.ID != parts[1] {
+					continue
+				}
+				if err := t.Engine.Approve(job.ID, parts[1], parts[2], owner); err == nil {
+					answer = "Scelta registrata"
+				} else {
+					answer = err.Error()
+				}
+				break
 			}
 		}
-		return t.api(ctx, "answerCallbackQuery", map[string]any{"callback_query_id": c.ID, "text": answer}, nil)
+		err := t.api(ctx, "answerCallbackQuery", map[string]any{"callback_query_id": c.ID, "text": truncate(answer, 150)}, nil)
+		var apiErr *telegramAPIError
+		if errors.As(err, &apiErr) && apiErr.code == 400 {
+			// An expired callback cannot be acknowledged. Retrying this update
+			// indefinitely would block all subsequent owner messages.
+			t.Engine.Events.emit("telegram.callback_rejected", err)
+			return nil
+		}
+		return err
 	}
 	m := u.Message
 	if m == nil || m.From.ID != t.Config.OwnerID || m.Chat.ID != t.Config.OwnerID || m.Chat.Type != "private" {
@@ -240,7 +255,7 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		return t.send(ctx, "Alina · operatore personale\nScrivi una richiesta. Durante un lavoro, nuovi messaggi e allegati lo aggiornano al prossimo punto sicuro.\n/status · lavori\n/cancel ID · interrompi subito\n/resume ID · riprendi\n/intentions · intenzioni personali\n/new · nuova conversazione\n/permissions · consensi\n/revoke ID · revoca", nil)
 	case "/new":
 		t.mu.Lock()
-		t.state.Sessions[chat] = "tg-" + randomID()
+		t.state.Sessions[chat] = "tg-" + t.updateKey(u.ID)
 		er := t.saveLocked()
 		t.mu.Unlock()
 		if er != nil {
@@ -253,7 +268,7 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		if len(fields) != 2 {
 			return t.send(ctx, "Uso: /resume ID", nil)
 		}
-		j, err := t.Engine.Resume(fields[1], owner)
+		j, err := t.Engine.resumeKey(fields[1], owner, t.updateKey(u.ID))
 		if err != nil {
 			return t.send(ctx, err.Error(), nil)
 		}
@@ -350,7 +365,16 @@ func (t *Telegram) notify(ctx context.Context) {
 			return
 		case <-tick.C:
 		}
-		for _, j := range t.Engine.Jobs(t.owner()) {
+		if err := t.importDeliveryReceipts(ctx); err != nil {
+			t.Engine.Events.emit("telegram.delivery_checkpoint_failed", err)
+			continue
+		}
+		jobs, err := t.pendingNotifications(ctx)
+		if err != nil {
+			t.Engine.Events.emit("telegram.delivery_query_failed", err)
+			continue
+		}
+		for _, j := range jobs {
 			stamp := ""
 			text := ""
 			var keyboard any
@@ -360,7 +384,9 @@ func (t *Telegram) notify(ctx context.Context) {
 				text = fmt.Sprintf("Consenso richiesto · %s\n%s\nDirectory: %s\nComando:\n%s\n\nIl permesso vale per questo comando e directory. Scade tra 15 minuti.", j.ID, a.Action.Reason, a.Action.Directory, a.Action.Command)
 				rows := []any{}
 				for _, opt := range []struct{ Label, Scope string }{{"Solo una volta", "once"}, {"Fino al riavvio", "restart"}, {"Fino a revoca", "always"}, {"Nega", "deny"}} {
-					rows = append(rows, []any{map[string]string{"text": opt.Label, "callback_data": "a:" + j.ID + ":" + a.ID + ":" + opt.Scope}})
+					// The globally unique approval ID is sufficient. Including the
+					// job ID exceeds Telegram's 64-byte limit for scheduled jobs.
+					rows = append(rows, []any{map[string]string{"text": opt.Label, "callback_data": "a:" + a.ID + ":" + opt.Scope}})
 				}
 				keyboard = map[string]any{"inline_keyboard": rows}
 			}
@@ -377,25 +403,70 @@ func (t *Telegram) notify(ctx context.Context) {
 			if stamp == "" {
 				continue
 			}
-			t.mu.Lock()
-			sent := t.state.Delivered[j.ID] == stamp
-			t.mu.Unlock()
-			if sent {
-				continue
-			}
 			if er := t.send(ctx, text, keyboard); er != nil {
 				t.Engine.Events.emit("telegram.delivery_failed", er, "job_id", j.ID)
 				break
 			}
-			t.mu.Lock()
-			t.state.Delivered[j.ID] = stamp
-			er := t.saveLocked()
-			t.mu.Unlock()
+			_, er := t.Engine.Memory.DB.ExecContext(ctx, `INSERT INTO memory_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, "telegram-delivered:"+j.ID, stamp)
 			if er != nil {
 				t.Engine.Events.emit("telegram.delivery_checkpoint_failed", er, "job_id", j.ID)
 			}
 		}
 	}
+}
+
+// Delivery scans persisted jobs, not the 50-item interactive history window.
+// Receipts use the existing SQLite state store; no additional queue or service.
+func (t *Telegram) pendingNotifications(ctx context.Context) ([]Job, error) {
+	rows, err := t.Engine.Memory.DB.QueryContext(ctx, `SELECT j.payload FROM jobs j
+ LEFT JOIN memory_state d ON d.key='telegram-delivered:'||j.id
+ WHERE j.owner=? AND j.status IN ('approval','completed','failed','cancelled','interrupted')
+ AND COALESCE(d.value,'') != CASE WHEN j.status='approval' THEN json_extract(j.payload,'$.approval.id') ELSE j.status END
+ ORDER BY (j.status='approval') DESC,j.created,j.id LIMIT 50`, t.owner())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var jobs []Job
+	for rows.Next() {
+		var raw string
+		var j Job
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &j); err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, j)
+	}
+	return jobs, rows.Err()
+}
+
+func (t *Telegram) importDeliveryReceipts(ctx context.Context) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.state.Delivered) == 0 {
+		return nil
+	}
+	tx, err := t.Engine.Memory.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for id, stamp := range t.state.Delivered {
+		if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO memory_state VALUES(?,?)", "telegram-delivered:"+id, stamp); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	previous := t.state.Delivered
+	t.state.Delivered = nil
+	if err = t.saveLocked(); err != nil {
+		t.state.Delivered = previous
+	}
+	return err
 }
 func terminalStatus(s string) bool {
 	return s == "completed" || s == "failed" || s == "cancelled" || s == "interrupted"

@@ -54,9 +54,10 @@ CREATE VIEW IF NOT EXISTS recall_items AS
  UNION ALL SELECT id,day,stamp,session,job,text,sources,kind,1 FROM facts
  UNION ALL SELECT id,day,day||'T00:00:00Z','','',text,sources,kind,1 FROM memories
  UNION ALL SELECT day,day,day||'T00:00:00Z','','',summary,'[]','legacy-summary',0 FROM days;
-CREATE VIEW IF NOT EXISTS current_recall AS
+DROP VIEW IF EXISTS current_recall;
+CREATE VIEW current_recall AS
  SELECT r.* FROM recall_items r WHERE NOT EXISTS (
- SELECT 1 FROM facts f WHERE f.supersedes=r.id OR f.supersedes IN (SELECT value FROM json_each(r.sources)));
+ SELECT 1 FROM facts f WHERE f.supersedes=r.id);
 `)
 	if err != nil {
 		return err

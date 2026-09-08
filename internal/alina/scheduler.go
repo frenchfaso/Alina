@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -117,18 +118,8 @@ func (s *Scheduler) Add(name, spec, prompt, owner string, catchup bool) (Schedul
 	if next.IsZero() {
 		return ScheduledTask{}, errors.New("schedule has no future occurrence")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.tasks) >= 100 {
-		return ScheduledTask{}, errors.New("maximum 100 scheduled tasks")
-	}
 	t := ScheduledTask{ID: randomID(), Name: name, Cron: spec, Timezone: tz, Prompt: prompt, Owner: owner, Kind: "chat", Enabled: true, CatchUp: catchup, Next: next}
-	s.tasks[t.ID] = t
-	if err = s.save(); err != nil {
-		delete(s.tasks, t.ID)
-		return ScheduledTask{}, err
-	}
-	return t, nil
+	return s.insert(t)
 }
 func (s *Scheduler) Change(id, action, owner string) error {
 	s.mu.Lock()
@@ -148,6 +139,9 @@ func (s *Scheduler) Change(id, action, owner string) error {
 		t.Enabled = false
 		s.tasks[id] = t
 	case "resume":
+		if !t.Enabled && s.activeCount() >= 100 {
+			return errors.New("maximum 100 active scheduled tasks")
+		}
 		t.Enabled = true
 		if t.Once {
 			if t.LastJob != "" {
@@ -190,9 +184,11 @@ func (s *Scheduler) Tick(now time.Time) error {
 				return err
 			}
 			if intention.Status != "active" {
+				old := t
 				t.Enabled = false
 				s.tasks[id] = t
 				if err = s.save(); err != nil {
+					s.tasks[id] = old
 					return err
 				}
 				continue
@@ -280,17 +276,20 @@ func (s *Scheduler) AddOnce(name, at, prompt, owner, origin, intentionID string)
 	} else if origin != "" && origin != "user" {
 		return ScheduledTask{}, errors.New("origin must be user or self")
 	}
+	t := ScheduledTask{ID: randomID(), Name: name, Timezone: s.Engine.Config.Timezone, Prompt: prompt, Owner: owner, Kind: kind, Once: true, IntentionID: intentionID, Enabled: true, CatchUp: true, Next: next}
+	return s.insert(t)
+}
+
+// One insertion path keeps recurring and one-shot limits consistent. Pruning
+// participates in the same save, so a failed write leaves all state intact.
+func (s *Scheduler) insert(task ScheduledTask) (ScheduledTask, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	active := 0
-	for _, t := range s.tasks {
-		if t.Enabled {
-			active++
-		}
-	}
-	if active >= 100 {
+	if s.activeCount() >= 100 {
 		return ScheduledTask{}, errors.New("maximum 100 active scheduled tasks")
 	}
+	previous := s.tasks
+	s.tasks = maps.Clone(previous)
 	if len(s.tasks) >= 200 {
 		for id, t := range s.tasks {
 			if t.Once && !t.Enabled && t.LastJob != "" {
@@ -298,13 +297,27 @@ func (s *Scheduler) AddOnce(name, at, prompt, owner, origin, intentionID string)
 			}
 		}
 	}
-	t := ScheduledTask{ID: randomID(), Name: name, Timezone: s.Engine.Config.Timezone, Prompt: prompt, Owner: owner, Kind: kind, Once: true, IntentionID: intentionID, Enabled: true, CatchUp: true, Next: next}
-	s.tasks[t.ID] = t
-	if err = s.save(); err != nil {
-		delete(s.tasks, t.ID)
+	if len(s.tasks) >= 200 {
+		s.tasks = previous
+		return ScheduledTask{}, errors.New("maximum 200 retained tasks; remove unused tasks first")
+	}
+	s.tasks[task.ID] = task
+	if err := s.save(); err != nil {
+		s.tasks = previous
 		return ScheduledTask{}, err
 	}
-	return t, nil
+	return task, nil
+}
+
+// Caller holds mu.
+func (s *Scheduler) activeCount() int {
+	n := 0
+	for _, task := range s.tasks {
+		if task.Enabled {
+			n++
+		}
+	}
+	return n
 }
 
 func formatTasks(tasks []ScheduledTask) string {
