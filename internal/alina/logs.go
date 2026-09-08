@@ -203,13 +203,13 @@ func errorInfo(err error) map[string]any {
 		code = "filesystem_error"
 	case errors.As(err, &dns):
 		code = "dns_error"
+	case errors.As(err, &db):
+		code = "database_error"
 	case errors.As(err, &network):
 		code = "network_error"
 		if network.Timeout() {
 			code = "timeout"
 		}
-	case errors.As(err, &db):
-		code = "database_error"
 	case errors.As(err, &syntax):
 		code = "invalid_json"
 	default:

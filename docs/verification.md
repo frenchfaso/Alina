@@ -11,7 +11,8 @@ fixtures, with no live account calls or Telegram messages.
 New regressions cover removed command aliases, stdin chat and JSON API errors,
 redacted configuration round-trips, atomic validation/repair, daemon-lock
 exclusion, live-check OAuth exclusion, Telegram webhook conflicts, private
-correlated events, HTTP error classifications, concurrent log rotation, log
+correlated events, HTTP/SQLite error classifications (including SQLite errors
+that implement the network timeout interface), concurrent log rotation, log
 write failures, filters, follow across rotation and partial lines, safe doctor
 repairs, read-only SQLite checks and instance propagation to shell tools.
 
@@ -24,7 +25,7 @@ not a peak-memory bound.
 
 Version 0.9 is installed at `~/alina-poc/bin/alina`, with 0.8 retained as
 `~/alina-poc/bin/alina-v08-d9105b69`. Android SHA-256:
-`6a59f122c05bc5b04fdd1d427bf9406d1a00fe2f28d622741c266e9c0d4e0e4b`.
+`2141d7507addaa52b31d21038972a0ac7c0b44943ed00422e1b9718bdb64b643`.
 No packages, system services or permanent account configuration were changed.
 See [CLI and logs](operations.md) for the intentionally breaking command changes.
 

@@ -296,6 +296,11 @@ func TestDoctorSafeRepairsAndReadOnlyMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer e.Close()
+	_, sqliteErr := e.Memory.DB.Exec("SELECT PRIVATE_DEBUG_COLUMN")
+	details := errorInfo(sqliteErr)
+	if details["code"] != "database_error" || details["sqlite_code"] == nil || strings.Contains(jsonText(details), "PRIVATE_DEBUG_COLUMN") {
+		t.Fatal("SQLite error was misclassified or exposed SQL", details)
+	}
 	c.Provider = "opencode-go"
 	c.OpenCodeAPI = "responses"
 	c.OpenCodeKey = "PRIVATE_KEY"
