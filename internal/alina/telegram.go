@@ -170,7 +170,7 @@ func (t *Telegram) Run(ctx context.Context) {
 		offset := t.state.Offset
 		t.mu.Unlock()
 		var updates []tgUpdate
-		e := t.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 25, "allowed_updates": []string{"message", "callback_query"}}, &updates)
+		e := t.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 50, "allowed_updates": []string{"message", "callback_query"}}, &updates)
 		if e != nil {
 			if ctx.Err() != nil {
 				return
@@ -357,62 +357,81 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	return t.send(ctx, "Avviato · "+j.ID, nil)
 }
 func (t *Telegram) notify(ctx context.Context) {
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-	for {
+	backoff := time.Duration(0)
+	for ctx.Err() == nil {
+		changed := t.Engine.jobChanged.watch()
+		more, err := t.deliverPending(ctx)
+		if err != nil {
+			backoff = min(max(5*time.Second, 2*backoff), time.Minute)
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+			case <-timer.C:
+			}
+			timer.Stop()
+			continue
+		}
+		backoff = 0
+		if more {
+			continue // Drain the persisted backlog before waiting for new work.
+		}
 		select {
 		case <-ctx.Done():
-			return
-		case <-tick.C:
-		}
-		if err := t.importDeliveryReceipts(ctx); err != nil {
-			t.Engine.Events.emit("telegram.delivery_checkpoint_failed", err)
-			continue
-		}
-		jobs, err := t.pendingNotifications(ctx)
-		if err != nil {
-			t.Engine.Events.emit("telegram.delivery_query_failed", err)
-			continue
-		}
-		for _, j := range jobs {
-			stamp := ""
-			text := ""
-			var keyboard any
-			if j.Status == "approval" && j.Approval != nil {
-				a := j.Approval
-				stamp = a.ID
-				text = fmt.Sprintf("Consenso richiesto · %s\n%s\nDirectory: %s\nComando:\n%s\n\nIl permesso vale per questo comando e directory. Scade tra 15 minuti.", j.ID, a.Action.Reason, a.Action.Directory, a.Action.Command)
-				rows := []any{}
-				for _, opt := range []struct{ Label, Scope string }{{"Solo una volta", "once"}, {"Fino al riavvio", "restart"}, {"Fino a revoca", "always"}, {"Nega", "deny"}} {
-					// The globally unique approval ID is sufficient. Including the
-					// job ID exceeds Telegram's 64-byte limit for scheduled jobs.
-					rows = append(rows, []any{map[string]string{"text": opt.Label, "callback_data": "a:" + a.ID + ":" + opt.Scope}})
-				}
-				keyboard = map[string]any{"inline_keyboard": rows}
-			}
-			if terminalStatus(j.Status) {
-				stamp = j.Status
-				text = j.ID + " · " + j.Status + "\n" + j.Output
-				if j.Error != "" {
-					text += "\n" + j.Error
-				}
-				if j.PendingSteering > 0 {
-					text += fmt.Sprintf("\n%d messaggi salvati in attesa: /resume %s", j.PendingSteering, j.ID)
-				}
-			}
-			if stamp == "" {
-				continue
-			}
-			if er := t.send(ctx, text, keyboard); er != nil {
-				t.Engine.Events.emit("telegram.delivery_failed", er, "job_id", j.ID)
-				break
-			}
-			_, er := t.Engine.Memory.DB.ExecContext(ctx, `INSERT INTO memory_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, "telegram-delivered:"+j.ID, stamp)
-			if er != nil {
-				t.Engine.Events.emit("telegram.delivery_checkpoint_failed", er, "job_id", j.ID)
-			}
+		case <-changed:
 		}
 	}
+}
+
+func (t *Telegram) deliverPending(ctx context.Context) (bool, error) {
+	if err := t.importDeliveryReceipts(ctx); err != nil {
+		t.Engine.Events.emit("telegram.delivery_checkpoint_failed", err)
+		return false, err
+	}
+	jobs, err := t.pendingNotifications(ctx)
+	if err != nil {
+		t.Engine.Events.emit("telegram.delivery_query_failed", err)
+		return false, err
+	}
+	for _, j := range jobs {
+		stamp := ""
+		text := ""
+		var keyboard any
+		if j.Status == "approval" && j.Approval != nil {
+			a := j.Approval
+			stamp = a.ID
+			text = fmt.Sprintf("Consenso richiesto · %s\n%s\nDirectory: %s\nComando:\n%s\n\nIl permesso vale per questo comando e directory. Scade tra 15 minuti.", j.ID, a.Action.Reason, a.Action.Directory, a.Action.Command)
+			rows := []any{}
+			for _, opt := range []struct{ Label, Scope string }{{"Solo una volta", "once"}, {"Fino al riavvio", "restart"}, {"Fino a revoca", "always"}, {"Nega", "deny"}} {
+				// The globally unique approval ID is sufficient. Including the
+				// job ID exceeds Telegram's 64-byte limit for scheduled jobs.
+				rows = append(rows, []any{map[string]string{"text": opt.Label, "callback_data": "a:" + a.ID + ":" + opt.Scope}})
+			}
+			keyboard = map[string]any{"inline_keyboard": rows}
+		}
+		if terminalStatus(j.Status) {
+			stamp = j.Status
+			text = j.ID + " · " + j.Status + "\n" + j.Output
+			if j.Error != "" {
+				text += "\n" + j.Error
+			}
+			if j.PendingSteering > 0 {
+				text += fmt.Sprintf("\n%d messaggi salvati in attesa: /resume %s", j.PendingSteering, j.ID)
+			}
+		}
+		if stamp == "" {
+			continue
+		}
+		if er := t.send(ctx, text, keyboard); er != nil {
+			t.Engine.Events.emit("telegram.delivery_failed", er, "job_id", j.ID)
+			return false, er
+		}
+		_, er := t.Engine.Memory.DB.ExecContext(ctx, `INSERT INTO memory_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, "telegram-delivered:"+j.ID, stamp)
+		if er != nil {
+			t.Engine.Events.emit("telegram.delivery_checkpoint_failed", er, "job_id", j.ID)
+			return false, er
+		}
+	}
+	return len(jobs) > 0, nil
 }
 
 // Delivery scans persisted jobs, not the 50-item interactive history window.

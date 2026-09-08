@@ -24,6 +24,18 @@ func attentionWeight(stamp string, now time.Time) float64 {
 }
 
 func (m *Memory) FocusContext(ctx context.Context, now time.Time) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	text, err := m.focusText(ctx, now)
+	if err == nil {
+		if er := m.writeFocus(text); er != nil {
+			m.Events.emit("memory.render_failed", er)
+		}
+	}
+	return text, err
+}
+
+func (m *Memory) focusText(ctx context.Context, now time.Time) (string, error) {
 	if !m.Config.Memory.Enabled {
 		return "", nil
 	}
@@ -58,7 +70,12 @@ func (m *Memory) FocusContext(ctx context.Context, now time.Time) (string, error
 
 // Only deliberate operations focus notes. Search results, prompt assembly and
 // scheduled reads of the focus view never reinforce their own selection.
-func (m *Memory) Focus(ctx context.Context, id string, pin *bool, now time.Time) error {
+func (m *Memory) Focus(ctx context.Context, id string, pin *bool, now time.Time) (err error) {
+	defer func() {
+		if err == nil {
+			m.refreshFocus(now)
+		}
+	}()
 	tx, err := m.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -98,8 +115,13 @@ func (m *Memory) Focus(ctx context.Context, id string, pin *bool, now time.Time)
 }
 
 func (m *Memory) touchRead(ctx context.Context, id string, now time.Time) error {
-	_, err := m.DB.ExecContext(ctx, `INSERT INTO attention(id,touched,pinned)
+	result, err := m.DB.ExecContext(ctx, `INSERT INTO attention(id,touched,pinned)
  SELECT id,?,0 FROM current_recall WHERE id=? AND note=1
  ON CONFLICT(id) DO UPDATE SET touched=excluded.touched`, now.UTC().Format(time.RFC3339Nano), id)
+	if err == nil {
+		if n, _ := result.RowsAffected(); n > 0 {
+			m.refreshFocus(now)
+		}
+	}
 	return err
 }

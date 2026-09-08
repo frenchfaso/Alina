@@ -67,6 +67,9 @@ const saveJobSQL = `INSERT INTO jobs VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE
 
 func (e *Engine) persist(j *runningJob) error {
 	_, err := e.Memory.DB.Exec(saveJobSQL, j.ID, j.Owner, j.Created.Format(time.RFC3339Nano), j.Status, jsonText(j.Job))
+	if err == nil && (j.Status == "approval" || terminalStatus(j.Status)) {
+		e.jobChanged.wake()
+	}
 	return err
 }
 func (e *Engine) getLocked(id string) (Job, bool) {

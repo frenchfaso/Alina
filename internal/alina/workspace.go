@@ -115,7 +115,12 @@ func (m *Memory) Intention(ctx context.Context, id string) (Intention, error) {
 	err := m.DB.QueryRowContext(ctx, "SELECT id,title,why,next,stop,status,updated FROM intentions WHERE id=?", id).Scan(&i.ID, &i.Title, &i.Why, &i.Next, &i.Stop, &i.Status, &i.Updated)
 	return i, err
 }
-func (m *Memory) Note(ctx context.Context, now time.Time, session, job, kind, text, supersedes string, sources ...[]string) (string, error) {
+func (m *Memory) Note(ctx context.Context, now time.Time, session, job, kind, text, supersedes string, sources ...[]string) (id string, err error) {
+	defer func() {
+		if err == nil {
+			m.refreshFocus(now)
+		}
+	}()
 	if kind == "" {
 		kind = "fact"
 	}
@@ -172,7 +177,7 @@ func (m *Memory) Note(ctx context.Context, now time.Time, session, job, kind, te
 			return "", err
 		}
 	}
-	id := randomID()
+	id = randomID()
 	day := now.In(m.loc).Format("2006-01-02")
 	stamp := now.UTC().Format(time.RFC3339Nano)
 	_, err = tx.ExecContext(ctx, "INSERT INTO facts(id,day,stamp,kind,text,supersedes,session,job,sources) VALUES(?,?,?,?,?,?,?,?,?)", id, day, stamp, kind, text, supersedes, session, job, jsonText(ids))

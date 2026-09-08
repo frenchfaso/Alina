@@ -1,5 +1,29 @@
 # POC verification — 2026-09-09
 
+## Idle scheduling and Telegram delivery — 0.9.2
+
+All **126 tests** pass natively on Galaxy A15 Termux, including the opt-in public
+HTTPS smoke (zero failures or skips). The full macOS ARM64 race suite, Go vet,
+formatting and diff checks pass. CGO-free builds pass for Android/arm64,
+Linux/arm64, macOS/arm64 and FreeBSD/OpenBSD/NetBSD amd64.
+
+Seven new regressions cover task deadline changes, waiting for an active
+occurrence, a failed scheduler checkpoint without replay, delivery wake-ups and
+exponential retries, immediate messages during long polling, and focus-view
+updates on use. A simulated-clock test advances 24 idle hours after closing the
+database: scheduler and delivery perform no storage polling. Tests also retain
+startup backlog recovery and receipt deduplication from the earlier suite.
+
+Disposable daemon smoke tests pass on macOS and the Galaxy. The phone's small
+smoke workload used **21,544 KiB RSS**, not a peak bound or battery measurement.
+Provider/OAuth/Telegram requests use fixtures; no live accounts or Telegram
+messages were used. The 50-second long poll was verified through a fixture.
+
+Version 0.9.2 is installed at `~/alina-poc/bin/alina`, with 0.9.1 retained as
+`~/alina-poc/bin/alina-v091-40d169b5`. No Alina daemon was running, and no packages,
+system services or account configuration were changed. Android SHA-256:
+`c59ccd5471df7daa201b66fa521bdff0a0dde361ab95856908c2a5f7dd1135a9`.
+
 ## Reliability and simplicity review — 0.9.1
 
 All **119 tests** pass natively on Galaxy A15 Termux, including the opt-in

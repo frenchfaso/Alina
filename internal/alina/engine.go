@@ -53,6 +53,7 @@ type Engine struct {
 	Search      *Search
 	Permissions *Permissions
 	jobs        map[string]*runningJob
+	jobChanged  wakeSignal
 	gate        modelGate
 	background  sync.Mutex
 	fileMu      sync.Mutex
@@ -177,6 +178,7 @@ func (e *Engine) submitLocked(session, owner, input, key, kind, resumeFrom strin
 			defer e.mu.Unlock()
 			close(j.done)
 			e.inFlight--
+			e.jobChanged.wake()
 			if e.sessionTail[j.Session] == j.done {
 				delete(e.sessionTail, j.Session)
 			}

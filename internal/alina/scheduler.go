@@ -32,10 +32,11 @@ type ScheduledTask struct {
 	LastJob     string    `json:"last_job,omitempty"`
 }
 type Scheduler struct {
-	mu     sync.Mutex
-	Dir    string
-	Engine *Engine
-	tasks  map[string]ScheduledTask
+	mu      sync.Mutex
+	Dir     string
+	Engine  *Engine
+	tasks   map[string]ScheduledTask
+	changed wakeSignal
 }
 
 func parseSchedule(spec, tz string) (cron.Schedule, error) {
@@ -166,6 +167,7 @@ func (s *Scheduler) Change(id, action, owner string) error {
 		s.tasks[id] = old
 		return err
 	}
+	s.changed.wake()
 	return nil
 }
 func (s *Scheduler) Tick(now time.Time) error {
@@ -203,6 +205,13 @@ func (s *Scheduler) Tick(now time.Time) error {
 			}
 			next = schedule.Next(now)
 			if next.IsZero() {
+				old := t
+				t.Enabled = false
+				s.tasks[id] = t
+				if err = s.save(); err != nil {
+					s.tasks[id] = old
+					return err
+				}
 				continue
 			}
 		}
@@ -237,21 +246,55 @@ func (s *Scheduler) Tick(now time.Time) error {
 	return nil
 }
 func (s *Scheduler) Run(ctx context.Context) {
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-	for {
-		if err := s.Engine.Memory.Render(time.Now()); err != nil {
-			s.Engine.Events.emit("memory.render_failed", err)
-		}
+	for ctx.Err() == nil {
+		changed, jobs := s.changed.watch(), s.Engine.jobChanged.watch()
+		var retry time.Time
 		if err := s.Tick(time.Now()); err != nil {
 			s.Engine.Events.emit("scheduler.tick_failed", err)
+			retry = time.Now().Add(5 * time.Second)
+		}
+		next := s.nextWake()
+		if !retry.IsZero() {
+			next = retry // A failed save or full queue must not spin on a past deadline.
+		}
+		var timer *time.Timer
+		var due <-chan time.Time
+		if !next.IsZero() {
+			timer = time.NewTimer(time.Until(next))
+			due = timer.C
 		}
 		select {
 		case <-ctx.Done():
-			return
-		case <-ticker.C:
+		case <-changed:
+		case <-jobs:
+		case <-due:
+		}
+		if timer != nil {
+			timer.Stop()
 		}
 	}
+}
+
+func (s *Scheduler) nextWake() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var next time.Time
+	for _, t := range s.tasks {
+		if !t.Enabled || t.Kind == "initiative" && !s.Engine.Config.Autonomy.Enabled {
+			continue
+		}
+		// A running occurrence wakes us when it ends. Waiting on its already
+		// overdue successor would otherwise create a busy loop.
+		if t.LastJob != "" {
+			if j, ok := s.Engine.Get(t.LastJob); ok && !terminalStatus(j.Status) {
+				continue
+			}
+		}
+		if next.IsZero() || t.Next.Before(next) {
+			next = t.Next
+		}
+	}
+	return next
 }
 func (s *Scheduler) AddOnce(name, at, prompt, owner, origin, intentionID string) (ScheduledTask, error) {
 	next, err := time.Parse(time.RFC3339, at)
@@ -306,6 +349,7 @@ func (s *Scheduler) insert(task ScheduledTask) (ScheduledTask, error) {
 		s.tasks = previous
 		return ScheduledTask{}, err
 	}
+	s.changed.wake()
 	return task, nil
 }
 

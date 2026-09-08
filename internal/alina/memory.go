@@ -177,17 +177,30 @@ func entryText(e MemoryEntry) string {
 }
 
 func (m *Memory) Render(now time.Time) error {
-	text, err := m.FocusContext(context.Background(), now)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	text, err := m.focusText(context.Background(), now)
 	if err != nil {
 		return err
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	return m.writeFocus(text)
+}
+
+// A derived view failure must not turn a committed memory edit into a failed
+// operation. The next read/edit (or startup) will retry it.
+func (m *Memory) refreshFocus(now time.Time) {
+	if err := m.Render(now); err != nil {
+		m.Events.emit("memory.render_failed", err)
+	}
+}
+
+// Caller holds mu, including the query that produced text.
+func (m *Memory) writeFocus(text string) error {
 	view := "# What matters now\n\nGenerated view; use the memory tool to edit notes and pins.\n" + text
 	if view == m.renderedFocus {
 		return nil
 	}
-	if err = writeText(filepath.Join(m.Dir, "memory", "focus.md"), view); err != nil {
+	if err := writeText(filepath.Join(m.Dir, "memory", "focus.md"), view); err != nil {
 		return err
 	}
 	m.renderedFocus = view

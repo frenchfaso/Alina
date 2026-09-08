@@ -1,6 +1,6 @@
 # Operating and debugging Alina
 
-Alina 0.9.1 has eight commands. The former commands are removed, without aliases.
+Alina 0.9.2 has eight commands. The former commands are removed, without aliases.
 Run `alina help` for the CLI and `alina api` for the local endpoint catalog.
 There is no additional runtime, remote log collector or telemetry service.
 
@@ -133,6 +133,18 @@ tasks. When space is needed, submitted inactive one-shots are removed from the
 schedule list; their job records and archive remain. Remove unused paused tasks
 explicitly. A failed save does not change the schedule list in memory.
 
+The scheduler waits for the next due task instead of polling every 15 seconds.
+Adding, pausing, resuming or removing a task recalculates that wait; completion
+of an active occurrence also wakes it. With no eligible tasks it waits without
+a timer. Storage/submission failures retry after five seconds or a state change.
+Startup still checks missed occurrences according to each task's catch-up policy.
+The daemon must be running; this does not add an Android wake-up service.
+
+The derived `memory/focus.md` view refreshes on note edits, explicit recall or
+focus changes, and when the focus/context is read, as well as startup/shutdown.
+It is written only when the view changes. Attention decay is calculated at the
+time of use; idle time alone does not trigger queries or file writes.
+
 Memory corrections replace the explicit `supersedes` ID. Citing an older record
 does not hide the citing note; sources remain historical evidence. Correct other
 outdated notes explicitly rather than relying on cascading invalidation.
@@ -143,3 +155,10 @@ also live in SQLite; existing JSON receipts migrate automatically. Retried
 Telegram `/resume` updates reuse the same job ID. Sending a message and saving
 its receipt cannot be one transaction: a crash between them can still duplicate
 a reply, and a partially sent long reply can repeat earlier chunks.
+
+Delivery runs on pending approvals and completed jobs, drains the startup
+backlog, then waits for an internal state-change signal instead of polling every
+second. Failed deliveries retry after 5, 10, 20, 40 and then 60 seconds, capped
+at 60 seconds until success; no new incoming message is needed to retry.
+Incoming messages use a 50-second long poll (previously 25): Telegram returns
+as soon as an update arrives. These waits do not invoke the language model.
