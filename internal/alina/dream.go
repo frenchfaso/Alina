@@ -50,7 +50,7 @@ func (e *Engine) dream(j *runningJob, now time.Time) (string, error) {
 	// Keep the Job's immutable submitted input intact while using a runtime cue.
 	cue := fmt.Sprintf(`Take a quiet moment to reflect as Alina. Consider recent experience, uncertainty, your methods and open personal intentions. There is no requirement to discover a lesson, write a memory, or change your soul. Leaving things unchanged is a valid outcome.
 The shared archive is available through memory search/read. New events begin at memory read part="after-%d" (paged); the recent-context view is only an excerpt. Investigate evidence when it matters; do not mistake a fluent interpretation or a tool request for a verified result. Save a useful lesson or correct a note only when warranted. Read or focus a relevant note to bring it back into attention. A reflection is an interpretation, not a new observation.
-Your soul is a short personal orientation, not a diary or a biography of the user. You may use the soul tool to revise it, supplying the exact previous text and a reason. Personal experiments belong in a one-shot initiative within the configured autonomy budget. Finish with a short, natural reflection.`, last)
+Your soul is a short personal orientation, not a diary or a biography of the user. You may use the soul tool to revise it, supplying the exact previous text and a reason. Keep your soul and internal writing in English; translate an older non-English orientation faithfully without inventing new traits. Personal experiments belong in a one-shot initiative within the configured autonomy budget. Finish with a short, natural reflection in English.`, last)
 	result, err := e.turn(j, cue)
 	if err != nil {
 		return result, err
@@ -70,7 +70,7 @@ Your soul is a short personal orientation, not a diary or a biography of the use
 }
 
 func reflectionSpecs() []ToolSpec {
-	return append(stateToolSpecs(), ToolSpec{Name: "soul", Description: "Revise your short personal orientation only when experience warrants it. Supply the exact previous text to preserve concurrent edits. No change is also valid.", Parameters: map[string]any{
+	return append(stateToolSpecs(), ToolSpec{Name: "soul", Description: "Revise your short personal orientation in English only when experience warrants it. Supply the exact previous text to preserve concurrent edits. No change is also valid.", Parameters: map[string]any{
 		"type": "object", "properties": map[string]any{"previous": map[string]any{"type": "string"}, "text": map[string]any{"type": "string"}, "reason": map[string]any{"type": "string"}}, "required": []string{"previous", "text", "reason"},
 	}})
 }

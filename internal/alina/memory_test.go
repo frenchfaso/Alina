@@ -27,8 +27,11 @@ func memoryFixture(t *testing.T) (*Memory, time.Time) {
 }
 func TestDreamReflectsWithoutAgeTiers(t *testing.T) {
 	calls := 0
-	e := newTestEngine(t, modelFunc(func(_ context.Context, _ string, msg []Message, tools []ToolSpec, _ func(string)) (Message, error) {
+	e := newTestEngine(t, modelFunc(func(ctx context.Context, _ string, msg []Message, tools []ToolSpec, _ func(string)) (Message, error) {
 		calls++
+		if ctx.Value(reasoningEffortKey{}) != "high" {
+			t.Fatal("reflection did not use high effort")
+		}
 		if len(tools) != 3 || !strings.Contains(msg[0].Content, systemPrompt) {
 			t.Fatal("reflection did not use shared prompt/tools")
 		}

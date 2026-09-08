@@ -1,5 +1,29 @@
 # POC verification — 2026-09-08
 
+## Astra defaults and English internal writing — 0.4
+
+All **45 top-level tests** pass on macOS ARM64 with the race detector and natively
+on the Galaxy A15 in Termux. Go vet, formatting and diff checks pass. CGO-free
+builds pass for Android/arm64, Linux/arm64 and FreeBSD/OpenBSD/NetBSD amd64.
+
+New coverage verifies dedicated OAuth credential reuse for Astra and hosted
+search, request effort/verbosity, encrypted reasoning/phase replay, provider
+usage, legacy configuration and seed-soul migration, the strict 95% compaction
+boundary, retention after checkpoint failure, stable context prefixes and
+exclusion of runtime snapshots from the event archive after re-import.
+Reflection uses high effort while checkpoints remain low.
+
+The disposable Galaxy binary smoke passed setup, default Astra settings,
+272000-token context and 258400-token threshold, English seed soul, private
+configuration, memory and schedule operations, expected missing-login failure,
+restart and resume. Small-workload RSS was **16760 KiB**. No live inference,
+hosted search or Telegram delivery was exercised; no dedicated Alina login was
+present in the checked default state locations. No packages or services changed.
+
+Context capabilities are based on the local Codex 0.153.4 catalog fetched on
+2026-09-08: default 272000, maximum 872000. This does not establish universal
+Plus/Pro access or a tested large-context workload. See [Astra details](astra.md).
+
 ## Shared archive and reflection — 0.3
 
 The 0.3 update uses one model/tool loop for chat, scheduled work, initiatives and

@@ -94,6 +94,7 @@ func TestContinuationCompactsAndKeepsTranscript(t *testing.T) {
 		return Message{Role: "assistant", Content: "continued"}, nil
 	})
 	e := newTestEngine(t, model)
+	e.Config.ContextTokens = 32768
 	history := []Message{{Role: "user", Content: marker}}
 	for i := 0; i < 240; i++ {
 		history = append(history, Message{Role: "user", Content: fmt.Sprintf("old %d %s", i, strings.Repeat("context ", 100))}, Message{Role: "assistant", Content: "done"})
@@ -125,6 +126,7 @@ func TestLargeToolExchangeCompactsWithoutOrphanCalls(t *testing.T) {
 	e := newTestEngine(t, modelFunc(func(context.Context, string, []Message, []ToolSpec, func(string)) (Message, error) {
 		return Message{Role: "assistant", Content: "Task is unfinished. Tools completed; next check the output."}, nil
 	}))
+	e.Config.ContextTokens = 32768
 	history := []Message{{Role: "user", Content: "inspect"}, {Role: "assistant"}}
 	for n := 0; n < 8; n++ {
 		id := fmt.Sprint(n)
@@ -376,6 +378,7 @@ func TestInvalidCheckpointRetainsOriginalSession(t *testing.T) {
 	e := newTestEngine(t, modelFunc(func(context.Context, string, []Message, []ToolSpec, func(string)) (Message, error) {
 		return Message{}, errors.New("provider unavailable")
 	}))
+	e.Config.ContextTokens = 32768
 	history := []Message{}
 	for i := 0; i < 101; i++ {
 		history = append(history, Message{Role: "user", Content: fmt.Sprint(i) + strings.Repeat("context ", 150)})

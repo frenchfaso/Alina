@@ -450,16 +450,28 @@ func Setup(ctx context.Context, dir string, in *bufio.Reader, out io.Writer) err
 	}
 	if choice == "1" {
 		if c.Provider != "chatgpt" {
-			c.Model = "gpt-5.4"
+			c.Model = defaultModel
+			c.ContextTokens = astraContextTokens
 		}
 		c.Provider = "chatgpt"
 	} else {
 		if c.Provider != "opencode-go" {
 			c.Model = "glm-5.1"
+			c.ContextTokens = 32768
 		}
 		c.Provider = "opencode-go"
 	}
 	c.Model = w.ask("Model ID (deve essere disponibile nel tuo account)", c.Model)
+	if c.Model == defaultModel {
+		fmt.Fprintf(out, "Astra: contesto %d token; compattazione oltre il 95%%.\n", c.ContextTokens)
+		c.ReasoningEffort = w.ask("Reasoning: low / medium / high / xhigh / max", c.ReasoningEffort)
+		c.Verbosity = w.ask("Verbosity: low / medium / high", c.Verbosity)
+		tokens, err := strconv.Atoi(w.ask("Context window (token)", strconv.Itoa(c.ContextTokens)))
+		if err != nil {
+			return err
+		}
+		c.ContextTokens = tokens
+	}
 	c.WorkDir = w.ask("Directory di lavoro", c.WorkDir)
 	if c.Provider == "opencode-go" || w.yes("Configurare anche OpenCode Go", c.OpenCodeKey != "") {
 		c.OpenCodeKey = w.secret("Chiave OpenCode Go", c.OpenCodeKey)
@@ -474,11 +486,14 @@ func Setup(ctx context.Context, dir string, in *bufio.Reader, out io.Writer) err
 	if w.yes("Configurare Brave Search", c.Search.BraveKey != "") {
 		c.Search.BraveKey = w.secret("Chiave Brave Search", c.Search.BraveKey)
 	}
-	fmt.Fprintln(out, "OpenAI search usa il login ChatGPT se disponibile sul backend. In alternativa una API key usa fatturazione API separata, non inclusa nell'abbonamento.")
+	fmt.Fprintln(out, "OpenAI search è predefinito e riusa il login ChatGPT di Alina: non serve una seconda chiave. Una API key separata è facoltativa e usa fatturazione API distinta dall'abbonamento.")
 	if w.yes("Configurare una API key OpenAI separata per search", c.Search.OpenAIKey != "") {
 		c.Search.OpenAIKey = w.secret("OpenAI API key", c.Search.OpenAIKey)
 	}
-	c.Search.OpenAIModel = w.ask("Modello OpenAI per search", c.Search.OpenAIModel)
+	c.Search.OpenAIModel = w.ask("Modello OpenAI per search (vuoto = modello ChatGPT; - ripristina)", c.Search.OpenAIModel)
+	if c.Search.OpenAIModel == "-" {
+		c.Search.OpenAIModel = ""
+	}
 	if e = w.telegram(&c.Telegram); e != nil {
 		return e
 	}
@@ -573,6 +588,7 @@ func doctor(ctx context.Context, dir string, live bool, out io.Writer) error {
 		return configError(e)
 	}
 	fmt.Fprintf(out, "Alina %s\nProvider: %s / %s\nDirectory: %s\nNetwork sandbox: %t\n", Version, c.Provider, c.Model, c.WorkDir, sandboxAvailable())
+	fmt.Fprintf(out, "Context: %d tokens; compact above %d (95%%)\nReasoning: %s; dream: %s; checkpoint: %s; verbosity: %s; model timeout: %ds\n", c.ContextTokens, c.ContextTokens*95/100, c.ReasoningEffort, c.DreamEffort, c.CheckpointEffort, c.Verbosity, c.ModelTimeout)
 	fmt.Fprintf(out, "Personal exploration: %t · %d model calls/day · %d minutes/run · network policy: %s\n", c.Autonomy.Enabled, c.Autonomy.MaxCalls, c.Autonomy.Minutes, c.NetworkPolicy)
 	fmt.Fprintf(out, "Memory: %t · dream: %t (%s, %s) · embeddings: %t\n", c.Memory.Enabled, c.Memory.Dream, c.Memory.DreamCron, c.Timezone, c.Memory.EmbeddingURL != "")
 	_, authErr := os.Stat(filepath.Join(dir, "chatgpt.json"))
@@ -589,6 +605,9 @@ func doctor(ctx context.Context, dir string, live bool, out io.Writer) error {
 		failed = true
 	} else {
 		fmt.Fprintln(out, "Model OK:", truncate(m.Content, 150))
+		if m.Usage != nil {
+			fmt.Fprintln(out, "Model usage:", jsonText(m.Usage))
+		}
 	}
 	s := Search{Config: c.Search, Provider: p, Client: client}
 	for _, name := range []string{"openai", "tavily", "brave"} {

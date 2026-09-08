@@ -18,6 +18,9 @@ Run setup/login with the service stopped, then restart the service.
 ## Providers
 
 - **ChatGPT Plus/Pro:** `alina login` runs a dedicated OAuth device login.
+  The default model is `gpt-6-astra`, with a 272,000-token working window.
+  Chat uses medium reasoning, dream uses high, checkpoints and hosted search
+  use low. See [Astra defaults and verification](astra.md).
   Enable device login in ChatGPT security settings if required. The fallback
   `alina login browser` uses PKCE and validates OAuth state. Its callback binds
   only `127.0.0.1:1455`; on a remote device you can paste the complete callback
@@ -42,6 +45,9 @@ respective provider's normal usage. It does not send Telegram messages.
 configured default. Results include source URLs and bounded snippets. It does
 not save arbitrary remote files or download Telegram attachments.
 
+OpenAI is the default search provider and reuses Alina's dedicated ChatGPT login.
+An empty `search.openai_model` follows the main ChatGPT model (Astra if the main
+provider is OpenCode Go). No second key is required for the subscription route.
 OpenAI search uses Responses `web_search`. With an explicit OpenAI API key it
 uses the public API and **separate API billing**. Without that key it tries the
 ChatGPT Codex backend, whose hosted search availability depends on the backend,
@@ -154,13 +160,28 @@ operation's outcome unknown.
   a 0.1 binary against 0.2 state: it does not understand initiative budgets or
   the new job store. A rollback requires a matching backup of the state. Status
   `completed` means the turn finished; it is not independent proof of task success.
-- Working context is compacted at model-call boundaries when its estimated size,
-  including prompts and tool schemas, exceeds 75% of `context_tokens` (default
-  32768). The estimate uses serialized bytes / 3, not a provider tokenizer;
-  configure the budget for the selected model. Message count and elapsed days
+- Working context is compacted at model-call boundaries when its size,
+  including prompts and tool schemas, exceeds 95% of `context_tokens` (default
+  272000 for Astra: the threshold is 258400). The most recent provider input/output
+  usage anchors the count, plus estimates for new messages and changed prefix
+  overhead. Without usage, Alina estimates visible serialized bytes / 3;
+  opaque encrypted reasoning and internal metadata are not tokenized as text.
+  This is not an exact preflight tokenizer. Configure the budget for the selected
+  model. Message count and elapsed days
   do not trigger compaction. Checkpoints preserve objectives, verified results,
   uncertainty and next actions. Whole tool exchanges stay together. The shared
   SQLite archive and earlier JSON transcripts remain intact on success or failure.
+- Context snapshots (time, current source, intentions and recalled notes) are
+  appended before each new user message. Earlier snapshots stay unchanged until
+  compaction, allowing the previous request prefix to be reused by the provider.
+  They are not inserted into the event archive as new observations. Stable
+  instructions include the host, soul and configured permissions.
+- Responses usage is saved with each response and aggregated in job `usage` for
+  the agent loop and checkpoints. Hosted search is a separate request and is not
+  included in this aggregate. The counters describe tokens, not Plus/Pro quota
+  percentages. Model HTTP timeout is 600 seconds; auth, Telegram and other HTTP
+  clients retain their separate timeout. Job cancellation and job time budgets
+  still take precedence.
 - Model results are displayed when a turn completes; the client polls activity
   and approval state. The Responses adapter parses SSE, but token-by-token chat
   display is not implemented. Telegram response delivery is best-effort retry;
@@ -225,6 +246,11 @@ A source citation establishes provenance, not that an interpretation is correct.
 last-valid fallback and revision history. A reflection uses the `soul` tool with
 its exact previous text and a reason; a concurrent file edit prevents replacement.
 It can finish naturally without changing the soul or creating any notes.
+Internal writing is English: soul, notes, intentions, procedures, checkpoints,
+search notes and reflections. User-facing model replies use the user's language;
+original messages and evidence retain their original language. Version 0.4
+translates the untouched Italian seed soul with a revision record; personal edits
+are preserved and the reflection prompt guides faithful translation when needed.
 
 Dream defaults to `0 3 * * *`, with one catch-up after missed executions. It uses
 **the same agent loop and imprinting as chat**, with memory, scheduling and soul

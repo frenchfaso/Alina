@@ -191,7 +191,7 @@ func (m *Memory) importTranscripts() error {
 			role, text := messageContent(msg)
 			text = m.redact(text)
 			// Synthetic checkpoints are a lossy view, never a new event.
-			if strings.HasPrefix(text, "Continuation checkpoint,") {
+			if msg.Runtime || strings.HasPrefix(text, "Continuation checkpoint,") {
 				continue
 			}
 			fingerprint := contentID(source + "\n" + role + "\n" + text)

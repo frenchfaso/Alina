@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type ToolCall struct {
@@ -25,6 +26,9 @@ type Message struct {
 	CallID    string            `json:"call_id,omitempty"`
 	Raw       []json.RawMessage `json:"raw,omitempty"`
 	Reasoning string            `json:"reasoning,omitempty"`
+	Runtime   bool              `json:"runtime,omitempty"`
+	Usage     *TokenUsage       `json:"usage,omitempty"`
+	Context   *contextSample    `json:"context_sample,omitempty"`
 }
 type ToolSpec struct {
 	Name        string
@@ -112,7 +116,7 @@ func (p *Provider) chat(ctx context.Context, session string, msg []Message, tool
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	e := requestJSON(ctx, p.Client, "POST", p.endpoint("https://opencode.ai/zen/go/v1/chat/completions"), body, p.headers(p.Config.OpenCodeKey, session), &r)
+	e := requestJSON(ctx, p.modelClient(), "POST", p.endpoint("https://opencode.ai/zen/go/v1/chat/completions"), body, p.headers(p.Config.OpenCodeKey, session), &r)
 	if e != nil {
 		return Message{}, e
 	}
@@ -176,7 +180,7 @@ func (p *Provider) anthropic(ctx context.Context, session string, msg []Message,
 	h := p.headers(p.Config.OpenCodeKey, session)
 	h["x-api-key"] = p.Config.OpenCodeKey
 	h["anthropic-version"] = "2023-06-01"
-	if e := requestJSON(ctx, p.Client, "POST", p.endpoint("https://opencode.ai/zen/go/v1/messages"), body, h, &r); e != nil {
+	if e := requestJSON(ctx, p.modelClient(), "POST", p.endpoint("https://opencode.ai/zen/go/v1/messages"), body, h, &r); e != nil {
 		return Message{}, e
 	}
 	out := Message{Role: "assistant", Raw: r.Content}
@@ -229,12 +233,24 @@ func responseInput(msg []Message) (string, []any) {
 type responseBody struct {
 	Output []json.RawMessage `json:"output"`
 	Status string            `json:"status"`
-	Error  *struct {
+	Usage  *struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+		InputDetails struct {
+			CachedTokens     int `json:"cached_tokens"`
+			CacheWriteTokens int `json:"cache_write_tokens"`
+		} `json:"input_tokens_details"`
+		OutputDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"output_tokens_details"`
+	} `json:"usage"`
+	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
 func (p *Provider) responses(ctx context.Context, endpoint, model, key, account, session string, msg []Message, tools []ToolSpec, search bool, delta func(string)) (Message, error) {
+	started := time.Now()
 	system, input := responseInput(msg)
 	ts := []any{}
 	for _, t := range tools {
@@ -244,6 +260,15 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		ts = append(ts, map[string]any{"type": "web_search"})
 	}
 	body := map[string]any{"model": model, "instructions": system, "input": input, "store": false, "stream": true, "tools": ts}
+	if model == defaultModel {
+		body["reasoning"] = map[string]any{"effort": p.reasoningEffort(ctx)}
+		verbosity := p.Config.Verbosity
+		if verbosity == "" {
+			verbosity = "low"
+		}
+		body["text"] = map[string]any{"verbosity": verbosity}
+		body["prompt_cache_key"] = "alina-" + session
+	}
 	if account != "" {
 		body["include"] = []string{"reasoning.encrypted_content"}
 		body["parallel_tool_calls"] = false
@@ -270,7 +295,7 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		req.Header.Set("originator", "alina")
 		req.Header.Set("session-id", session)
 	}
-	r, e := p.Client.Do(req)
+	r, e := p.modelClient().Do(req)
 	if e != nil {
 		if ctx.Err() != nil {
 			return Message{}, ctx.Err()
@@ -323,7 +348,11 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 	if result.Error != nil || result.Status == "failed" || result.Status == "incomplete" {
 		return Message{}, errors.New("model response failed or incomplete")
 	}
-	return parseResponse(result.Output)
+	out, err := parseResponse(result.Output)
+	if u := result.Usage; u != nil {
+		out.Usage = &TokenUsage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedTokens: u.InputDetails.CachedTokens, CacheWriteTokens: u.InputDetails.CacheWriteTokens, ReasoningTokens: u.OutputDetails.ReasoningTokens, DurationMS: time.Since(started).Milliseconds()}
+	}
+	return out, err
 }
 func parseResponse(raw []json.RawMessage) (Message, error) {
 	out := Message{Role: "assistant", Raw: raw}
@@ -363,7 +392,7 @@ func parseResponse(raw []json.RawMessage) (Message, error) {
 		}
 	}
 	if len(sources) > 0 {
-		out.Content += "\n\nFonti:\n" + strings.Join(sources, "\n")
+		out.Content += "\n\nSources:\n" + strings.Join(sources, "\n")
 	}
 	return out, nil
 }

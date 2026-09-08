@@ -13,25 +13,36 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.3.0-poc"
+const Version = "0.4.0-poc"
+
+// Codex ChatGPT model catalog, 2026-09-08. These are backend limits, not
+// the larger public API window. ContextTokens remains user configurable.
+const defaultModel = "gpt-6-astra"
+const astraContextTokens = 272000
+const astraMaxContextTokens = 872000
 
 type Config struct {
-	Version        int            `json:"version"`
-	Provider       string         `json:"provider"`
-	Model          string         `json:"model"`
-	OpenCodeKey    string         `json:"opencode_key,omitempty"`
-	OpenCodeAPI    string         `json:"opencode_api,omitempty"`
-	Search         SearchConfig   `json:"search"`
-	Telegram       TelegramConfig `json:"telegram"`
-	WorkDir        string         `json:"work_dir"`
-	MaxSteps       int            `json:"max_steps"`
-	ContextTokens  int            `json:"context_tokens"`
-	CommandTimeout int            `json:"command_timeout_seconds"`
-	Timezone       string         `json:"timezone"`
-	Location       string         `json:"location,omitempty"`
-	NetworkPolicy  string         `json:"network_policy"`
-	Autonomy       AutonomyConfig `json:"autonomy"`
-	Memory         MemoryConfig   `json:"memory"`
+	Version          int            `json:"version"`
+	Provider         string         `json:"provider"`
+	Model            string         `json:"model"`
+	ReasoningEffort  string         `json:"reasoning_effort"`
+	CheckpointEffort string         `json:"checkpoint_reasoning_effort"`
+	DreamEffort      string         `json:"dream_reasoning_effort"`
+	Verbosity        string         `json:"verbosity"`
+	ModelTimeout     int            `json:"model_timeout_seconds"`
+	OpenCodeKey      string         `json:"opencode_key,omitempty"`
+	OpenCodeAPI      string         `json:"opencode_api,omitempty"`
+	Search           SearchConfig   `json:"search"`
+	Telegram         TelegramConfig `json:"telegram"`
+	WorkDir          string         `json:"work_dir"`
+	MaxSteps         int            `json:"max_steps"`
+	ContextTokens    int            `json:"context_tokens"`
+	CommandTimeout   int            `json:"command_timeout_seconds"`
+	Timezone         string         `json:"timezone"`
+	Location         string         `json:"location,omitempty"`
+	NetworkPolicy    string         `json:"network_policy"`
+	Autonomy         AutonomyConfig `json:"autonomy"`
+	Memory           MemoryConfig   `json:"memory"`
 }
 type AutonomyConfig struct {
 	Enabled  bool   `json:"enabled"`
@@ -74,7 +85,15 @@ func Home() string {
 }
 func DefaultConfig() Config {
 	d, _ := os.UserHomeDir()
-	return Config{Version: 1, NetworkPolicy: "strict", Autonomy: AutonomyConfig{MaxCalls: 12, Minutes: 5, Scope: "Explore installed tools and develop useful procedures inside your personal workspace."}, Provider: "chatgpt", Model: "gpt-5.4", WorkDir: d, MaxSteps: 20, ContextTokens: 32768, CommandTimeout: 120, Timezone: "Local", Memory: MemoryConfig{Enabled: true, Dream: true, DreamCron: "0 3 * * *", CatchUp: true}, OpenCodeAPI: "chat", Search: SearchConfig{Default: "openai", OpenAIModel: "gpt-5.4"}}
+	return Config{
+		Version: 1, Provider: "chatgpt", Model: defaultModel,
+		ReasoningEffort: "medium", DreamEffort: "high", CheckpointEffort: "low", Verbosity: "low",
+		ContextTokens: astraContextTokens, ModelTimeout: 600, MaxSteps: 20, CommandTimeout: 120,
+		WorkDir: d, Timezone: "Local", NetworkPolicy: "strict", OpenCodeAPI: "chat",
+		Search:   SearchConfig{Default: "openai"},
+		Memory:   MemoryConfig{Enabled: true, Dream: true, DreamCron: "0 3 * * *", CatchUp: true},
+		Autonomy: AutonomyConfig{MaxCalls: 12, Minutes: 5, Scope: "Explore installed tools and develop useful procedures inside your personal workspace."},
+	}
 }
 func LoadConfig(dir string) (Config, error) {
 	c := DefaultConfig()
@@ -85,6 +104,17 @@ func LoadConfig(dir string) (Config, error) {
 	e = json.Unmarshal(b, &c)
 	if e != nil {
 		return c, e
+	}
+	// Migrate the retired POC default without replacing other selected models
+	// or custom context budgets. Disk changes still go through setup/save.
+	if c.Provider == "chatgpt" && c.Model == "gpt-5.4" {
+		c.Model = defaultModel
+		if c.ContextTokens == 32768 {
+			c.ContextTokens = astraContextTokens
+		}
+	}
+	if c.Search.OpenAIModel == "gpt-5.4" && c.Search.OpenAIKey == "" {
+		c.Search.OpenAIModel = ""
 	}
 	return c, c.Validate()
 }
@@ -106,6 +136,23 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Model) == "" {
 		return errors.New("model is required")
+	}
+	for _, effort := range []string{c.ReasoningEffort, c.CheckpointEffort, c.DreamEffort} {
+		if effort != "low" && effort != "medium" && effort != "high" && effort != "xhigh" && effort != "max" {
+			return errors.New("reasoning effort must be low, medium, high, xhigh or max")
+		}
+	}
+	if c.Verbosity != "low" && c.Verbosity != "medium" && c.Verbosity != "high" {
+		return errors.New("verbosity must be low, medium or high")
+	}
+	if c.ModelTimeout < 30 || c.ModelTimeout > 3600 {
+		return errors.New("model_timeout_seconds must be between 30 and 3600")
+	}
+	if c.Model == defaultModel && c.Provider == "opencode-go" && c.OpenCodeAPI != "responses" {
+		return errors.New("GPT-6 Astra tool calling requires the responses protocol")
+	}
+	if c.Provider == "chatgpt" && c.Model == defaultModel && c.ContextTokens > astraMaxContextTokens {
+		return fmt.Errorf("ChatGPT Astra context_tokens must not exceed %d", astraMaxContextTokens)
 	}
 	if c.OpenCodeAPI != "chat" && c.OpenCodeAPI != "responses" && c.OpenCodeAPI != "messages" {
 		return errors.New("invalid opencode_api")

@@ -30,7 +30,7 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		fingerprint := contentID(role + "\n" + text)
 		n := occurrences[fingerprint]
 		occurrences[fingerprint]++
-		if history[i].ArchiveID != "" || strings.HasPrefix(text, "Continuation checkpoint,") {
+		if history[i].Runtime || history[i].ArchiveID != "" || strings.HasPrefix(text, "Continuation checkpoint,") {
 			continue
 		}
 		err := e.Memory.DB.QueryRowContext(j.ctx, `SELECT id FROM journal WHERE session=? AND content=? AND (role=? OR (?='tool:result' AND role LIKE 'tool:%')) ORDER BY rowid LIMIT 1 OFFSET ?`, j.Session, text, role, role, n).Scan(&history[i].ArchiveID)
@@ -62,8 +62,10 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		}
 	}
 	appendMessage := func(msg Message) error {
-		if err := e.Memory.recordMessage(j.ctx, time.Now(), Job{Session: j.Session, ID: j.ID, Kind: j.Kind}, &msg); err != nil {
-			return err
+		if !msg.Runtime {
+			if err := e.Memory.recordMessage(j.ctx, time.Now(), Job{Session: j.Session, ID: j.ID, Kind: j.Kind}, &msg); err != nil {
+				return err
+			}
 		}
 		if msg.Role == "tool" && len(msg.Content) > 48<<10 {
 			msg.Content = truncate(msg.Content, 48<<10) + "\nFull recorded result: memory read part=" + msg.ArchiveID
@@ -80,21 +82,22 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 	if len(cue) > 0 {
 		input = cue[0]
 	}
-	if err := appendMessage(Message{Role: "user", Content: input}); err != nil {
-		return "", err
-	}
 	prompt, err := e.prompt(j.ctx)
 	if err != nil {
 		return "", err
 	}
-	prompt += "\nCurrent source: " + j.Session + "; reply owner: " + j.Owner + "; activity: " + j.Kind + ".\n"
-	context, err := e.Memory.RelevantContext(j.ctx, time.Now(), "", j.Session)
+	context, err := e.runtimeContext(j)
 	if err != nil {
 		return "", err
 	}
 	prefix := []Message{{Role: "system", Content: prompt}}
-	if context != "" {
-		prefix = append(prefix, Message{Role: "user", Content: context})
+	// Append changing context instead of rewriting the prefix on every turn.
+	// Runtime snapshots are working context, not new observations in memory.
+	if err = appendMessage(Message{Role: "user", Content: context, Runtime: true}); err != nil {
+		return "", err
+	}
+	if err = appendMessage(Message{Role: "user", Content: input}); err != nil {
+		return "", err
 	}
 	specs, maxSteps := toolSpecs(), e.Config.MaxSteps
 	if j.Kind == "dream" {
@@ -113,6 +116,9 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		msg, err := (jobModel{e: e, j: j}).Complete(j.ctx, j.Session, append(append([]Message{}, prefix...), history...), specs, nil)
 		if err != nil {
 			return "", err
+		}
+		if msg.Usage != nil {
+			msg.Context = &contextSample{Model: e.Config.Model, InputTokens: msg.Usage.InputTokens, OutputTokens: msg.Usage.OutputTokens, PrefixTokens: estimatedTokens(prefix) + estimatedTokens(specs)}
 		}
 		if len(msg.Calls) > 8 {
 			return "", errors.New("model requested more than eight tools in one step")
