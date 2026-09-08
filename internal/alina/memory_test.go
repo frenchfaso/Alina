@@ -9,42 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
 
-type dreamModel struct {
-	mu      sync.Mutex
-	calls   int
-	invalid bool
-}
-
-func (m *dreamModel) Complete(ctx context.Context, session string, msg []Message, tools []ToolSpec, delta func(string)) (Message, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.calls++
-	if len(tools) > 0 {
-		return Message{}, fmt.Errorf("dream received tools")
-	}
-	if strings.HasPrefix(session, "dream-soul-") {
-		return Message{Role: "assistant", Content: `{"soul":"# Alina\n\nColtivo curiosità. Preferisco verificare i risultati e imparare dagli errori.","reason":"Ho imparato a verificare gli esiti."}`}, nil
-	}
-	var entries []MemoryEntry
-	_, records, _ := strings.Cut(msg[len(msg)-1].Content, "\n")
-	if err := json.Unmarshal([]byte(records), &entries); err != nil {
-		return Message{}, err
-	}
-	if len(entries) == 0 {
-		return Message{}, fmt.Errorf("no records")
-	}
-	source := entries[0].ID
-	if m.invalid {
-		source = "fabricated"
-	}
-	summary := DaySummary{Summary: entries[0].Content, Memories: []Nucleus{{Text: entries[0].Content, Sources: []string{source}}}}
-	return Message{Role: "assistant", Content: jsonText(summary)}, nil
-}
 func memoryFixture(t *testing.T) (*Memory, time.Time) {
 	t.Helper()
 	c := DefaultConfig()
@@ -57,73 +25,65 @@ func memoryFixture(t *testing.T) (*Memory, time.Time) {
 	t.Cleanup(func() { m.DB.Close() })
 	return m, time.Date(2026, 9, 8, 3, 0, 0, 0, m.loc)
 }
-func TestDreamMemoryLifecycleAndIdempotency(t *testing.T) {
-	m, now := memoryFixture(t)
-	ctx := context.Background()
+func TestDreamReflectsWithoutAgeTiers(t *testing.T) {
+	calls := 0
+	e := newTestEngine(t, modelFunc(func(_ context.Context, _ string, msg []Message, tools []ToolSpec, _ func(string)) (Message, error) {
+		calls++
+		if len(tools) != 3 || !strings.Contains(msg[0].Content, systemPrompt) {
+			t.Fatal("reflection did not use shared prompt/tools")
+		}
+		return Message{Role: "assistant", Content: "Nothing needs changing."}, nil
+	}))
+	m := e.Memory
+	now := time.Now()
+	ctx := e.ctx
 	for d := 9; d >= 0; d-- {
 		if err := m.Record(ctx, now.AddDate(0, 0, -d), "local", fmt.Sprintf("job%d", d), "user", fmt.Sprintf("DAY_%d: preferisco strumenti semplici", d)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	model := &dreamModel{}
-	if _, err := m.Dream(ctx, model, now); err != nil {
+	j := &runningJob{Job: Job{ID: "dream-test", Session: "reflection", Kind: "dream", Owner: "system"}, ctx: ctx}
+	if _, err := e.dream(j, now); err != nil {
 		t.Fatal(err)
 	}
 	var count int
-	if err := m.DB.QueryRow("SELECT count(*) FROM days WHERE archived=1").Scan(&count); err != nil || count != 2 {
-		t.Fatal("wrong archive cutoff", count, err)
+	if err := m.DB.QueryRow("SELECT count(*) FROM journal WHERE role='user'").Scan(&count); err != nil || count != 10 {
+		t.Fatal("archive changed", count, err)
 	}
-	if err := m.DB.QueryRow("SELECT count(*) FROM journal WHERE day<?", now.AddDate(0, 0, -7).Format("2006-01-02")).Scan(&count); err != nil || count != 0 {
-		t.Fatal("old detail not compacted", count, err)
+	if err := m.DB.QueryRow("SELECT count(*) FROM days").Scan(&count); err != nil || count != 0 {
+		t.Fatal("calendar compaction returned", count, err)
 	}
-	week, err := m.Read(ctx, "week", now)
-	if err != nil || strings.Contains(week, "DAY_8") || !strings.Contains(week, "DAY_7") || strings.Contains(week, "DAY_0") {
-		t.Fatal(week, err)
-	}
-	today, err := m.Read(ctx, "today", now)
-	if err != nil || !strings.Contains(today, "DAY_0") {
-		t.Fatal(today, err)
+	if err := m.DB.QueryRow("SELECT count(*) FROM soul_versions").Scan(&count); err != nil || count != 0 {
+		t.Fatal("no-op reflection rewrote soul", count, err)
 	}
 	r, err := m.Recall(ctx, "DAY_9")
-	if err != nil || len(r.Hits) == 0 || r.Hits[0].Day != now.AddDate(0, 0, -9).Format("2006-01-02") {
+	if err != nil || len(r.Hits) == 0 || !strings.Contains(r.Hits[0].Text, "DAY_9") {
 		t.Fatal(r, err)
 	}
-	if err = m.DB.QueryRow("SELECT count(*) FROM soul_versions").Scan(&count); err != nil || count != 1 {
-		t.Fatal(count, err)
-	}
-	calls := model.calls
-	if _, err = m.Dream(ctx, model, now); err != nil {
+	if _, err = e.dream(j, now); err != nil {
 		t.Fatal(err)
 	}
-	if model.calls != calls {
-		t.Fatal("repeated dream replayed model calls")
-	}
-	if err = m.DB.QueryRow("SELECT count(*) FROM memories").Scan(&count); err != nil || count != 2 {
-		t.Fatal("duplicate memories", count, err)
+	if calls != 1 {
+		t.Fatal("reflection replayed itself", calls)
 	}
 	info, _ := os.Stat(filepath.Join(m.Dir, "memory", "memory.sqlite"))
 	if info.Mode().Perm() != 0600 {
 		t.Fatal("database is not private")
 	}
 }
-func TestDreamRejectsInventedSourcesAndKeepsOriginal(t *testing.T) {
+func TestNoteRejectsInventedSourcesAndKeepsOriginal(t *testing.T) {
 	m, now := memoryFixture(t)
 	ctx := context.Background()
-	if err := m.Record(ctx, now.AddDate(0, 0, -8), "test", "job", "user", "Un fatto importante"); err != nil {
+	if err := m.Record(ctx, now.AddDate(0, 0, -90), "test", "job", "user", "Un fatto importante"); err != nil {
 		t.Fatal(err)
 	}
-	old, _ := os.ReadFile(filepath.Join(m.Dir, "soul.md"))
-	if _, err := m.Dream(ctx, &dreamModel{invalid: true}, now); err == nil {
-		t.Fatal("fabricated source accepted")
+	if _, err := m.Note(ctx, now, "test", "job", "lesson", "invented", "", []string{"fabricated"}); err == nil {
+		t.Fatal("fabricated evidence accepted")
 	}
 	var count int
 	m.DB.QueryRow("SELECT count(*) FROM journal").Scan(&count)
 	if count != 1 {
-		t.Fatal("original lost")
-	}
-	after, _ := os.ReadFile(filepath.Join(m.Dir, "soul.md"))
-	if string(old) != string(after) {
-		t.Fatal("failed dream changed soul")
+		t.Fatal("archive changed")
 	}
 }
 func TestMemorySemanticRetrievalAndModelChange(t *testing.T) {
@@ -166,22 +126,23 @@ func TestMemorySemanticRetrievalAndModelChange(t *testing.T) {
 		t.Fatal(n, err)
 	}
 }
-func TestMemoryRedactionAndMidnightRollover(t *testing.T) {
+func TestMemoryRedactionAndDateViews(t *testing.T) {
 	m, now := memoryFixture(t)
+	ctx := context.Background()
 	m.Config.Search.TavilyKey = "private-key-fixture"
-	if err := m.Record(context.Background(), now, "local", "j", "user", "private-key-fixture and Bearer abc.def.ghi"); err != nil {
+	if err := m.Record(ctx, now, "local", "j", "user", "private-key-fixture and Bearer abc.def.ghi"); err != nil {
 		t.Fatal(err)
 	}
-	text, _ := os.ReadFile(filepath.Join(m.Dir, "memory", "today.md"))
-	if strings.Contains(string(text), "private-key-fixture") || strings.Contains(string(text), "abc.def.ghi") {
-		t.Fatal("key persisted in memory")
+	text, err := m.Read(ctx, "today", now)
+	if err != nil || strings.Contains(text, "private-key-fixture") || strings.Contains(text, "abc.def.ghi") || !strings.Contains(text, "[redacted]") {
+		t.Fatal(text, err)
 	}
-	if err := m.Render(now.AddDate(0, 0, 1)); err != nil {
+	if err = m.Render(now.AddDate(0, 0, 40)); err != nil {
 		t.Fatal(err)
 	}
-	text, _ = os.ReadFile(filepath.Join(m.Dir, "memory", "today.md"))
-	if strings.Contains(string(text), "[redacted]") {
-		t.Fatal("yesterday leaked into today")
+	text, err = m.Read(ctx, now.In(m.loc).Format("2006-01-02"), now.AddDate(0, 0, 40))
+	if err != nil || !strings.Contains(text, "[redacted]") {
+		t.Fatal("old event disappeared", text, err)
 	}
 }
 func TestSchedulerCatchupDedupeAndDST(t *testing.T) {
@@ -251,12 +212,16 @@ func TestTelegramPairingRequiresPrivateCode(t *testing.T) {
 }
 
 func TestIdleDreamDoesNotRewriteSoul(t *testing.T) {
-	m, now := memoryFixture(t)
-	model := &dreamModel{}
-	if _, err := m.Dream(context.Background(), model, now); err != nil {
+	calls := 0
+	e := newTestEngine(t, modelFunc(func(context.Context, string, []Message, []ToolSpec, func(string)) (Message, error) {
+		calls++
+		return Message{}, nil
+	}))
+	j := &runningJob{Job: Job{Kind: "dream", Session: "idle", ID: "idle", Owner: "system"}, ctx: e.ctx}
+	if _, err := e.dream(j, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if model.calls != 0 {
+	if calls != 0 {
 		t.Fatal("idle dream spent model calls")
 	}
 }

@@ -18,6 +18,7 @@ type ToolCall struct {
 	Arguments string `json:"arguments"`
 }
 type Message struct {
+	ArchiveID string            `json:"archive_id,omitempty"`
 	Role      string            `json:"role"`
 	Content   string            `json:"content"`
 	Calls     []ToolCall        `json:"calls,omitempty"`

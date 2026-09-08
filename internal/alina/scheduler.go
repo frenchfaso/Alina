@@ -84,7 +84,7 @@ func NewScheduler(dir string, e *Engine) (*Scheduler, error) {
 		if err != nil {
 			return nil, err
 		}
-		dream = ScheduledTask{ID: "dream", Name: "Dream", Cron: c.Memory.DreamCron, Timezone: c.Timezone, Prompt: "Consolidate memory and reflect on soul.", Owner: "system", Kind: "dream", Next: schedule.Next(time.Now())}
+		dream = ScheduledTask{ID: "dream", Name: "Dream", Cron: c.Memory.DreamCron, Timezone: c.Timezone, Prompt: "Reflect on experience, methods and personal intentions.", Owner: "system", Kind: "dream", Next: schedule.Next(time.Now())}
 	}
 	dream.Enabled = c.Memory.Enabled && c.Memory.Dream
 	dream.CatchUp = c.Memory.CatchUp

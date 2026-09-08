@@ -96,7 +96,7 @@ func TestContinuationCompactsAndKeepsTranscript(t *testing.T) {
 	e := newTestEngine(t, model)
 	history := []Message{{Role: "user", Content: marker}}
 	for i := 0; i < 240; i++ {
-		history = append(history, Message{Role: "user", Content: fmt.Sprintf("old %d", i)}, Message{Role: "assistant", Content: "done"})
+		history = append(history, Message{Role: "user", Content: fmt.Sprintf("old %d %s", i, strings.Repeat("context ", 100))}, Message{Role: "assistant", Content: "done"})
 	}
 	path := filepath.Join(e.Dir, "sessions", "long.json")
 	if err := writeJSON(path, history); err != nil {
@@ -335,41 +335,40 @@ func TestDeclaredNetworkAndInstallClassification(t *testing.T) {
 func TestDreamRetrievesEvidenceBeforeRevisingSoul(t *testing.T) {
 	e := newTestEngine(t, &scriptedModel{})
 	now := time.Now()
-	if err := e.Memory.Record(e.ctx, now.AddDate(0, 0, -9), "experience", "j", "user", "unique_old: the verification failed, revise the procedure"); err != nil {
+	if err := e.Memory.Record(e.ctx, now.AddDate(0, 0, -90), "experience", "j", "user", "unique_old: the verification failed, revise the procedure"); err != nil {
 		t.Fatal(err)
 	}
-	consolidator := &dreamModel{}
-	looked := false
-	model := modelFunc(func(ctx context.Context, s string, msg []Message, tools []ToolSpec, d func(string)) (Message, error) {
-		if !strings.HasPrefix(s, "dream-soul-") {
-			return consolidator.Complete(ctx, s, msg, tools, d)
-		}
-		if len(tools) == 0 {
-			return Message{}, errors.New("reflection has no memory access")
-		}
-		if msg[len(msg)-1].Role != "tool" {
+	old, _ := e.Memory.Soul()
+	step := 0
+	e.Model = modelFunc(func(ctx context.Context, s string, msg []Message, tools []ToolSpec, d func(string)) (Message, error) {
+		step++
+		switch step {
+		case 1:
 			return Message{Role: "assistant", Calls: []ToolCall{{ID: "lookup", Name: "memory", Arguments: `{"action":"search","query":"unique_old"}`}}}, nil
+		case 2:
+			if !strings.Contains(msg[len(msg)-1].Content, "verification failed") {
+				return Message{}, errors.New("evidence missing")
+			}
+			return Message{Role: "assistant", Calls: []ToolCall{{ID: "soul", Name: "soul", Arguments: jsonText(map[string]string{"previous": old, "text": "# Alina\nPreferisco verificare le mie interpretazioni.", "reason": "Una procedura tentata non era riuscita."})}}}, nil
+		default:
+			return Message{Role: "assistant", Content: "Ho riconsiderato il mio metodo."}, nil
 		}
-		if !strings.Contains(msg[len(msg)-1].Content, "verification failed") {
-			return Message{}, errors.New("older evidence was not retrieved")
-		}
-		looked = true
-		return Message{Role: "assistant", Content: `{"soul":"# Alina\nPreferisco verificare le mie interpretazioni.","reason":"Una procedura tentata non era riuscita."}`}, nil
 	})
 	j := &runningJob{Job: Job{Kind: "dream", Owner: "system", Session: "dream", ID: "reflection"}, ctx: e.ctx}
-	if _, err := e.Memory.Dream(e.ctx, model, now, func(call ToolCall) (string, error) { return e.reflectionTool(j, call) }); err != nil {
+	if _, err := e.dream(j, now); err != nil {
 		t.Fatal(err)
 	}
-	if !looked {
-		t.Fatal("no evidence check")
+	if step != 3 {
+		t.Fatal("shared tool loop missing", step)
 	}
-	var id string
-	if err := e.Memory.DB.QueryRow("SELECT id FROM evidence LIMIT 1").Scan(&id); err != nil {
-		t.Fatal(err)
+	soul, _ := e.Memory.Soul()
+	if !strings.Contains(soul, "interpretazioni") {
+		t.Fatal(soul)
 	}
-	text, err := e.Memory.Read(e.ctx, id, now)
-	if err != nil || !strings.Contains(text, "verification failed") {
-		t.Fatal("cited evidence was lost", text, err)
+	var count int
+	e.Memory.DB.QueryRow("SELECT count(*) FROM journal WHERE session='experience'").Scan(&count)
+	if count != 1 {
+		t.Fatal("original lost")
 	}
 }
 
@@ -379,7 +378,7 @@ func TestInvalidCheckpointRetainsOriginalSession(t *testing.T) {
 	}))
 	history := []Message{}
 	for i := 0; i < 101; i++ {
-		history = append(history, Message{Role: "user", Content: fmt.Sprint(i)})
+		history = append(history, Message{Role: "user", Content: fmt.Sprint(i) + strings.Repeat("context ", 150)})
 	}
 	path := filepath.Join(e.Dir, "sessions", "unchanged.json")
 	writeJSON(path, history)

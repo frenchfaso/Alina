@@ -154,12 +154,13 @@ operation's outcome unknown.
   a 0.1 binary against 0.2 state: it does not understand initiative budgets or
   the new job store. A rollback requires a matching backup of the state. Status
   `completed` means the turn finished; it is not independent proof of task success.
-- Session history is compacted at model-call boundaries when it exceeds 100
-  messages or 128 KiB. A checkpoint preserves the objective, constraints, verified
-  outcomes, uncertainty and next action. Complete earlier transcripts stay under
-  `sessions/SESSION/` and can be inspected through the shell. Failed checkpoints
-  leave the original session intact. Tool exchanges are kept together. Session
-  JSON writes are bounded by compaction; archives have no automatic expiry yet.
+- Working context is compacted at model-call boundaries when its estimated size,
+  including prompts and tool schemas, exceeds 75% of `context_tokens` (default
+  32768). The estimate uses serialized bytes / 3, not a provider tokenizer;
+  configure the budget for the selected model. Message count and elapsed days
+  do not trigger compaction. Checkpoints preserve objectives, verified results,
+  uncertainty and next actions. Whole tool exchanges stay together. The shared
+  SQLite archive and earlier JSON transcripts remain intact on success or failure.
 - Model results are displayed when a turn completes; the client polls activity
   and approval state. The Responses adapter parses SSE, but token-by-token chat
   display is not implemented. Telegram response delivery is best-effort retry;
@@ -186,92 +187,88 @@ POC does not change Android battery settings or other services.
 On Linux/macOS/BSD, run `alina serve` under the native user-service supervisor.
 Alina does not fork itself into the background or require root.
 
-## Memory, soul and dream
+## Shared memory, attention and reflection — 0.3
 
-Setup enables memory and configures the timezone (IANA name such as
-`Europe/Rome`, or the process-local timezone), optional location, dream schedule
-and optional embedding endpoint. Location is entered by the user; Alina does
-not infer it from IP or acquire GPS data.
+Alina has one archive across CLI, Telegram, scheduled work and reflection. Source,
+job, role and timestamp are provenance and reply-routing information, not recall
+boundaries. Each working conversation still orders its tool exchanges and keeps
+its immediate task context; a bounded excerpt from other conversations helps
+continuity across channels. `/new` changes working context without erasing memory.
+The POC remains a personal, single-owner service, not a multi-tenant memory store.
 
-- `memory/today.md`: detailed current-day user messages, assistant text, tool
-  requests/results and explicit notes. No hidden model reasoning is recorded.
-- `memory/week.md`: one Markdown view of the preceding seven calendar dates,
-  containing important daily summaries. Unprocessed days are explicitly marked.
-- `memory/memory.sqlite`: journal, consolidated days, typed memories and
-  corrections, cited evidence, embeddings, soul versions, intentions, daily
-  exploration usage and job history.
-- `soul.md`: Alina's short personal orientation, up to 180 words / 1600 bytes.
-  An invalid/missing soul falls back to the last valid orientation (or the initial
-  one); the original file is left intact and the model receives a diagnostic.
-  You can edit it while the service is stopped. Dream saves previous and proposed
-  versions plus its reason in `soul_versions` before replacing the file.
+There are three independent concerns:
 
-The Markdown memory files are generated views; editing them does not edit the
-source records. Diary writes append to SQLite immediately. The daemon refreshes
-changed Markdown views every 15 seconds and at shutdown; rendering streams rows
-instead of loading an entire day in RAM. Normal recording does not rewrite both
-views for every tool event.
+- **Archive:** SQLite records messages, tool requests/results and notes immediately.
+  FTS5 searches recorded events and notes across all dates and sources. Read by ID,
+  date, `archive`, or `after-N` (SQLite event sequence); long reads return
+  `next_offset`. Search returns excerpts with provenance; read the source for detail.
+  Events are not rewritten or deleted by age, dream or context compaction.
+- **Attention:** a bounded selection of notes about facts, preferences, lessons and
+  hypotheses. Unpinned attention halves every 30 days since creation or deliberate
+  recall. This is a tunable design assumption in code, not a biological model or
+  expiry date. Recent notes take precedence as new material competes for the
+  6000-byte focus budget. Up to 3000 bytes including overhead can be pinned.
+  `memory read ID`, `focus`, or re-saving the identical current note renews attention.
+  Merely searching or injecting a note into the prompt does not reinforce it.
+  Attention is not confidence: corrections always supersede older notes.
+- **Working context:** the finite material for the current model request. Its
+  automatic checkpointing responds to context pressure, independently of dream.
+  Nothing is promoted to permanent belief merely because a checkpoint mentions it.
 
-Memory search covers the current journal, weekly summaries, archived nuclei and
-explicit notes. Read by date or by a returned memory/source ID; long reads return
-`text` and `next_offset` and can be continued with `offset`. Notes may be `fact`,
-`preference`, `lesson` or `hypothesis`. `supersedes` links an explicit correction
-and hides superseded records (and nuclei citing them) from search, while preserving
-the old evidence for inspection. Legacy summaries may still mention old beliefs;
-corrections are supplied separately and must take precedence.
+`memory/focus.md` is a generated view of attention, not an independent source of
+truth. Edit notes through tools; `note` supports optional evidence `sources` and
+an explicit `supersedes` ID. Unknown sources are rejected. Superseded records and
+notes directly citing them leave ordinary retrieval, but remain readable by ID.
+A source citation establishes provenance, not that an interpretation is correct.
 
-The prompt includes a bounded selection of explicit notes, matching memories and
-recent activity from other sessions. It does not insert the entire week/day or
-repeat the current session's full diary. Prompt and generated checkpoints remain
-fallible model context; source access is available when precision matters.
+`soul.md` remains a short personal orientation (180 words / 1600 bytes), with a
+last-valid fallback and revision history. A reflection uses the `soul` tool with
+its exact previous text and a reason; a concurrent file edit prevents replacement.
+It can finish naturally without changing the soul or creating any notes.
 
-Dream defaults to `0 3 * * *`, with a single catch-up after missed executions.
-It consolidates closed days in bounded chunks, validates source IDs, then archives
-dates **older than today minus seven calendar days**. Archiving inserts nuclei
-and source metadata and removes that day's detailed journal in one SQLite
-transaction. Existing days and chunks are reused after interruption. Invalid
-summaries leave their originals intact. A later soul/embedding failure does not
-roll back already completed consolidation or archive transactions.
+Dream defaults to `0 3 * * *`, with one catch-up after missed executions. It uses
+**the same agent loop and imprinting as chat**, with memory, scheduling and soul
+revision tools. It has six iterations, twelve total model calls including any
+checkpoints, and ten minutes. It does not summarize days, archive old records,
+prepare embeddings or execute shell commands. A successful run advances its
+observed-event cursor; messages arriving during reflection remain eligible next
+time. No new events means no model call, except for active personal intentions
+under enabled autonomy (at most once successfully per date). Personal exploration
+still runs in separately budgeted one-shot initiatives.
 
-The same configured model handles consolidation and reflection. Consolidation has
-no tools; reflection can search/read memory, record lessons/corrections/intentions
-and schedule a personal wake-up when autonomy is enabled. It cannot run shell
-experiments directly: those run as separately budgeted initiatives. Reflection
-has at most six model calls within dream's total 32 calls / ten minutes. It may
-leave the soul unchanged. Idle reflection runs only with recent experience or
-active intentions under enabled autonomy, and at most once successfully per date.
-Original text for sources cited by individual nuclei is retained for verification;
-other archived sources expose metadata, with raw session transcripts available
-separately. Merely validating source IDs does not establish the truth of a lesson.
+Embeddings are optional. `alina memory reindex` indexes up to 100 current notes
+per invocation, including legacy nuclei, through the configured endpoint. Only
+notes and explicit search queries are sent there; ordinary prompt preparation
+makes no embedding call. Exact cosine search is linear in indexed notes; the full
+raw archive uses FTS5. Endpoint/model changes require reindexing; incompatible
+vectors are never compared. Network failures fall back to text search.
 
-Embeddings are optional and use an explicitly configured OpenAI-compatible
-endpoint (HTTPS, or HTTP on loopback). Only nuclei and search queries (including queries used to select prompt context) are sent to
-that endpoint. OpenAI API embeddings have separate billing from ChatGPT; a local
-server can be configured instead. Vectors live in SQLite and Go computes exact
-cosine similarity with a normalized text relevance contribution. This avoids a native
-vector extension for the POC, but search is linear in archive size. Different
-endpoint/model identities are never compared; reindex after changing them.
-Dimension mismatches are ignored. Without embeddings or after provider failure,
-results clearly report text search. Recent journal and explicit notes currently
-use text matching; semantic vectors apply to archived nuclei. Dream indexes up to 100 pending nuclei.
+Migration is additive. Old notes, nuclei, summaries, cited evidence and original
+JSON files are retained. Old working transcripts and checkpoint files are imported
+into shared search without rewriting them. Known matching events keep their dates;
+otherwise imported events explicitly have no known timestamp. `today` and `week`
+remain read aliases for date views, without lifecycle transitions. Old Markdown
+views from 0.2 are retained snapshots and are no longer refreshed.
 
 ```sh
 alina dream
-alina memory read today
-alina memory read week
+alina memory read focus
+alina memory read recent
+alina memory read archive
 alina memory read soul
 alina memory read 2026-09-01
-alina memory read 2026-09-01 16000  # or next_offset from the previous page
+alina memory read SOURCE_ID 16000  # use the returned next_offset
 alina memory search "What did we decide about backups?"
+alina memory focus NOTE_ID
+alina memory focus NOTE_ID pin
+alina memory focus NOTE_ID unpin
 alina memory reindex
 ```
 
-All storage is private plaintext. Known configured keys and common token patterns
-are redacted in memory, but this cannot recognize every possible secret. Ordinary
-job/session logs are separate and have no automatic retention policy yet; memory
-consolidation is not a complete data-erasure operation. Source metadata points to
-the original session/job, while the archive intentionally omits old raw journal
-content. Corrections preserve old records and explicitly link their replacement.
+Storage remains private plaintext. Recognized credentials are redacted in the
+memory archive; job and working-transcript files retain their existing behavior.
+No automatic expiry or disk quota is imposed. Keep a state backup before upgrading:
+older binaries do not understand the new note schema and must not use 0.3 state.
 
 ## Portable recurring tasks
 

@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -119,7 +120,7 @@ func (m *Memory) Reindex(ctx context.Context, limit int) (int, error) {
 		return 0, nil
 	}
 	space := m.embeddingSpace()
-	rows, err := m.DB.QueryContext(ctx, "SELECT id,text FROM memories WHERE vector IS NULL OR space<>? ORDER BY day,id LIMIT ?", space, limit)
+	rows, err := m.DB.QueryContext(ctx, `SELECT r.id,r.text FROM current_recall r LEFT JOIN note_vectors v ON v.id=r.id WHERE r.note=1 AND (v.vector IS NULL OR v.space<>?) ORDER BY r.day,r.id LIMIT ?`, space, limit)
 	if err != nil {
 		return 0, err
 	}
@@ -139,18 +140,22 @@ func (m *Memory) Reindex(ctx context.Context, limit int) (int, error) {
 		return 0, err
 	}
 	for n, i := range pending {
-		vec, er := m.embedding(ctx, i.text)
-		if er != nil {
-			return n, er
+		vec, err := m.embedding(ctx, i.text)
+		if err != nil {
+			return n, err
 		}
-		if _, er = m.DB.ExecContext(ctx, "UPDATE memories SET vector=?,space=? WHERE id=?", vectorBytes(vec), space, i.id); er != nil {
-			return n, er
+		if _, err = m.DB.ExecContext(ctx, `INSERT INTO note_vectors VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET vector=excluded.vector,space=excluded.space`, i.id, vectorBytes(vec), space); err != nil {
+			return n, err
 		}
 	}
 	return len(pending), nil
 }
 
 type MemoryHit struct {
+	Time        string  `json:"time,omitempty"`
+	Session     string  `json:"source,omitempty"`
+	Job         string  `json:"job,omitempty"`
+	Attention   float64 `json:"attention"`
 	SourceCount int     `json:"source_count,omitempty"`
 	Kind        string  `json:"kind"`
 	ID          string  `json:"id"`
@@ -171,75 +176,114 @@ func (m *Memory) Recall(ctx context.Context, query string) (MemoryResults, error
 	if strings.TrimSpace(query) == "" || len(query) > 4000 {
 		return out, errors.New("query must contain 1-4000 bytes")
 	}
-	vec, err := m.embedding(ctx, query)
-	if err != nil {
-		out.Notice = "Embedding unavailable; text search used."
-		vec = nil
-	}
-	if len(vec) > 0 {
-		out.Mode = "semantic+text"
-	}
 	terms := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' })
-	rows, err := m.DB.QueryContext(ctx, `SELECT id,day,text,sources,vector,space,kind FROM (
- SELECT id,day,text,sources,vector,space,kind FROM memories
- UNION ALL SELECT id,day,content,'[]',NULL,'',role FROM journal WHERE role NOT LIKE 'note:%'
- UNION ALL SELECT day,day,summary,'[]',NULL,'','summary' FROM days WHERE archived=0
- UNION ALL SELECT id,day,text,'[]',NULL,'',kind FROM facts
- ) r WHERE NOT EXISTS(SELECT 1 FROM facts f WHERE f.supersedes=r.id OR f.supersedes IN (SELECT value FROM json_each(r.sources))) ORDER BY day DESC,id`)
+	if len(terms) == 0 {
+		return out, nil
+	}
+	if len(terms) > 32 {
+		terms = terms[:32]
+	}
+	quoted := make([]string, len(terms))
+	for i, t := range terms {
+		quoted[i] = `"` + t + `"`
+	}
+	now := time.Now()
+	hits := map[string]MemoryHit{}
+	rows, err := m.DB.QueryContext(ctx, `SELECT r.id,r.day,r.stamp,r.session,r.job,r.kind,r.sources,
+ snippet(recall_fts,1,'','',' … ',64),COALESCE(a.touched,r.stamp)
+ FROM recall_fts JOIN current_recall r ON r.id=recall_fts.id LEFT JOIN attention a ON a.id=r.id
+ WHERE recall_fts MATCH ? ORDER BY rank LIMIT 64`, strings.Join(quoted, " OR "))
 	if err != nil {
 		return out, err
 	}
-	defer rows.Close()
-	compatible := 0
 	for rows.Next() {
 		var h MemoryHit
-		var data []byte
-		var space string
-		if err = rows.Scan(&h.ID, &h.Day, &h.Text, &h.Sources, &data, &space, &h.Kind); err != nil {
+		var touched string
+		if err = rows.Scan(&h.ID, &h.Day, &h.Time, &h.Session, &h.Job, &h.Kind, &h.Sources, &h.Text, &touched); err != nil {
+			rows.Close()
 			return out, err
 		}
-		var matches float64
+		matches := 0.0
 		for _, term := range terms {
 			if strings.Contains(strings.ToLower(h.Text), term) {
 				matches++
 			}
 		}
-		if len(terms) > 0 {
-			h.Score = matches / float64(len(terms))
-			h.Match = "text"
+		h.Score = matches / float64(len(terms))
+		h.Attention = attentionWeight(touched, now)
+		h.Match = "text"
+		hits[h.ID] = h
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return out, err
+	}
+	vec, err := m.embedding(ctx, query)
+	if err != nil {
+		out.Notice = "Embedding unavailable; text search used."
+		vec = nil
+	}
+	compatible := 0
+	if len(vec) > 0 {
+		rows, err = m.DB.QueryContext(ctx, `SELECT r.id,r.day,r.stamp,r.session,r.job,r.kind,r.sources,r.text,COALESCE(a.touched,r.stamp),v.vector FROM note_vectors v JOIN current_recall r ON r.id=v.id LEFT JOIN attention a ON a.id=r.id WHERE v.space=?`, m.embeddingSpace())
+		if err != nil {
+			return out, err
 		}
-		if space == m.embeddingSpace() {
-			if score, ok := cosine(vec, data); ok {
-				compatible++
-				h.Score = 0.7*((score+1)/2) + 0.3*h.Score
-				h.Match = "semantic"
+		for rows.Next() {
+			var h MemoryHit
+			var touched string
+			var data []byte
+			if err = rows.Scan(&h.ID, &h.Day, &h.Time, &h.Session, &h.Job, &h.Kind, &h.Sources, &h.Text, &touched, &data); err != nil {
+				rows.Close()
+				return out, err
 			}
+			score, ok := cosine(vec, data)
+			if !ok {
+				continue
+			}
+			compatible++
+			if score <= 0 {
+				continue
+			}
+			h.Score = math.Max(hits[h.ID].Score, score)
+			h.Match = "semantic"
+			h.Attention = attentionWeight(touched, now)
+			hits[h.ID] = h
 		}
-		if h.Score <= 0 {
-			continue
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return out, err
 		}
-		var sourceIDs []string
-		if json.Unmarshal([]byte(h.Sources), &sourceIDs) == nil {
-			h.SourceCount = len(sourceIDs)
-			if len(sourceIDs) > 8 {
-				h.Sources = jsonText(sourceIDs[:8])
+	}
+	for _, h := range hits {
+		h.Score = 0.9*h.Score + 0.1*h.Attention
+		var ids []string
+		if json.Unmarshal([]byte(h.Sources), &ids) == nil {
+			h.SourceCount = len(ids)
+			if len(ids) > 8 {
+				h.Sources = jsonText(ids[:8])
 			}
 		}
 		h.Text = truncate(h.Text, 1800)
 		out.Hits = append(out.Hits, h)
-		sort.SliceStable(out.Hits, func(i, j int) bool { return out.Hits[i].Score > out.Hits[j].Score })
-		if len(out.Hits) > 5 {
-			out.Hits = out.Hits[:5]
+	}
+	sort.Slice(out.Hits, func(i, j int) bool {
+		if out.Hits[i].Score == out.Hits[j].Score {
+			return out.Hits[i].ID < out.Hits[j].ID
 		}
+		return out.Hits[i].Score > out.Hits[j].Score
+	})
+	if len(out.Hits) > 5 {
+		out.Hits = out.Hits[:5]
 	}
-	if len(vec) > 0 && compatible == 0 {
-		out.Mode = "text"
-		out.Notice = "No compatible indexed vectors; run alina memory reindex."
+	if compatible > 0 {
+		out.Mode = "semantic+text"
+	} else if len(vec) > 0 {
+		out.Notice = "No compatible indexed notes; run alina memory reindex."
 	}
-	if out.Mode == "text" && out.Notice == "" {
-		out.Notice = "Configure an embedding endpoint for semantic retrieval."
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 type MemoryPage struct {
@@ -274,6 +318,18 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 	case "soul":
 		text, notice := m.Soul()
 		appendPart(text + "\n" + notice)
+	case "focus":
+		text, err := m.FocusContext(ctx, now)
+		if err != nil {
+			return MemoryPage{}, err
+		}
+		appendPart(text)
+	case "recent":
+		text, err := m.recentContext(ctx, "", 0)
+		if err != nil {
+			return MemoryPage{}, err
+		}
+		appendPart(text)
 	case "week":
 		text, err := m.week(ctx, now)
 		if err != nil {
@@ -284,9 +340,17 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 		if part == "today" {
 			part = now.In(m.loc).Format("2006-01-02")
 		}
-		if _, err := time.Parse("2006-01-02", part); err == nil {
+		after := int64(-1)
+		if strings.HasPrefix(part, "after-") {
+			var err error
+			after, err = strconv.ParseInt(strings.TrimPrefix(part, "after-"), 10, 64)
+			if err != nil || after < 0 {
+				return MemoryPage{}, errors.New("invalid archive cursor")
+			}
+		}
+		if _, err := time.Parse("2006-01-02", part); err == nil || part == "archive" || after >= 0 {
 			appendPart("# " + part + "\n")
-			rows, err := m.DB.QueryContext(ctx, "SELECT id,stamp,session,job,role,content FROM journal WHERE day=? ORDER BY rowid", part)
+			rows, err := m.DB.QueryContext(ctx, "SELECT id,stamp,session,job,role,content FROM journal WHERE (?<0 AND (day=? OR ?='archive')) OR (? >=0 AND rowid>?) ORDER BY rowid", after, part, part, after, after)
 			if err != nil {
 				return MemoryPage{}, err
 			}
@@ -308,7 +372,7 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 			if err != nil {
 				return MemoryPage{}, err
 			}
-			if count == 0 {
+			if count == 0 && part != "archive" && after < 0 {
 				var text string
 				if err = m.DB.QueryRowContext(ctx, "SELECT summary FROM days WHERE day=?", part).Scan(&text); err != nil {
 					return MemoryPage{}, err
@@ -317,12 +381,13 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 			}
 		} else {
 			if !safeID(part) {
-				return MemoryPage{}, errors.New("use today/week/soul/YYYY-MM-DD or a memory/source ID")
+				return MemoryPage{}, errors.New("use focus/recent/archive/soul/YYYY-MM-DD or a memory/source ID")
 			}
 			var text string
 			err := m.DB.QueryRowContext(ctx, `SELECT text FROM (
-    SELECT content text FROM journal WHERE id=? UNION ALL SELECT text FROM facts WHERE id=? UNION ALL SELECT text || char(10) || 'Sources: ' || sources FROM memories WHERE id=? UNION ALL SELECT content FROM evidence WHERE id=?
-   ) LIMIT 1`, part, part, part, part).Scan(&text)
+ SELECT '[' || kind || '] ' || stamp || ' · source: ' || session || ' · job: ' || job || char(10) || text || char(10) || 'Sources: ' || sources AS text FROM recall_items WHERE id=?
+ UNION ALL SELECT content FROM evidence WHERE id=?
+ ) LIMIT 1`, part, part).Scan(&text)
 			if errors.Is(err, sql.ErrNoRows) {
 				var stamp, session, job, role string
 				err = m.DB.QueryRowContext(ctx, "SELECT stamp,session,job,role FROM sources WHERE id=?", part).Scan(&stamp, &session, &job, &role)
@@ -337,6 +402,11 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 				text = "SUPERSEDED by " + correction + "\n" + text
 			} else if !errors.Is(er, sql.ErrNoRows) {
 				return MemoryPage{}, er
+			}
+			if offset == 0 {
+				if err = m.touchRead(ctx, part, now); err != nil {
+					return MemoryPage{}, err
+				}
 			}
 			appendPart(text)
 		}

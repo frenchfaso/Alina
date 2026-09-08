@@ -52,8 +52,9 @@ func Main(args []string) error {
   alina approve JOB APPROVAL once|restart|always|deny
   alina permissions            Elenca i consensi
   alina revoke ID              Revoca un consenso
-  alina dream                  Esegui consolidamento e riflessione
-  alina memory read today|week|soul|YYYY-MM-DD|ID [offset]
+  alina dream                  Un momento di riflessione
+  alina memory read focus|recent|archive|soul|YYYY-MM-DD|ID [offset]
+  alina memory focus ID [pin|unpin]  Riporta una nota in primo piano
   alina memory search "query"   Ricerca in tutta la memoria
   alina memory reindex          Prepara gli embedding mancanti
   alina tasks                  Elenca i task ricorrenti
@@ -243,7 +244,7 @@ func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Write
 	}
 }
 func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Writer) error {
-	fmt.Fprintf(out, "Alina · sessione %s\n/new /status /permissions /quit · Ctrl-C interrompe il lavoro e chiude\n", session)
+	fmt.Fprintf(out, "Alina · conversazione %s\n/new /status /permissions /quit · Ctrl-C interrompe il lavoro e chiude\n", session)
 	for {
 		fmt.Fprint(out, "\ntu> ")
 		line, e := readLine(ctx, in)
@@ -262,7 +263,7 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 			return nil
 		case "/new":
 			session = "local-" + randomID()
-			fmt.Fprintln(out, "Sessione:", session)
+			fmt.Fprintln(out, "Conversazione (memoria condivisa):", session)
 			continue
 		case "/status":
 			var r struct{ Jobs []Job }
@@ -486,14 +487,14 @@ func Setup(ctx context.Context, dir string, in *bufio.Reader, out io.Writer) err
 	if c.Location == "-" {
 		c.Location = ""
 	}
-	c.Memory.Enabled = w.yes("Abilitare memoria: diario, settimana e archivio SQLite", c.Memory.Enabled)
+	c.Memory.Enabled = w.yes("Abilitare memoria condivisa: archivio SQLite e note essenziali", c.Memory.Enabled)
 	if c.Memory.Enabled {
 		c.Memory.Dream = w.yes("Abilitare dream notturno e riflessione sul soul", c.Memory.Dream)
 		if c.Memory.Dream {
 			c.Memory.DreamCron = w.ask("Orario dream (cron a 5 campi)", c.Memory.DreamCron)
 			c.Memory.CatchUp = w.yes("Recuperare una sola esecuzione al risveglio se saltata", c.Memory.CatchUp)
 		}
-		fmt.Fprintln(out, "Gli embedding sono facoltativi. Inviano nuclei e query al servizio scelto; API OpenAI con costo separato da ChatGPT. Senza embedding resta la ricerca testuale.")
+		fmt.Fprintln(out, "Gli embedding sono facoltativi. Inviano note e query al servizio scelto; API OpenAI con costo separato da ChatGPT. Senza embedding resta la ricerca testuale.")
 		if w.yes("Configurare un endpoint embedding OpenAI-compatible", c.Memory.EmbeddingURL != "") {
 			endpoint := c.Memory.EmbeddingURL
 			if endpoint == "" {

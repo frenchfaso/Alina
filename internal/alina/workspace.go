@@ -100,7 +100,7 @@ func (m *Memory) Intention(ctx context.Context, id string) (Intention, error) {
 	err := m.DB.QueryRowContext(ctx, "SELECT id,title,why,next,stop,status,updated FROM intentions WHERE id=?", id).Scan(&i.ID, &i.Title, &i.Why, &i.Next, &i.Stop, &i.Status, &i.Updated)
 	return i, err
 }
-func (m *Memory) Note(ctx context.Context, now time.Time, session, job, kind, text, supersedes string) (string, error) {
+func (m *Memory) Note(ctx context.Context, now time.Time, session, job, kind, text, supersedes string, sources ...[]string) (string, error) {
 	if kind == "" {
 		kind = "fact"
 	}
@@ -115,6 +115,22 @@ func (m *Memory) Note(ctx context.Context, now time.Time, session, job, kind, te
 		return "", err
 	}
 	defer tx.Rollback()
+	ids := []string{}
+	if len(sources) > 0 {
+		ids = sources[0]
+	}
+	if len(ids) > 16 {
+		return "", errors.New("at most sixteen evidence IDs per note")
+	}
+	for _, source := range ids {
+		var exists int
+		if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM recall_items WHERE id=?", source).Scan(&exists); err != nil {
+			return "", err
+		}
+		if exists == 0 {
+			return "", errors.New("note cites an unknown source")
+		}
+	}
 	if supersedes != "" {
 		var id string
 		err = tx.QueryRowContext(ctx, `SELECT id FROM (SELECT id FROM journal UNION ALL SELECT id FROM facts UNION ALL SELECT id FROM memories UNION ALL SELECT id FROM sources) WHERE id=? LIMIT 1`, supersedes).Scan(&id)
@@ -125,11 +141,26 @@ func (m *Memory) Note(ctx context.Context, now time.Time, session, job, kind, te
 			return "", err
 		}
 	}
+	text = m.redact(text)
+	// A recurring fact refreshes the same note, rather than growing duplicates.
+	if supersedes == "" {
+		var existing string
+		err = tx.QueryRowContext(ctx, `SELECT id FROM current_recall WHERE note=1 AND text=? AND kind=? LIMIT 1`, text, kind).Scan(&existing)
+		if err == nil {
+			_, err = tx.ExecContext(ctx, `INSERT INTO attention VALUES(?,?,0) ON CONFLICT(id) DO UPDATE SET touched=excluded.touched`, existing, now.UTC().Format(time.RFC3339Nano))
+			if err != nil {
+				return "", err
+			}
+			return existing, tx.Commit()
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return "", err
+		}
+	}
 	id := randomID()
 	day := now.In(m.loc).Format("2006-01-02")
-	stamp := now.Format(time.RFC3339Nano)
-	text = m.redact(text)
-	_, err = tx.ExecContext(ctx, "INSERT INTO facts VALUES(?,?,?,?,?,?,?,?)", id, day, stamp, kind, text, supersedes, session, job)
+	stamp := now.UTC().Format(time.RFC3339Nano)
+	_, err = tx.ExecContext(ctx, "INSERT INTO facts(id,day,stamp,kind,text,supersedes,session,job,sources) VALUES(?,?,?,?,?,?,?,?,?)", id, day, stamp, kind, text, supersedes, session, job, jsonText(ids))
 	if err != nil {
 		return "", err
 	}
@@ -144,8 +175,5 @@ func (m *Memory) Note(ctx context.Context, now time.Time, session, job, kind, te
 	if err = tx.Commit(); err != nil {
 		return "", err
 	}
-	m.mu.Lock()
-	m.dirty = true
-	m.mu.Unlock()
 	return id, nil
 }

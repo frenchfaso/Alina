@@ -26,6 +26,23 @@ func stateCLI(ctx context.Context, dir string, args []string, in *bufio.Reader, 
 		return waitJob(ctx, dir, j.ID, in, out)
 	}
 	if args[0] == "memory" {
+		if len(args) >= 3 && args[1] == "focus" {
+			request := map[string]any{"id": args[2]}
+			if len(args) == 4 {
+				if args[3] != "pin" && args[3] != "unpin" {
+					return errors.New("use pin or unpin")
+				}
+				request["pinned"] = args[3] == "pin"
+			} else if len(args) > 4 {
+				return errors.New("usage: alina memory focus ID [pin|unpin]")
+			}
+			var result map[string]bool
+			if err := localRequest(ctx, dir, "POST", "/v1/memory/focus", request, &result); err != nil {
+				return err
+			}
+			fmt.Fprintln(out, "Attention updated.")
+			return nil
+		}
 		if len(args) < 3 {
 			return errors.New("usage: alina memory read PART | search QUERY | reindex")
 		}
@@ -78,6 +95,24 @@ func stateCLI(ctx context.Context, dir string, args []string, in *bufio.Reader, 
 	return errors.New("usage: alina tasks [add NAME CRON PROMPT | pause/resume/remove ID]")
 }
 func stateHandlers(mux *http.ServeMux, e *Engine, reply func(http.ResponseWriter, any), decode func(http.ResponseWriter, *http.Request, any) bool) {
+	mux.HandleFunc("POST /v1/memory/focus", func(w http.ResponseWriter, r *http.Request) {
+		if !e.Config.Memory.Enabled {
+			http.Error(w, "memory disabled", 400)
+			return
+		}
+		var a struct {
+			ID     string
+			Pinned *bool
+		}
+		if !decode(w, r, &a) {
+			return
+		}
+		if err := e.Memory.Focus(r.Context(), a.ID, a.Pinned, time.Now()); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		reply(w, map[string]bool{"ok": true})
+	})
 	mux.HandleFunc("GET /v1/tasks", func(w http.ResponseWriter, r *http.Request) { reply(w, e.Scheduler.List()) })
 	mux.HandleFunc("POST /v1/tasks", func(w http.ResponseWriter, r *http.Request) {
 		var a struct {

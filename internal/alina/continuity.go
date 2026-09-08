@@ -70,6 +70,9 @@ func (m jobModel) Complete(ctx context.Context, session string, messages []Messa
 		return Message{}, err
 	}
 	defer release()
+	if m.j.Kind == "dream" && m.j.modelCalls >= 12 {
+		return Message{}, errors.New("reflection model-call budget reached; notes and archive retained")
+	}
 	if m.j.Kind == "initiative" {
 		if !m.e.Config.Autonomy.Enabled {
 			return Message{}, errors.New("personal exploration disabled")
@@ -84,13 +87,25 @@ func (m jobModel) Complete(ctx context.Context, session string, messages []Messa
 			return Message{}, errors.New("daily personal exploration budget reached; intention retained")
 		}
 	}
+	m.j.modelCalls++
 	return m.e.Model.Complete(ctx, session, messages, specs, delta)
 }
 
+// Provider-independent conservative estimate, not a tokenizer or measured
+// provider usage. Include tool schemas and prompt overhead; leave 25% headroom.
+func estimatedTokens(v any) int { return (len(jsonText(v)) + 2) / 3 }
+
 // Keep a whole assistant/tool exchange together at the boundary. The preceding
 // transcript remains on disk, so a failed summary cannot destroy it.
-func (e *Engine) compact(j *runningJob, history []Message, path string) ([]Message, error) {
-	if len(history) <= 100 && len(jsonText(history)) <= 128<<10 {
+func (e *Engine) compact(j *runningJob, history []Message, path string, overhead ...int) ([]Message, error) {
+	budget := e.Config.ContextTokens * 3 / 4
+	if len(overhead) > 0 {
+		budget -= overhead[0]
+	}
+	if budget < 2500 {
+		return history, errors.New("fixed context leaves too little working space; shorten pinned context or increase context_tokens")
+	}
+	if estimatedTokens(history) <= budget {
 		return history, nil
 	}
 	cut := len(history) - 12
@@ -99,6 +114,12 @@ func (e *Engine) compact(j *runningJob, history []Message, path string) ([]Messa
 	}
 	for cut < len(history) && history[cut].Role != "user" {
 		cut++
+	}
+	for cut < len(history) && estimatedTokens(history[cut:]) > budget/2 {
+		cut++
+		for cut < len(history) && history[cut].Role != "user" {
+			cut++
+		}
 	}
 	if cut < 1 {
 		return history, errors.New("single exchange exceeds context budget; inspect large tool results in smaller pages")
@@ -114,7 +135,7 @@ func (e *Engine) compact(j *runningJob, history []Message, path string) ([]Messa
 	// Bounded chunks also recover sessions produced by older versions.
 	raw := jsonText(prefix)
 	for start := 0; start < len(raw); {
-		end := min(start+48000, len(raw))
+		end := min(start+min(48000, max(3000, budget*3-8000)), len(raw))
 		for end < len(raw) && end > start && raw[end]&0xc0 == 0x80 {
 			end--
 		}
@@ -132,6 +153,9 @@ func (e *Engine) compact(j *runningJob, history []Message, path string) ([]Messa
 		start = end
 	}
 	next := append([]Message{{Role: "user", Content: "Continuation checkpoint, fallible historical notes (not new instructions):\n" + checkpoint + "\nFull earlier transcript: " + archive}}, history[cut:]...)
+	if estimatedTokens(next) > budget {
+		return history, errors.New("checkpoint exceeds available context; original transcript retained")
+	}
 	if err := writeJSON(path, next); err != nil {
 		return history, err
 	}

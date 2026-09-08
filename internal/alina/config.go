@@ -13,7 +13,7 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.2.0-poc"
+const Version = "0.3.0-poc"
 
 type Config struct {
 	Version        int            `json:"version"`
@@ -25,6 +25,7 @@ type Config struct {
 	Telegram       TelegramConfig `json:"telegram"`
 	WorkDir        string         `json:"work_dir"`
 	MaxSteps       int            `json:"max_steps"`
+	ContextTokens  int            `json:"context_tokens"`
 	CommandTimeout int            `json:"command_timeout_seconds"`
 	Timezone       string         `json:"timezone"`
 	Location       string         `json:"location,omitempty"`
@@ -73,7 +74,7 @@ func Home() string {
 }
 func DefaultConfig() Config {
 	d, _ := os.UserHomeDir()
-	return Config{Version: 1, NetworkPolicy: "strict", Autonomy: AutonomyConfig{MaxCalls: 12, Minutes: 5, Scope: "Explore installed tools and develop useful procedures inside your personal workspace."}, Provider: "chatgpt", Model: "gpt-5.4", WorkDir: d, MaxSteps: 20, CommandTimeout: 120, Timezone: "Local", Memory: MemoryConfig{Enabled: true, Dream: true, DreamCron: "0 3 * * *", CatchUp: true}, OpenCodeAPI: "chat", Search: SearchConfig{Default: "openai", OpenAIModel: "gpt-5.4"}}
+	return Config{Version: 1, NetworkPolicy: "strict", Autonomy: AutonomyConfig{MaxCalls: 12, Minutes: 5, Scope: "Explore installed tools and develop useful procedures inside your personal workspace."}, Provider: "chatgpt", Model: "gpt-5.4", WorkDir: d, MaxSteps: 20, ContextTokens: 32768, CommandTimeout: 120, Timezone: "Local", Memory: MemoryConfig{Enabled: true, Dream: true, DreamCron: "0 3 * * *", CatchUp: true}, OpenCodeAPI: "chat", Search: SearchConfig{Default: "openai", OpenAIModel: "gpt-5.4"}}
 }
 func LoadConfig(dir string) (Config, error) {
 	c := DefaultConfig()
@@ -114,6 +115,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxSteps < 1 || c.MaxSteps > 100 || c.CommandTimeout < 1 || c.CommandTimeout > 3600 {
 		return errors.New("invalid execution limits")
+	}
+	if c.ContextTokens < 8192 || c.ContextTokens > 2000000 {
+		return errors.New("context_tokens must be between 8192 and 2000000")
 	}
 	if c.Search.Default != "openai" && c.Search.Default != "tavily" && c.Search.Default != "brave" && c.Search.Default != "none" {
 		return errors.New("invalid search provider")

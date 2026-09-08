@@ -1,5 +1,37 @@
 # POC verification — 2026-09-08
 
+## Shared archive and reflection — 0.3
+
+The 0.3 update uses one model/tool loop for chat, scheduled work, initiatives and
+reflection. An append-only shared archive replaces calendar-based memory
+transfers; small notes have decaying attention and explicit pins. Context
+checkpointing responds to estimated request size independently of dream.
+
+Validation on the final runtime:
+
+- **39 top-level tests** pass with the macOS race detector and natively in Android
+  ARM64 Termux on the Galaxy A15. Go vet, formatting and diff checks pass.
+- Native tests cover legacy archive migration and idempotency, shared context
+  across channels, retrieval of old events, FTS5, optional semantic note search,
+  attention renewal without automatic feedback, pin budgets, corrections,
+  no-op reflection, concurrent new events during reflection, soul edit conflicts,
+  context-pressure checkpointing and existing approvals/provider fixtures.
+- The binary smoke passed interactive setup, private configuration, workspace and
+  focus view creation, idle dream with zero model calls, one-shot task lifecycle,
+  soul fallback, FTS search/source reads, daemon restart and explicit resume.
+- Android/arm64, Linux/arm64 and FreeBSD/OpenBSD/NetBSD amd64 builds use CGO=0.
+  FTS5 is registered from the existing go-sqlite3 extension package; there are no
+  additional direct dependencies or native SQLite package requirements.
+
+The Galaxy smoke used disposable state and no real model credentials. Its small
+workload measured **17020 KiB RSS**. This is not a sustained-load bound, and fixture
+results do not establish real-model learning or recall quality. No device packages,
+service configuration or permanent account configuration were changed.
+
+Version 0.3 is installed at `~/alina-poc/bin/alina`; the prior binary is retained.
+Migration preserves old data and files, but older binaries must not open 0.3
+state. Restore a corresponding state backup when rolling back.
+
 ## Continuity and personal exploration — 0.2
 
 The 0.2 update keeps Go, the same four tools and the same direct dependencies.
