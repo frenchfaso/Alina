@@ -8,6 +8,13 @@ the protocol adapters and operating model:
   OAuth device/PKCE flow and Codex Responses request headers/body. Relevant files:
   `packages/ai/src/auth/oauth/openai-codex.ts` and
   `packages/ai/src/api/openai-codex-responses.ts`.
+- Pi's [read](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/read.ts),
+  [write](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/write.ts)
+  and [edit](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/edit.ts),
+  inspected on 2026-09-08: line-based pagination and unique, non-overlapping
+  replacements against the original file. Alina uses strict byte matching,
+  streaming text reads, bounded file sizes and atomic writes; images retain
+  their existing dedicated tool. It does not port Pi's fuzzy matching or UI code.
 - [OpenAI authentication](https://learn.chatgpt.com/docs/auth): subscription
   versus API access, device login, refresh and credential handling.
 - [OpenAI web search](https://developers.openai.com/api/docs/guides/tools-web-search):

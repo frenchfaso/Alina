@@ -125,6 +125,44 @@ send an image as a file when preserving the original matters. See the
 [Telegram getFile reference](https://core.telegram.org/bots/api#getfile) and
 [Responses image input](https://developers.openai.com/api/docs/guides/images-vision).
 
+## Native file tools
+
+The ordinary agent loop exposes eight tools: `shell`, `read`, `write`, `edit`,
+`web_search`, `memory`, `schedule` and `view_image`. The file tools follow Pi's
+small interfaces, implemented directly in Go without additional dependencies:
+
+- `read(path, offset?, limit?)`: UTF-8 text, with one-based line offsets and
+  `next_offset` for continuation. A page contains at most 2000 whole lines or
+  32 KiB; reads stream instead of loading an entire file. Scanning is capped at
+  32 MiB per call. Very long lines and other formats can use bounded shell tools.
+- `write(path, content)`: create or fully rewrite a UTF-8 file up to 8 MiB,
+  creating parent directories. Empty content is allowed only when explicitly
+  supplied. New files are private (0600).
+- `edit(path, edits)`: one to 32 `{oldText, newText}` replacements, each unique
+  and disjoint in the original file. The whole operation is validated before
+  writing. Missing, repeated or overlapping matches leave the file unchanged.
+  Matching is exact, including whitespace and line endings; unchanged bytes,
+  including BOM and CRLF, remain intact. Empty `newText` deletes the matched text.
+
+Write/edit use a temporary file in the same directory followed by rename,
+preserve existing permission bits, and serialize native mutations in the daemon.
+They check for external changes before committing and abort if detected. This
+does not lock out shell commands or other processes; a final race is still
+possible. Atomic replacement changes the inode and does not preserve hard-link
+relationships, extended attributes or arbitrary ownership metadata.
+
+Relative paths use the configured workdir; `~/` and absolute paths are accepted.
+Personal initiatives resolve relative paths inside the workspace and reject
+resolved paths outside it. Alina's administrative state is excluded; archived
+session files are readable, and managed state uses its dedicated tools. Existing
+symlinks resolve to their targets, with the same path checks; a write preserves
+the symlink itself. These are convenience guards under the existing trusted-owner
+model, not a complete filesystem sandbox. Local file tools need no new consent.
+
+The English system prompt briefly explains when to use each tool; argument and
+limit details live in tool descriptions. Reflection retains its four tools:
+memory, schedule, image inspection and soul revision.
+
 ## Approvals
 
 Both clients offer:

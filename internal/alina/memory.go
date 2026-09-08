@@ -287,7 +287,7 @@ func (e *Engine) prompt(ctx context.Context) (string, error) {
 	if notice != "" {
 		s += "Runtime notice: " + notice + "\n"
 	}
-	s += fmt.Sprintf("Personal workspace: %s. Procedures index: %s. You may read/write this workspace and read archived session transcripts. Administrative state remains private.\nNetwork policy: %s.\n", e.Workspace(), filepath.Join(e.Workspace(), "procedures", "index.md"), e.Config.NetworkPolicy)
+	s += fmt.Sprintf("Personal workspace: %s. Procedures index: %s. You may read/write this workspace and read archived session transcripts. File-tool relative paths use the host workdir; personal initiatives use this workspace and stay within it. Administrative state remains private.\nNetwork policy: %s.\n", e.Workspace(), filepath.Join(e.Workspace(), "procedures", "index.md"), e.Config.NetworkPolicy)
 	s += fmt.Sprintf("Personal exploration enabled: %t; scope: %s; budget: %d model calls/day, %d minutes/run; web search: %t.\n", e.Config.Autonomy.Enabled, e.Config.Autonomy.Scope, e.Config.Autonomy.MaxCalls, e.Config.Autonomy.Minutes, e.Config.Autonomy.Search)
 	return s, nil
 }

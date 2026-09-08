@@ -1,5 +1,34 @@
 # POC verification — 2026-09-08
 
+## Native read/write/edit and prompt guidance — 0.5
+
+All **60 top-level tests** pass with the macOS ARM64 race detector and natively
+in Galaxy A15 Termux. Go vet, formatting and diff checks pass; CGO-free builds
+pass for Android/arm64, Linux/arm64 and FreeBSD/OpenBSD/NetBSD amd64.
+
+New tests exercise the agent loop using all three file tools, line/byte-limited
+pagination, Unicode and CRLF/BOM preservation, exact batch edits, ambiguous and
+overlapping match rejection, explicit empty writes/deletions, existing permission
+bits, symlink targets, administrative and initiative path checks, cancellation,
+external-change detection, large/special files and concurrent independent edits.
+The permission fixture explicitly sets its initial mode so Termux's stricter
+creation mask does not change what the test is verifying.
+
+The English prompt adds short tool-selection and path guidance. Ordinary turns
+have eight tools; reflection keeps four. There is no new runtime dependency or
+agent loop. Native file writes are serialized within the daemon, but do not lock
+out external editors or shell commands; the documented final race remains.
+
+The disposable binary smoke passed setup, version, Astra defaults, the 95%
+threshold, private state, memory, idle dream, scheduling, restart and resume.
+Its small text workload used **17048 KiB RSS**; this is not a peak-memory bound.
+Model/Telegram tests use fixtures. No live model call, package installation,
+service change or permanent account configuration was performed.
+
+Version 0.5 is installed at `~/alina-poc/bin/alina`, with the prior binary retained
+as `~/alina-poc/bin/alina-v04-e621f8ad`. Installed Android SHA-256:
+`0d917588d2cc8d7fb29192738bd44e6d0fe2fae7edf59a8df4d90a9fb29120db`.
+
 ## Astra, English internal writing and Telegram attachments — 0.4
 
 All **52 top-level tests** pass on macOS ARM64 with the race detector and natively
