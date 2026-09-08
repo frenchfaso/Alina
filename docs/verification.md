@@ -1,8 +1,8 @@
 # POC verification — 2026-09-08
 
-## Astra defaults and English internal writing — 0.4
+## Astra, English internal writing and Telegram attachments — 0.4
 
-All **45 top-level tests** pass on macOS ARM64 with the race detector and natively
+All **52 top-level tests** pass on macOS ARM64 with the race detector and natively
 on the Galaxy A15 in Termux. Go vet, formatting and diff checks pass. CGO-free
 builds pass for Android/arm64, Linux/arm64 and FreeBSD/OpenBSD/NetBSD amd64.
 
@@ -13,12 +13,29 @@ boundary, retention after checkpoint failure, stable context prefixes and
 exclusion of runtime snapshots from the event archive after re-import.
 Reflection uses high effort while checkpoints remain low.
 
+Attachment tests cover the largest Telegram photo flowing through download,
+job persistence, Responses image input and a `view_image` tool round trip; files
+read by the shell; duplicate updates after restart; completed receipt reuse;
+JSON filenames that cannot collide with receipt metadata; unchanged originals;
+owner/private-chat checks; declared and streamed size limits; unsafe paths and
+redirects; transient download retries and partial-file cleanup; bounded visual
+input; missing/changed images; workspace escape rejection; references retained
+after compaction; and explicit limitations on nonvisual provider adapters.
+Protocol endpoints use local fixtures, not real Telegram/OpenAI accounts.
+Native testing caught Android denying hard links; storage now uses exclusive
+file creation and an atomic receipt after the download is complete.
+
 The disposable Galaxy binary smoke passed setup, default Astra settings,
 272000-token context and 258400-token threshold, English seed soul, private
 configuration, memory and schedule operations, expected missing-login failure,
-restart and resume. Small-workload RSS was **16760 KiB**. No live inference,
+restart and resume. Small-workload RSS was **17412 KiB** with the final binary.
+This is a small text workload, not peak memory during image input. No live inference,
 hosted search or Telegram delivery was exercised; no dedicated Alina login was
 present in the checked default state locations. No packages or services changed.
+
+Version 0.4 is installed at `~/alina-poc/bin/alina`; the previous binary is kept
+as `~/alina-poc/bin/alina-v03-789d15b5`. Installed Android SHA-256:
+`e621f8add06c63f3bffff621476f9c557931c7c65323667a3fd3e43bcfd70536`.
 
 Context capabilities are based on the local Codex 0.153.4 catalog fetched on
 2026-09-08: default 272000, maximum 872000. This does not establish universal

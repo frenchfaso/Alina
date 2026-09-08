@@ -19,16 +19,18 @@ type ToolCall struct {
 	Arguments string `json:"arguments"`
 }
 type Message struct {
-	ArchiveID string            `json:"archive_id,omitempty"`
-	Role      string            `json:"role"`
-	Content   string            `json:"content"`
-	Calls     []ToolCall        `json:"calls,omitempty"`
-	CallID    string            `json:"call_id,omitempty"`
-	Raw       []json.RawMessage `json:"raw,omitempty"`
-	Reasoning string            `json:"reasoning,omitempty"`
-	Runtime   bool              `json:"runtime,omitempty"`
-	Usage     *TokenUsage       `json:"usage,omitempty"`
-	Context   *contextSample    `json:"context_sample,omitempty"`
+	ArchiveID   string            `json:"archive_id,omitempty"`
+	Role        string            `json:"role"`
+	Content     string            `json:"content"`
+	Calls       []ToolCall        `json:"calls,omitempty"`
+	CallID      string            `json:"call_id,omitempty"`
+	Raw         []json.RawMessage `json:"raw,omitempty"`
+	Reasoning   string            `json:"reasoning,omitempty"`
+	Runtime     bool              `json:"runtime,omitempty"`
+	Usage       *TokenUsage       `json:"usage,omitempty"`
+	Context     *contextSample    `json:"context_sample,omitempty"`
+	Attachments []Attachment      `json:"attachments,omitempty"`
+	imageInputs []string
 }
 type ToolSpec struct {
 	Name        string
@@ -39,10 +41,11 @@ type Model interface {
 	Complete(context.Context, string, []Message, []ToolSpec, func(string)) (Message, error)
 }
 type Provider struct {
-	Config  Config
-	Auth    *Auth
-	Client  *http.Client
-	BaseURL string
+	Config    Config
+	Auth      *Auth
+	Client    *http.Client
+	BaseURL   string
+	Workspace string
 }
 
 func (p *Provider) Complete(ctx context.Context, session string, msg []Message, tools []ToolSpec, delta func(string)) (Message, error) {
@@ -77,7 +80,7 @@ func (p *Provider) headers(key, session string) map[string]string {
 func (p *Provider) chat(ctx context.Context, session string, msg []Message, tools []ToolSpec) (Message, error) {
 	messages := []any{}
 	for _, m := range msg {
-		j := map[string]any{"role": m.Role, "content": m.Content}
+		j := map[string]any{"role": m.Role, "content": nonVisualText(m)}
 		if m.CallID != "" {
 			j["tool_call_id"] = m.CallID
 		}
@@ -142,7 +145,7 @@ func (p *Provider) anthropic(ctx context.Context, session string, msg []Message,
 		blocks := []any{}
 		if role == "tool" {
 			role = "user"
-			blocks = append(blocks, map[string]any{"type": "tool_result", "tool_use_id": m.CallID, "content": m.Content})
+			blocks = append(blocks, map[string]any{"type": "tool_result", "tool_use_id": m.CallID, "content": nonVisualText(m)})
 		} else {
 			if len(m.Raw) > 0 && m.Role == "assistant" {
 				for _, raw := range m.Raw {
@@ -152,8 +155,8 @@ func (p *Provider) anthropic(ctx context.Context, session string, msg []Message,
 					}
 				}
 			} else {
-				if m.Content != "" {
-					blocks = append(blocks, map[string]any{"type": "text", "text": m.Content})
+				if m.Content != "" || len(m.Attachments) > 0 {
+					blocks = append(blocks, map[string]any{"type": "text", "text": nonVisualText(m)})
 				}
 				for _, c := range m.Calls {
 					var input any
@@ -206,12 +209,21 @@ func responseInput(msg []Message) (string, []any) {
 	var system string
 	input := []any{}
 	for _, m := range msg {
+		text := messageText(m)
+		var content any = text
+		if len(m.imageInputs) > 0 {
+			blocks := []any{map[string]any{"type": "input_text", "text": text}}
+			for _, data := range m.imageInputs {
+				blocks = append(blocks, map[string]any{"type": "input_image", "image_url": data, "detail": "high"})
+			}
+			content = blocks
+		}
 		if m.Role == "system" {
 			system = m.Content
 			continue
 		}
 		if m.Role == "tool" {
-			input = append(input, map[string]any{"type": "function_call_output", "call_id": m.CallID, "output": m.Content})
+			input = append(input, map[string]any{"type": "function_call_output", "call_id": m.CallID, "output": content})
 			continue
 		}
 		if m.Role == "assistant" && len(m.Raw) > 0 {
@@ -220,8 +232,8 @@ func responseInput(msg []Message) (string, []any) {
 			}
 			continue
 		}
-		if m.Content != "" {
-			input = append(input, map[string]any{"role": m.Role, "content": m.Content})
+		if text != "" || len(m.imageInputs) > 0 {
+			input = append(input, map[string]any{"role": m.Role, "content": content})
 		}
 		for _, c := range m.Calls {
 			input = append(input, map[string]any{"type": "function_call", "call_id": c.ID, "name": c.Name, "arguments": c.Arguments})
@@ -251,7 +263,7 @@ type responseBody struct {
 
 func (p *Provider) responses(ctx context.Context, endpoint, model, key, account, session string, msg []Message, tools []ToolSpec, search bool, delta func(string)) (Message, error) {
 	started := time.Now()
-	system, input := responseInput(msg)
+	system, input := responseInput(p.prepareImages(msg))
 	ts := []any{}
 	for _, t := range tools {
 		ts = append(ts, map[string]any{"type": "function", "name": t.Name, "description": t.Description, "parameters": t.Parameters, "strict": false})

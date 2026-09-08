@@ -96,7 +96,7 @@ INSERT INTO memory_state VALUES('fts-v1','ready');`)
 
 func messageContent(msg Message) (string, string) {
 	role := msg.Role
-	text := msg.Content
+	text := messageText(msg)
 	for _, c := range msg.Calls {
 		text += "\nTool request: " + c.Name + " " + c.Arguments
 	}

@@ -43,7 +43,7 @@ respective provider's normal usage. It does not send Telegram messages.
 
 `web_search` accepts `openai`, `tavily`, or `brave`; an omitted provider uses the
 configured default. Results include source URLs and bounded snippets. It does
-not save arbitrary remote files or download Telegram attachments.
+not save arbitrary remote files. Telegram uploads use the separate inbox below.
 
 OpenAI is the default search provider and reuses Alina's dedicated ChatGPT login.
 An empty `search.openai_model` follows the main ChatGPT model (Astra if the main
@@ -89,7 +89,41 @@ but sends no messages. Manual numeric owner ID entry is also available. Use a
 dedicated bot without another poller or webhook. Only messages
 and buttons from that owner in a private chat are accepted. Groups and other
 users are ignored. Commands: `/status`, `/cancel ID`, `/new`, `/permissions`,
-`/revoke ID`, `/resume ID`, `/intentions`. Attachments are deliberately not fetched in this POC.
+`/revoke ID`, `/resume ID`, `/intentions`.
+
+The owner can send photos or files, with an optional caption describing the task.
+Alina downloads that specific upload into `workspace/inbox/telegram/`, with private
+permissions and a generated filename. Sending a file authorizes receiving it;
+URLs in captions and arbitrary remote downloads still follow the usual policy.
+The original name, detected MIME type, size, hash and local path accompany the
+message. Telegram update IDs prevent repeated work; completed downloads are
+reused on retries and existing originals are never overwritten.
+
+Photos use the largest Telegram representation. PNG, JPEG and WebP images,
+including images sent as documents, are delivered directly to Astra through
+Responses image input. `view_image` reopens saved workspace images, including
+ones recovered through memory after a context checkpoint or restart. Image bytes
+are read only for model requests; journals and job records store paths and hashes.
+At most four recent images and 20 MiB total image data enter each request. Older,
+missing or modified images have an explicit text notice; their paths remain
+available. Reopening an image refreshes its place in the visual context. Changes
+to the set of included images can reduce prompt-cache reuse.
+
+Other files (PDFs, text, archives, audio and video) are available to installed
+shell tools. Receiving them does not execute them or install dependencies. There
+is no built-in audio transcription or video understanding. OpenCode's `chat` and
+`messages` adapters currently supply file metadata only and explicitly report the
+visual limitation; direct vision requires a compatible model using `responses`.
+
+Each file is capped at 20 MiB, in line with the hosted Bot API's download limit;
+the server can also reject an upload. Interrupted downloads retry; oversized or
+unavailable files produce a message asking the owner to resend. Album items are
+processed as separate ordered messages. Files persist until explicitly removed;
+there is no automatic inbox expiry. A crash before saving the completed receipt
+can leave an unreferenced file; retrying uses a fresh filename. Telegram photo mode can compress images;
+send an image as a file when preserving the original matters. See the
+[Telegram getFile reference](https://core.telegram.org/bots/api#getfile) and
+[Responses image input](https://developers.openai.com/api/docs/guides/images-vision).
 
 ## Approvals
 
@@ -166,6 +200,7 @@ operation's outcome unknown.
   usage anchors the count, plus estimates for new messages and changed prefix
   overhead. Without usage, Alina estimates visible serialized bytes / 3;
   opaque encrypted reasoning and internal metadata are not tokenized as text.
+  Unmeasured image input adds an estimated 12000 tokens per image, capped at four.
   This is not an exact preflight tokenizer. Configure the budget for the selected
   model. Message count and elapsed days
   do not trigger compaction. Checkpoints preserve objectives, verified results,
@@ -253,8 +288,8 @@ translates the untouched Italian seed soul with a revision record; personal edit
 are preserved and the reflection prompt guides faithful translation when needed.
 
 Dream defaults to `0 3 * * *`, with one catch-up after missed executions. It uses
-**the same agent loop and imprinting as chat**, with memory, scheduling and soul
-revision tools. It has six iterations, twelve total model calls including any
+**the same agent loop and imprinting as chat**, with memory, scheduling, saved-image
+inspection and soul revision tools. It has six iterations, twelve total model calls including any
 checkpoints, and ten minutes. It does not summarize days, archive old records,
 prepare embeddings or execute shell commands. A successful run advances its
 observed-event cursor; messages arriving during reflection remain eligible next

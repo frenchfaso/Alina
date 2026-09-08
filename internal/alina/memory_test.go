@@ -32,7 +32,7 @@ func TestDreamReflectsWithoutAgeTiers(t *testing.T) {
 		if ctx.Value(reasoningEffortKey{}) != "high" {
 			t.Fatal("reflection did not use high effort")
 		}
-		if len(tools) != 3 || !strings.Contains(msg[0].Content, systemPrompt) {
+		if len(tools) != 4 || !strings.Contains(msg[0].Content, systemPrompt) {
 			t.Fatal("reflection did not use shared prompt/tools")
 		}
 		return Message{Role: "assistant", Content: "Nothing needs changing."}, nil

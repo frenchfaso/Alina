@@ -96,7 +96,7 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 	if err = appendMessage(Message{Role: "user", Content: context, Runtime: true}); err != nil {
 		return "", err
 	}
-	if err = appendMessage(Message{Role: "user", Content: input}); err != nil {
+	if err = appendMessage(Message{Role: "user", Content: input, Attachments: j.Attachments}); err != nil {
 		return "", err
 	}
 	specs, maxSteps := toolSpecs(), e.Config.MaxSteps
@@ -141,7 +141,16 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			if toolErr != nil {
 				result = "ERROR: " + toolErr.Error()
 			}
-			if err = appendMessage(Message{Role: "tool", CallID: call.ID, Content: result}); err != nil {
+			response := Message{Role: "tool", CallID: call.ID, Content: result}
+			if call.Name == "view_image" && toolErr == nil {
+				var a Attachment
+				if err = json.Unmarshal([]byte(result), &a); err != nil {
+					return "", err
+				}
+				response.Content = "Image loaded for visual inspection."
+				response.Attachments = []Attachment{a}
+			}
+			if err = appendMessage(response); err != nil {
 				return "", err
 			}
 		}

@@ -70,7 +70,7 @@ Your soul is a short personal orientation, not a diary or a biography of the use
 }
 
 func reflectionSpecs() []ToolSpec {
-	return append(stateToolSpecs(), ToolSpec{Name: "soul", Description: "Revise your short personal orientation in English only when experience warrants it. Supply the exact previous text to preserve concurrent edits. No change is also valid.", Parameters: map[string]any{
+	return append(stateToolSpecs(), imageToolSpec(), ToolSpec{Name: "soul", Description: "Revise your short personal orientation in English only when experience warrants it. Supply the exact previous text to preserve concurrent edits. No change is also valid.", Parameters: map[string]any{
 		"type": "object", "properties": map[string]any{"previous": map[string]any{"type": "string"}, "text": map[string]any{"type": "string"}, "reason": map[string]any{"type": "string"}}, "required": []string{"previous", "text", "reason"},
 	}})
 }
@@ -100,6 +100,9 @@ func (m *Memory) reviseSoul(ctx context.Context, now time.Time, previous, next, 
 }
 
 func (e *Engine) reflectionTool(j *runningJob, c ToolCall) (string, error) {
+	if c.Name == "view_image" {
+		return e.tool(j, c)
+	}
 	if c.Name == "soul" {
 		var a struct{ Previous, Text, Reason string }
 		if err := json.Unmarshal([]byte(c.Arguments), &a); err != nil {
@@ -109,7 +112,7 @@ func (e *Engine) reflectionTool(j *runningJob, c ToolCall) (string, error) {
 		return "Soul updated.", err
 	}
 	if c.Name != "memory" && c.Name != "schedule" {
-		return "", errors.New("reflection uses memory, soul and personal wake-ups only; experiments belong in an initiative")
+		return "", errors.New("reflection uses memory, image inspection, soul and personal wake-ups only; experiments belong in an initiative")
 	}
 	return e.stateTool(j, c)
 }

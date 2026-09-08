@@ -109,11 +109,18 @@ func (m jobModel) Complete(ctx context.Context, session string, messages []Messa
 func estimatedTokens(v any) int {
 	if messages, ok := v.([]Message); ok {
 		total := 0
+		images := 0
 		for _, m := range messages {
 			// Raw response items duplicate parsed text/calls and contain opaque
 			// encrypted reasoning, whose byte length is not a token count.
-			visible := Message{Role: m.Role, Content: m.Content, Calls: m.Calls, CallID: m.CallID, Reasoning: m.Reasoning}
+			visible := Message{Role: m.Role, Content: messageText(m), Calls: m.Calls, CallID: m.CallID, Reasoning: m.Reasoning}
 			tokens := (len(jsonText(visible)) + 2) / 3
+			for _, a := range m.Attachments {
+				if a.Image && images < maxInputImages {
+					tokens += 12000 // Conservative image allowance until measured usage arrives.
+					images++
+				}
+			}
 			if m.Usage != nil {
 				tokens = max(tokens, m.Usage.OutputTokens)
 			}
@@ -164,7 +171,7 @@ func (e *Engine) compact(j *runningJob, history []Message, path string, overhead
 	// Bounded chunks also recover sessions produced by older versions.
 	transcript := make([]Message, len(prefix))
 	for i, m := range prefix {
-		transcript[i] = Message{ArchiveID: m.ArchiveID, Role: m.Role, Content: m.Content, Calls: m.Calls, CallID: m.CallID}
+		transcript[i] = Message{ArchiveID: m.ArchiveID, Role: m.Role, Content: messageText(m), Calls: m.Calls, CallID: m.CallID}
 	}
 	raw := jsonText(transcript)
 	for start := 0; start < len(raw); {

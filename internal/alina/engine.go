@@ -25,18 +25,19 @@ type Approval struct {
 	Expires time.Time `json:"expires"`
 }
 type Job struct {
-	ID       string     `json:"id"`
-	Session  string     `json:"session"`
-	Owner    string     `json:"owner"`
-	Kind     string     `json:"kind,omitempty"`
-	Input    string     `json:"input"`
-	Status   string     `json:"status"`
-	Output   string     `json:"output,omitempty"`
-	Error    string     `json:"error,omitempty"`
-	Activity string     `json:"activity,omitempty"`
-	Approval *Approval  `json:"approval,omitempty"`
-	Created  time.Time  `json:"created"`
-	Usage    TokenUsage `json:"usage"`
+	ID          string       `json:"id"`
+	Session     string       `json:"session"`
+	Owner       string       `json:"owner"`
+	Kind        string       `json:"kind,omitempty"`
+	Input       string       `json:"input"`
+	Status      string       `json:"status"`
+	Output      string       `json:"output,omitempty"`
+	Error       string       `json:"error,omitempty"`
+	Activity    string       `json:"activity,omitempty"`
+	Approval    *Approval    `json:"approval,omitempty"`
+	Created     time.Time    `json:"created"`
+	Usage       TokenUsage   `json:"usage"`
+	Attachments []Attachment `json:"attachments,omitempty"`
 }
 type runningJob struct {
 	Job
@@ -72,6 +73,9 @@ func NewEngine(dir string, c Config, m Model, s *Search) (*Engine, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	en := &Engine{Dir: dir, Config: c, Model: m, Search: s, Permissions: p, jobs: map[string]*runningJob{}, sessionTail: map[string]<-chan struct{}{}, ctx: ctx, cancel: cancel}
+	if provider, ok := m.(*Provider); ok {
+		provider.Workspace = en.Workspace()
+	}
 	en.Memory, e = OpenMemory(dir, c)
 	if e != nil {
 		cancel()
@@ -111,7 +115,8 @@ func (e *Engine) Submit(session, owner, input string) (Job, error) {
 func (e *Engine) SubmitKey(session, owner, input, key string) (Job, error) {
 	return e.submit(session, owner, input, key, "chat")
 }
-func (e *Engine) submit(session, owner, input, key, kind string) (Job, error) {
+func (e *Engine) submit(session, owner, input, key, kind string, attachments ...Attachment) (Job, error) {
+	attachments = append([]Attachment(nil), attachments...)
 	if !safeID(session) || len(input) == 0 || len(input) > 32000 {
 		return Job{}, errors.New("invalid session or message (1-32000 bytes)")
 	}
@@ -127,7 +132,7 @@ func (e *Engine) submit(session, owner, input, key, kind string) (Job, error) {
 		return Job{}, errors.New("invalid request ID")
 	}
 	if old, ok := e.getLocked(key); ok {
-		if old.Owner != owner || old.Input != input || old.Session != session || old.Kind != "" && old.Kind != kind {
+		if old.Owner != owner || old.Input != input || old.Session != session || old.Kind != "" && old.Kind != kind || jsonText(old.Attachments) != jsonText(attachments) {
 			return Job{}, errors.New("request ID conflict")
 		}
 		return cloneJob(old), nil
@@ -150,7 +155,7 @@ func (e *Engine) submit(session, owner, input, key, kind string) (Job, error) {
 		cancel()
 		ctx, cancel = context.WithTimeout(e.ctx, 10*time.Minute)
 	}
-	j := &runningJob{Job: Job{ID: key, Session: session, Owner: owner, Kind: kind, Input: input, Status: "queued", Created: time.Now().UTC()}, ctx: ctx, cancel: cancel, decision: make(chan string, 1), done: make(chan struct{}), after: e.sessionTail[session]}
+	j := &runningJob{Job: Job{ID: key, Session: session, Owner: owner, Kind: kind, Input: input, Attachments: append([]Attachment(nil), attachments...), Status: "queued", Created: time.Now().UTC()}, ctx: ctx, cancel: cancel, decision: make(chan string, 1), done: make(chan struct{}), after: e.sessionTail[session]}
 	if err := e.persist(j); err != nil {
 		cancel()
 		return Job{}, err
@@ -169,9 +174,10 @@ func (e *Engine) submit(session, owner, input, key, kind string) (Job, error) {
 		}
 		e.run(j)
 	}()
-	return j.Job, nil
+	return cloneJob(j.Job), nil
 }
 func cloneJob(j Job) Job {
+	j.Attachments = append([]Attachment(nil), j.Attachments...)
 	if j.Approval != nil {
 		a := *j.Approval
 		j.Approval = &a
@@ -189,7 +195,7 @@ func (e *Engine) Resume(id, owner string) (Job, error) {
 	if old.Kind == "dream" || old.Kind == "reindex" {
 		return e.submit(old.Session, old.Owner, old.Input, "", old.Kind)
 	}
-	return e.submit(old.Session, old.Owner, "Resume job "+old.ID+". Original intention: "+truncate(old.Input, 20000)+"\nPrevious outcome: "+old.Status+" "+old.Error+"\nRead the session checkpoint and verify the device's current state before taking another action. Tool calls without recorded results have unknown outcomes; do not blindly repeat them.", "", old.Kind)
+	return e.submit(old.Session, old.Owner, "Resume job "+old.ID+". Original intention: "+truncate(old.Input, 20000)+"\nPrevious outcome: "+old.Status+" "+old.Error+"\nRead the session checkpoint and verify the device's current state before taking another action. Tool calls without recorded results have unknown outcomes; do not blindly repeat them.", "", old.Kind, old.Attachments...)
 }
 func (e *Engine) Cancel(id, owner string) error {
 	e.mu.Lock()
@@ -331,10 +337,20 @@ func (e *Engine) run(j *runningJob) {
 }
 func toolSpecs() []ToolSpec {
 	specs := []ToolSpec{{Name: "shell", Description: "Run an installed command. Declare network=true for network access, download=true for arbitrary file downloads, install=true for installation. Strict network policy asks consent for any network access; declared policy asks for downloads/installation. Subprocesses are owned by this invocation and cleaned up on completion.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}, "directory": map[string]any{"type": "string"}, "network": map[string]any{"type": "boolean"}, "download": map[string]any{"type": "boolean"}, "install": map[string]any{"type": "boolean"}}, "required": []string{"command"}}}, {Name: "web_search", Description: "Search the web using openai, tavily or brave. Returns text and source URLs; no arbitrary file downloads.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}, "provider": map[string]any{"type": "string", "enum": []string{"openai", "tavily", "brave"}}}, "required": []string{"query"}}}}
-	return append(specs, stateToolSpecs()...)
+	return append(append(specs, stateToolSpecs()...), imageToolSpec())
+}
+
+func imageToolSpec() ToolSpec {
+	return ToolSpec{Name: "view_image", Description: "Inspect a saved PNG, JPEG or WebP image inside your workspace. Use the path from an attachment, archive entry, or a locally created screenshot. The image is delivered as visual input; other file types use shell tools.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}}, "required": []string{"path"}}}
 }
 func (e *Engine) tool(j *runningJob, c ToolCall) (string, error) {
 	switch c.Name {
+	case "view_image":
+		if p, ok := e.Model.(*Provider); ok && !p.supportsImages() {
+			return "", errors.New("visual input requires a vision-capable model using the Responses adapter")
+		}
+		a, err := e.inspectImage(j.ctx, c.Arguments)
+		return jsonText(a), err
 	case "memory", "schedule":
 		return e.stateTool(j, c)
 	case "shell":

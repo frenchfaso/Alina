@@ -3,6 +3,7 @@ package alina
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -30,9 +31,17 @@ type Telegram struct {
 	stateErr error
 }
 type tgMessage struct {
-	ID   int64  `json:"message_id"`
-	Text string `json:"text"`
-	From struct {
+	ID        int64    `json:"message_id"`
+	Text      string   `json:"text"`
+	Caption   string   `json:"caption"`
+	Photo     []tgFile `json:"photo"`
+	Document  *tgFile  `json:"document"`
+	Audio     *tgFile  `json:"audio"`
+	Video     *tgFile  `json:"video"`
+	Voice     *tgFile  `json:"voice"`
+	Animation *tgFile  `json:"animation"`
+	VideoNote *tgFile  `json:"video_note"`
+	From      struct {
 		ID int64 `json:"id"`
 	} `json:"from"`
 	Chat struct {
@@ -53,6 +62,9 @@ type tgUpdate struct {
 }
 
 func NewTelegram(dir string, c TelegramConfig, e *Engine, client *http.Client) *Telegram {
+	if client == nil {
+		client = newHTTPClient()
+	}
 	t := &Telegram{Dir: dir, Config: c, Engine: e, Client: client, state: telegramState{Sessions: map[string]string{}, Delivered: map[string]string{}}}
 	b, er := os.ReadFile(filepath.Join(dir, "telegram.json"))
 	if er == nil {
@@ -82,10 +94,14 @@ func (t *Telegram) api(ctx context.Context, method string, body, out any) error 
 		ErrorCode int             `json:"error_code"`
 	}
 	if e := requestJSON(ctx, t.Client, "POST", t.endpoint(method), body, nil, &envelope); e != nil {
+		var status *remoteHTTPError
+		if errors.As(e, &status) {
+			return &telegramAPIError{code: status.Status}
+		}
 		return e
 	}
 	if !envelope.OK {
-		return fmt.Errorf("Telegram API error %d", envelope.ErrorCode)
+		return &telegramAPIError{code: envelope.ErrorCode}
 	}
 	if out != nil {
 		return json.Unmarshal(envelope.Result, out)
@@ -147,6 +163,11 @@ func (t *Telegram) Run(ctx context.Context) {
 		for _, u := range updates {
 			if e = t.process(ctx, u); e != nil {
 				log.Print("Telegram update failed; will retry")
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+				}
 				break
 			}
 			t.mu.Lock()
@@ -182,12 +203,13 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	if m == nil || m.From.ID != t.Config.OwnerID || m.Chat.ID != t.Config.OwnerID || m.Chat.Type != "private" {
 		return nil
 	}
-	if m.Text == "" {
-		return t.send(ctx, "Per ora accetto messaggi di testo. Gli allegati non vengono scaricati automaticamente.", nil)
+	file := m.file()
+	if strings.TrimSpace(m.Text) == "" && file == nil {
+		return t.send(ctx, "Invia testo, una foto o un file (massimo 20 MiB).", nil)
 	}
 	fields := strings.Fields(m.Text)
 	if len(fields) == 0 {
-		return nil
+		fields = []string{""}
 	}
 	chat := strconv.FormatInt(m.Chat.ID, 10)
 	switch fields[0] {
@@ -262,7 +284,24 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		}
 		return nil
 	}
-	j, e := t.Engine.SubmitKey(session, owner, m.Text, key)
+	input := m.Text
+	var attachments []Attachment
+	if file != nil {
+		a, err := t.receiveFile(ctx, u.ID, *file)
+		if err != nil {
+			var rejected *attachmentRejected
+			if errors.As(err, &rejected) {
+				return t.send(ctx, rejected.Error(), nil)
+			}
+			return err
+		}
+		attachments = []Attachment{a}
+		input = m.Caption
+		if strings.TrimSpace(input) == "" {
+			input = "The user sent an attachment without a caption. Inspect it and respond in the user's language; ask what they would like to do if the intended task is unclear."
+		}
+	}
+	j, e := t.Engine.submit(session, owner, input, key, "chat", attachments...)
 	if e != nil {
 		return t.send(ctx, "Impossibile avviare: "+e.Error(), nil)
 	}

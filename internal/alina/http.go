@@ -13,6 +13,13 @@ import (
 func newHTTPClient() *http.Client {
 	return &http.Client{Timeout: 180 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 }
+
+type remoteHTTPError struct{ Status int }
+
+func (e *remoteHTTPError) Error() string {
+	return fmt.Sprintf("remote service returned HTTP %d", e.Status)
+}
+
 func requestJSON(ctx context.Context, client *http.Client, method, url string, body any, headers map[string]string, out any) error {
 	var reader io.Reader
 	if body != nil {
@@ -42,7 +49,7 @@ func requestJSON(ctx context.Context, client *http.Client, method, url string, b
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("remote service returned HTTP %d", resp.StatusCode)
+		return &remoteHTTPError{Status: resp.StatusCode}
 	}
 	return decodeLimited(resp.Body, out)
 }
