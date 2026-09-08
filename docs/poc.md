@@ -127,9 +127,13 @@ send an image as a file when preserving the original matters. See the
 
 ## Native file tools
 
-The ordinary agent loop exposes eight tools: `shell`, `read`, `write`, `edit`,
+The ordinary agent loop exposes up to eight tools: `shell`, `read`, `write`, `edit`,
 `web_search`, `memory`, `schedule` and `view_image`. The file tools follow Pi's
 small interfaces, implemented directly in Go without additional dependencies:
+
+Disabled search/memory and unsupported image adapters are omitted from the tool
+set. The prompt follows that set and dispatch checks it before executing calls.
+
 
 - `read(path, offset?, limit?)`: UTF-8 text, with one-based line offsets and
   `next_offset` for continuation. A page contains at most 2000 whole lines or

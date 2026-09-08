@@ -33,7 +33,7 @@ func TestFileToolsThroughAgentLoop(t *testing.T) {
 		for _, s := range specs {
 			names[s.Name] = true
 		}
-		if len(names) != 8 || !names["read"] || !names["write"] || !names["edit"] || !strings.Contains(messages[0].Content, "prefer read") {
+		if len(names) != 7 || names["web_search"] || !names["read"] || !names["write"] || !names["edit"] || !strings.Contains(messages[0].Content, "prefer read") {
 			return Message{}, errors.New("file tools or prompt guidance missing")
 		}
 		last := messages[len(messages)-1]

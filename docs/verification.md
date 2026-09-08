@@ -1,5 +1,30 @@
 # POC verification — 2026-09-08
 
+## Architecture and prompt review — 0.6
+
+All **72 top-level tests** pass with the macOS ARM64 race detector and natively
+on Galaxy A15 Termux. Go vet, formatting and diff checks pass. CGO-free builds
+pass for Android/arm64, Linux/arm64 and FreeBSD/OpenBSD/NetBSD amd64.
+
+The new regression tests cover queued cancellation ordering, failed approval
+persistence, stale approval decisions, current requests/images during compaction,
+oversized unanswered inputs, synthetic checkpoint provenance, capability-dependent
+prompts, bounded intention indexes, soul delimiters, auxiliary OpenAI research
+budgets/usage, malformed or truncated provider output and initiative directories.
+
+The disposable binary smoke passed setup, private configuration, focus view,
+idle dream, one-shot scheduling, soul fallback, FTS recall, persistence and resume.
+Its small text workload used **16,840 KiB RSS**, not a peak-memory bound. Live
+provider/Telegram accounts remain untested; all protocol calls used fixtures.
+
+Version 0.6 is installed at `~/alina-poc/bin/alina`, with 0.5 retained as
+`~/alina-poc/bin/alina-v05-0d917588`. Installed Android SHA-256:
+`c133775651e7a3c44686637f55e06cdae53a07cf6deb841408aba19d1b08d332`.
+No package, service or permanent account configuration was changed.
+
+See the [review and pinned source comparison](review-2026-09-08.md) and the
+[rendered prompt example](prompt-example.md).
+
 ## Native read/write/edit and prompt guidance — 0.5
 
 All **60 top-level tests** pass with the macOS ARM64 race detector and natively

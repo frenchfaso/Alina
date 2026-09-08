@@ -132,7 +132,7 @@ func TestCompactionStartsOnlyAbove95Percent(t *testing.T) {
 	}
 	history[1].Context.InputTokens++
 	next, err := e.compact(j, history, path, overhead)
-	if err != nil || calls != 1 || len(next) != 1 || next[0].Context != nil {
+	if err != nil || calls != 1 || len(next) != 2 || next[0].Context != nil || next[1].Content != history[0].Content {
 		t.Fatal("failed compaction above threshold", calls, len(next), err)
 	}
 	files, _ := filepath.Glob(filepath.Join(e.Dir, "sessions", "threshold", "*.json"))

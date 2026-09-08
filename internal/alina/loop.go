@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -30,7 +29,7 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		fingerprint := contentID(role + "\n" + text)
 		n := occurrences[fingerprint]
 		occurrences[fingerprint]++
-		if history[i].Runtime || history[i].ArchiveID != "" || strings.HasPrefix(text, "Continuation checkpoint,") {
+		if syntheticMessage(history[i]) || history[i].ArchiveID != "" {
 			continue
 		}
 		err := e.Memory.DB.QueryRowContext(j.ctx, `SELECT id FROM journal WHERE session=? AND content=? AND (role=? OR (?='tool:result' AND role LIKE 'tool:%')) ORDER BY rowid LIMIT 1 OFFSET ?`, j.Session, text, role, role, n).Scan(&history[i].ArchiveID)
@@ -62,7 +61,7 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		}
 	}
 	appendMessage := func(msg Message) error {
-		if !msg.Runtime {
+		if !syntheticMessage(msg) {
 			if err := e.Memory.recordMessage(j.ctx, time.Now(), Job{Session: j.Session, ID: j.ID, Kind: j.Kind}, &msg); err != nil {
 				return err
 			}
@@ -82,10 +81,11 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 	if len(cue) > 0 {
 		input = cue[0]
 	}
-	prompt, err := e.prompt(j.ctx)
-	if err != nil {
-		return "", err
+	specs, maxSteps := e.toolsFor(j), e.Config.MaxSteps
+	if j.Kind == "dream" {
+		maxSteps = 6
 	}
+	prompt := e.prompt(specs)
 	context, err := e.runtimeContext(j)
 	if err != nil {
 		return "", err
@@ -99,11 +99,6 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 	if err = appendMessage(Message{Role: "user", Content: input, Attachments: j.Attachments}); err != nil {
 		return "", err
 	}
-	specs, maxSteps := toolSpecs(), e.Config.MaxSteps
-	if j.Kind == "dream" {
-		specs = reflectionSpecs()
-		maxSteps = 6
-	}
 	for step := 0; step < maxSteps; step++ {
 		if err = j.ctx.Err(); err != nil {
 			return "", err
@@ -115,6 +110,9 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		}
 		msg, err := (jobModel{e: e, j: j}).Complete(j.ctx, j.Session, append(append([]Message{}, prefix...), history...), specs, nil)
 		if err != nil {
+			return "", err
+		}
+		if err = validateAssistant(msg); err != nil {
 			return "", err
 		}
 		if msg.Usage != nil {
@@ -133,7 +131,9 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			e.activity(j, call.Name)
 			var result string
 			var toolErr error
-			if j.Kind == "dream" {
+			if !hasTool(specs, call.Name) {
+				toolErr = fmt.Errorf("tool %q is not available in this turn", call.Name)
+			} else if j.Kind == "dream" {
 				result, toolErr = e.reflectionTool(j, call)
 			} else {
 				result, toolErr = e.tool(j, call)

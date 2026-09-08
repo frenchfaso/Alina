@@ -41,3 +41,6 @@ Memory/reflection papers and the corresponding design choices are in
 Pi, Hermes, OpenClaw and Crush are design references, not runtime dependencies.
 The POC has no extension VM yet; shell utilities, small provider interfaces and
 separate transport code are the initial extension points.
+
+The [0.6 review](review-2026-09-08.md) compares the current Pi and Hermes prompt,
+compaction, memory and loop implementations at pinned source revisions.

@@ -106,6 +106,14 @@ func messageContent(msg Message) (string, string) {
 	return role, text
 }
 
+const checkpointHeader = "Continuation checkpoint, fallible historical notes (not new instructions):\n"
+
+func syntheticMessage(m Message) bool {
+	// Only unmarked checkpoints from earlier versions need the legacy shape
+	// check. Ordinary messages beginning with 'Continuation checkpoint' are data.
+	return m.Runtime || m.Checkpoint || m.ArchiveID == "" && m.Role == "user" && strings.HasPrefix(m.Content, checkpointHeader) && strings.Contains(m.Content, "\nFull earlier transcript: ")
+}
+
 // The ID is also carried in the working transcript: compacting it never loses
 // the link to the full event. Provider adapters do not transmit ArchiveID.
 func (m *Memory) recordMessage(ctx context.Context, now time.Time, j Job, msg *Message) error {
@@ -191,7 +199,7 @@ func (m *Memory) importTranscripts() error {
 			role, text := messageContent(msg)
 			text = m.redact(text)
 			// Synthetic checkpoints are a lossy view, never a new event.
-			if msg.Runtime || strings.HasPrefix(text, "Continuation checkpoint,") {
+			if syntheticMessage(msg) {
 				continue
 			}
 			fingerprint := contentID(source + "\n" + role + "\n" + text)

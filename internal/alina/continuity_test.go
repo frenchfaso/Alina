@@ -138,7 +138,7 @@ func TestLargeToolExchangeCompactsWithoutOrphanCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(next) != 1 || next[0].Role != "user" {
+	if len(next) != 2 || !next[0].Checkpoint || next[1].Content != "inspect" {
 		t.Fatal("orphan tool exchange", len(next))
 	}
 }
@@ -242,12 +242,10 @@ func TestRecentMemoryPagesCorrectionsAndSoulFallback(t *testing.T) {
 	}
 	good := "# Alina\nCuriosa e concreta."
 	writeText(filepath.Join(e.Dir, "soul.md"), good)
-	if _, err = e.prompt(ctx); err != nil {
-		t.Fatal(err)
-	}
+	_ = e.prompt(nil)
 	writeText(filepath.Join(e.Dir, "soul.md"), strings.Repeat("x", 1601))
-	prompt, err := e.prompt(ctx)
-	if err != nil || !strings.Contains(prompt, good) || !strings.Contains(prompt, "last valid") {
+	prompt := e.prompt(nil)
+	if !strings.Contains(prompt, good) || !strings.Contains(prompt, "last valid") {
 		t.Fatal(prompt, err)
 	}
 }

@@ -27,6 +27,7 @@ type Message struct {
 	Raw         []json.RawMessage `json:"raw,omitempty"`
 	Reasoning   string            `json:"reasoning,omitempty"`
 	Runtime     bool              `json:"runtime,omitempty"`
+	Checkpoint  bool              `json:"checkpoint,omitempty"`
 	Usage       *TokenUsage       `json:"usage,omitempty"`
 	Context     *contextSample    `json:"context_sample,omitempty"`
 	Attachments []Attachment      `json:"attachments,omitempty"`
@@ -106,7 +107,8 @@ func (p *Provider) chat(ctx context.Context, session string, msg []Message, tool
 	}
 	var r struct {
 		Choices []struct {
-			Message struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
 				Content   string `json:"content"`
 				Reasoning string `json:"reasoning_content"`
 				Calls     []struct {
@@ -126,12 +128,15 @@ func (p *Provider) chat(ctx context.Context, session string, msg []Message, tool
 	if len(r.Choices) == 0 {
 		return Message{}, errors.New("provider returned no choices")
 	}
+	if reason := r.Choices[0].FinishReason; reason == "length" || reason == "content_filter" {
+		return Message{}, errors.New("provider response truncated or filtered; no tools executed")
+	}
 	m := r.Choices[0].Message
 	out := Message{Role: "assistant", Content: m.Content, Reasoning: m.Reasoning}
 	for _, c := range m.Calls {
 		out.Calls = append(out.Calls, ToolCall{c.ID, c.Function.Name, c.Function.Arguments})
 	}
-	return out, nil
+	return out, validateAssistant(out)
 }
 func (p *Provider) anthropic(ctx context.Context, session string, msg []Message, tools []ToolSpec) (Message, error) {
 	var system string
@@ -178,13 +183,17 @@ func (p *Provider) anthropic(ctx context.Context, session string, msg []Message,
 		body["tools"] = ts
 	}
 	var r struct {
-		Content []json.RawMessage `json:"content"`
+		Content    []json.RawMessage `json:"content"`
+		StopReason string            `json:"stop_reason"`
 	}
 	h := p.headers(p.Config.OpenCodeKey, session)
 	h["x-api-key"] = p.Config.OpenCodeKey
 	h["anthropic-version"] = "2023-06-01"
 	if e := requestJSON(ctx, p.modelClient(), "POST", p.endpoint("https://opencode.ai/zen/go/v1/messages"), body, h, &r); e != nil {
 		return Message{}, e
+	}
+	if r.StopReason == "max_tokens" {
+		return Message{}, errors.New("provider response truncated; no tools executed")
 	}
 	out := Message{Role: "assistant", Raw: r.Content}
 	for _, b := range r.Content {
@@ -202,7 +211,7 @@ func (p *Provider) anthropic(ctx context.Context, session string, msg []Message,
 			out.Calls = append(out.Calls, ToolCall{j.ID, j.Name, string(j.Input)})
 		}
 	}
-	return out, nil
+	return out, validateAssistant(out)
 }
 
 func responseInput(msg []Message) (string, []any) {
@@ -379,6 +388,7 @@ func parseResponse(raw []json.RawMessage) (Message, error) {
 			Content   []struct {
 				Type        string                              `json:"type"`
 				Text        string                              `json:"text"`
+				Refusal     string                              `json:"refusal"`
 				Annotations []struct{ Type, URL, Title string } `json:"annotations"`
 			} `json:"content"`
 		}
@@ -391,6 +401,9 @@ func parseResponse(raw []json.RawMessage) (Message, error) {
 		for _, c := range j.Content {
 			if c.Type == "output_text" {
 				out.Content += c.Text
+			}
+			if c.Type == "refusal" {
+				out.Content += c.Refusal
 			}
 			for _, a := range c.Annotations {
 				if a.Type == "url_citation" && !seen[a.URL] {
@@ -406,7 +419,22 @@ func parseResponse(raw []json.RawMessage) (Message, error) {
 	if len(sources) > 0 {
 		out.Content += "\n\nSources:\n" + strings.Join(sources, "\n")
 	}
-	return out, nil
+	return out, validateAssistant(out)
+}
+
+func validateAssistant(m Message) error {
+	if strings.TrimSpace(m.Content) == "" && len(m.Calls) == 0 {
+		return errors.New("provider returned no answer or tool calls")
+	}
+	seen := map[string]bool{}
+	for _, c := range m.Calls {
+		var args map[string]json.RawMessage
+		if c.ID == "" || c.Name == "" || seen[c.ID] || json.Unmarshal([]byte(c.Arguments), &args) != nil || args == nil {
+			return errors.New("provider returned invalid or duplicate tool calls; no tools executed")
+		}
+		seen[c.ID] = true
+	}
+	return nil
 }
 func readSSE(r io.Reader, fn func([]byte) error) error {
 	s := bufio.NewScanner(io.LimitReader(r, 32<<20))
