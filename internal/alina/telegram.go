@@ -214,7 +214,7 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	chat := strconv.FormatInt(m.Chat.ID, 10)
 	switch fields[0] {
 	case "/start", "/help":
-		return t.send(ctx, "Alina · operatore personale\nScrivi una richiesta.\n/status · lavori\n/cancel ID · interrompi\n/resume ID · riprendi\n/intentions · intenzioni personali\n/new · nuova sessione\n/permissions · consensi\n/revoke ID · revoca", nil)
+		return t.send(ctx, "Alina · operatore personale\nScrivi una richiesta. Durante un lavoro, nuovi messaggi e allegati lo aggiornano al prossimo punto sicuro.\n/status · lavori\n/cancel ID · interrompi subito\n/resume ID · riprendi\n/intentions · intenzioni personali\n/new · nuova conversazione\n/permissions · consensi\n/revoke ID · revoca", nil)
 	case "/new":
 		t.mu.Lock()
 		t.state.Sessions[chat] = "tg-" + randomID()
@@ -278,6 +278,11 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	// Stable update IDs prevent a crash before offset persistence from replaying
 	// a submitted command. Compact IDs also fit Telegram's callback_data limit.
 	key := fmt.Sprintf("tg%x", u.ID)
+	if received, err := t.Engine.steeringReceived(key, owner); err != nil {
+		return err
+	} else if received {
+		return nil
+	}
 	if old, ok := t.Engine.Get(key); ok {
 		if old.Owner != owner {
 			return fmt.Errorf("Telegram update owner mismatch")
@@ -301,9 +306,12 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 			input = "The user sent an attachment without a caption. Inspect it and respond in the user's language; ask what they would like to do if the intended task is unclear."
 		}
 	}
-	j, e := t.Engine.submit(session, owner, input, key, "chat", attachments...)
+	j, e := t.Engine.Receive(session, owner, input, key, attachments...)
 	if e != nil {
 		return t.send(ctx, "Impossibile avviare: "+e.Error(), nil)
+	}
+	if j.ID != key {
+		return t.send(ctx, "Messaggio aggiunto al lavoro · "+j.ID, nil)
 	}
 	return t.send(ctx, "Avviato · "+j.ID, nil)
 }
@@ -335,6 +343,9 @@ func (t *Telegram) notify(ctx context.Context) {
 				text = j.ID + " · " + j.Status + "\n" + j.Output
 				if j.Error != "" {
 					text += "\n" + j.Error
+				}
+				if j.PendingSteering > 0 {
+					text += fmt.Sprintf("\n%d messaggi salvati in attesa: /resume %s", j.PendingSteering, j.ID)
 				}
 			}
 			if stamp == "" {

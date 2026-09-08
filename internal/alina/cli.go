@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -47,6 +48,7 @@ func Main(args []string) error {
   alina status                 Stato e lavori
   alina job ID                 Segui un lavoro / rispondi al consenso
   alina cancel ID              Interrompi un lavoro
+  alina steer ID "correzione"  Aggiorna un lavoro in corso
   alina resume ID              Riprendi verificando lo stato attuale
   alina intentions             Intenzioni personali e domande aperte
   alina approve JOB APPROVAL once|restart|always|deny
@@ -125,6 +127,16 @@ Il servizio deve essere riavviato dopo setup.`)
 			return err
 		}
 		return waitJob(ctx, dir, j.ID, in, out)
+	case "steer":
+		if len(args) < 3 || !safeID(args[1]) {
+			return errors.New("usage: alina steer ID message")
+		}
+		var j Job
+		if err := localRequest(ctx, dir, "POST", "/v1/jobs/"+args[1]+"/steer", map[string]string{"message": strings.Join(args[2:], " "), "request_id": randomID()}, &j); err != nil {
+			return err
+		}
+		fmt.Fprintln(out, "Messaggio aggiunto al lavoro ·", j.ID)
+		return nil
 	case "cancel":
 		if len(args) != 2 {
 			return errors.New("usage: alina cancel ID")
@@ -228,6 +240,9 @@ func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Write
 			}
 		}
 		if terminalStatus(j.Status) {
+			if j.PendingSteering > 0 {
+				fmt.Fprintln(out, "Messaggi salvati in attesa: alina resume", j.ID)
+			}
 			if j.Output != "" {
 				fmt.Fprintln(out, j.Output)
 			}
@@ -243,68 +258,6 @@ func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Write
 		}
 	}
 }
-func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Writer) error {
-	fmt.Fprintf(out, "Alina · conversazione %s\n/new /status /permissions /quit · Ctrl-C interrompe il lavoro e chiude\n", session)
-	for {
-		fmt.Fprint(out, "\ntu> ")
-		line, e := readLine(ctx, in)
-		if e != nil {
-			if e == io.EOF {
-				return nil
-			}
-			return e
-		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		switch line {
-		case "/quit":
-			return nil
-		case "/new":
-			session = "local-" + randomID()
-			fmt.Fprintln(out, "Conversazione (memoria condivisa):", session)
-			continue
-		case "/status":
-			var r struct{ Jobs []Job }
-			if e := localRequest(ctx, dir, "GET", "/v1/status", nil, &r); e != nil {
-				fmt.Fprintln(out, e)
-			} else {
-				fmt.Fprintln(out, formatJobs(r.Jobs))
-			}
-			continue
-		case "/permissions":
-			var g []Grant
-			if e := localRequest(ctx, dir, "GET", "/v1/grants", nil, &g); e != nil {
-				fmt.Fprintln(out, e)
-			} else {
-				fmt.Fprintln(out, formatGrants(g))
-			}
-			continue
-		}
-		if strings.HasPrefix(line, "/revoke ") {
-			e := localRequest(ctx, dir, "DELETE", "/v1/grants/"+strings.TrimSpace(strings.TrimPrefix(line, "/revoke ")), nil, &map[string]any{})
-			if e != nil {
-				fmt.Fprintln(out, e)
-			} else {
-				fmt.Fprintln(out, "Consenso revocato.")
-			}
-			continue
-		}
-		var j Job
-		if e := localRequest(ctx, dir, "POST", "/v1/jobs", map[string]string{"session": session, "message": line, "request_id": randomID()}, &j); e != nil {
-			fmt.Fprintln(out, e)
-			continue
-		}
-		fmt.Fprintln(out, "alina>")
-		if e := waitJob(ctx, dir, j.ID, in, out); e != nil {
-			fmt.Fprintln(out, "Errore:", e)
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-	}
-}
 func formatJobs(jobs []Job) string {
 	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Created.After(jobs[j].Created) })
 	if len(jobs) == 0 {
@@ -315,7 +268,11 @@ func formatJobs(jobs []Job) string {
 	}
 	var b strings.Builder
 	for _, j := range jobs {
-		fmt.Fprintf(&b, "%s · %s · %s\n", j.ID, j.Status, truncate(j.Input, 100))
+		fmt.Fprintf(&b, "%s · %s · %s", j.ID, j.Status, truncate(j.Input, 100))
+		if j.PendingSteering > 0 {
+			fmt.Fprintf(&b, " · %d messaggi in attesa", j.PendingSteering)
+		}
+		b.WriteByte('\n')
 	}
 	return b.String()
 }
@@ -591,6 +548,11 @@ func doctor(ctx context.Context, dir string, live bool, out io.Writer) error {
 	fmt.Fprintf(out, "Context: %d tokens; compact above %d (95%%)\nReasoning: %s; dream: %s; checkpoint: %s; verbosity: %s; model timeout: %ds\n", c.ContextTokens, c.ContextTokens*95/100, c.ReasoningEffort, c.DreamEffort, c.CheckpointEffort, c.Verbosity, c.ModelTimeout)
 	fmt.Fprintf(out, "Personal exploration: %t · %d model calls/day · %d minutes/run · network policy: %s\n", c.Autonomy.Enabled, c.Autonomy.MaxCalls, c.Autonomy.Minutes, c.NetworkPolicy)
 	fmt.Fprintf(out, "Memory: %t · dream: %t (%s, %s) · embeddings: %t\n", c.Memory.Enabled, c.Memory.Dream, c.Memory.DreamCron, c.Timezone, c.Memory.EmbeddingURL != "")
+	markitdown, _ := exec.LookPath("markitdown")
+	if markitdown == "" {
+		markitdown = "not on PATH (optional; see workspace/procedures/markitdown.md)"
+	}
+	fmt.Fprintln(out, "MarkItDown:", markitdown)
 	_, authErr := os.Stat(filepath.Join(dir, "chatgpt.json"))
 	fmt.Fprintf(out, "ChatGPT login file: %t\nOpenCode key: %t\nTavily key: %t\nBrave key: %t\nOpenAI search API key: %t\nTelegram enabled: %t\n", authErr == nil, c.OpenCodeKey != "", c.Search.TavilyKey != "", c.Search.BraveKey != "", c.Search.OpenAIKey != "", c.Telegram.Enabled)
 	if !live {

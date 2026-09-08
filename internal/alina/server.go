@@ -105,14 +105,36 @@ func handler(e *Engine) http.Handler {
 	})
 	mux.HandleFunc("POST /v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Session   string `json:"session"`
+			Session     string `json:"session"`
+			Message     string `json:"message"`
+			RequestID   string `json:"request_id,omitempty"`
+			Interactive bool   `json:"interactive,omitempty"`
+		}
+		if !decode(w, r, &req) {
+			return
+		}
+		var j Job
+		var err error
+		if req.Interactive {
+			j, err = e.Receive(req.Session, "local", req.Message, req.RequestID)
+		} else {
+			j, err = e.SubmitKey(req.Session, "local", req.Message, req.RequestID)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		reply(w, j)
+	})
+	mux.HandleFunc("POST /v1/jobs/{id}/steer", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
 			Message   string `json:"message"`
 			RequestID string `json:"request_id,omitempty"`
 		}
 		if !decode(w, r, &req) {
 			return
 		}
-		j, err := e.SubmitKey(req.Session, "local", req.Message, req.RequestID)
+		j, err := e.Steer(r.PathValue("id"), "local", req.Message, req.RequestID)
 		if err != nil {
 			http.Error(w, err.Error(), 400)
 			return

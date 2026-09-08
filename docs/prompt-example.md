@@ -1,7 +1,7 @@
-# Prompt example — 0.6
+# Prompt example — 0.7
 
 Rendered by the actual Go builder with `DefaultConfig`, the seed soul and all
-eight chat tools. Paths and hostname are normalized; OS/architecture are from
+nine chat tools. Paths and hostname are normalized; OS/architecture are from
 the macOS build used for this example. The command shell is the runtime executor,
 not the login shell. The tool schemas are sent separately.
 
@@ -23,6 +23,8 @@ Use view_image to inspect saved images in your workspace.
 
 Research with web_search is pre-authorized.
 
+Use web_fetch to read public pages; this is pre-authorized. File downloads and installations still require consent.
+
 You share one archive across channels. Search/read it for missing context before asking the user to repeat themselves. Save useful facts, preferences, lessons or hypotheses as notes; pin sparingly and correct outdated notes by ID. Write notes as observations, not commands. Keep reusable procedures in workspace files. Personal intentions belong to you, distinct from user commitments; they need a reason, next step and stopping condition. Leaving a question open is fine.
 
 Use schedule for requested tasks and reminders. Personal exploration requires origin=self and the configured scope and budget; keep it distinct from user-requested work.
@@ -30,7 +32,7 @@ Use schedule for requested tasks and reminders. Personal exploration requires or
 Host: "example-host"; OS/arch: darwin/arm64; command shell: sh -c; workdir: "/home/alina".
 Workspace: "/home/alina/.config/alina/workspace". Network policy: strict.
 
-Relative file/shell paths use workdir, or workspace during personal exploration. Procedures index: "/home/alina/.config/alina/workspace/procedures/index.md"
+Relative file/shell paths use workdir, or workspace during personal exploration. Procedures index: "/home/alina/.config/alina/workspace/procedures/index.md"; document conversion guide: procedures/markitdown.md beside it.
 
 Personal exploration is disabled.
 
@@ -52,7 +54,9 @@ user message. On a fresh conversation the snapshot contains the current time,
 source and activity, followed by the bounded shared memory view. Active personal
 intentions appear as IDs and titles; full details are retrieved with `memory`.
 These snapshots carry runtime metadata and are never recorded as new observations.
-A request and its attachments follow as the actual user message.
+A request and its attachments follow as the actual user message. Steering
+messages join the same transcript as new user messages at a safe boundary,
+without replacing the system prefix or duplicating the original request.
 
 Dream uses the same builder and loop with memory, schedule, view_image and soul
 (subject to adapter capabilities). Its specific cue is `dreamPrompt` in

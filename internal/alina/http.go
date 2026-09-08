@@ -11,7 +11,7 @@ import (
 )
 
 func newHTTPClient() *http.Client {
-	return &http.Client{Timeout: 180 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	return &http.Client{Transport: hostHTTPTransport(), Timeout: 180 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
 type remoteHTTPError struct{ Status int }

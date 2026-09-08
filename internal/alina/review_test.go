@@ -80,7 +80,7 @@ func TestPromptAndToolsMatchCapabilities(t *testing.T) {
 	e := newTestEngine(t, &scriptedModel{})
 	e.Search = &Search{Config: e.Config.Search}
 	chat := e.toolsFor(&runningJob{})
-	if len(chat) != 8 {
+	if len(chat) != 9 {
 		t.Fatal("default tools", len(chat))
 	}
 	dream := e.toolsFor(&runningJob{Job: Job{Kind: "dream"}})

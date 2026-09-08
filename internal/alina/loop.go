@@ -103,10 +103,19 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		if err = j.ctx.Err(); err != nil {
 			return "", err
 		}
+		if err = e.drainSteering(j, &history, appendMessage); err != nil {
+			return "", err
+		}
 		e.activity(j, fmt.Sprintf("Model · step %d", step+1))
 		history, err = e.compact(j, history, path, estimatedTokens(prefix)+estimatedTokens(specs))
 		if err != nil {
 			return "", err
+		}
+		// Compaction can take time. Incorporate newly arrived corrections and
+		// recheck the budget before issuing a model request with stale intent.
+		if e.hasSteering(j) {
+			step--
+			continue
 		}
 		msg, err := (jobModel{e: e, j: j}).Complete(j.ctx, j.Session, append(append([]Message{}, prefix...), history...), specs, nil)
 		if err != nil {
@@ -125,13 +134,18 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			return "", err
 		}
 		if len(msg.Calls) == 0 {
-			return msg.Content, nil
+			if e.closeMailbox(j) {
+				return msg.Content, nil
+			}
+			continue
 		}
 		for _, call := range msg.Calls {
 			e.activity(j, call.Name)
 			var result string
 			var toolErr error
-			if !hasTool(specs, call.Name) {
+			if e.hasSteering(j) {
+				toolErr = errors.New("not executed: new user steering is pending; reconsider after reading it")
+			} else if !hasTool(specs, call.Name) {
 				toolErr = fmt.Errorf("tool %q is not available in this turn", call.Name)
 			} else if j.Kind == "dream" {
 				result, toolErr = e.reflectionTool(j, call)

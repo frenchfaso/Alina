@@ -2,6 +2,7 @@ package alina
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,28 +18,31 @@ type Approval struct {
 	Expires time.Time `json:"expires"`
 }
 type Job struct {
-	ID          string       `json:"id"`
-	Session     string       `json:"session"`
-	Owner       string       `json:"owner"`
-	Kind        string       `json:"kind,omitempty"`
-	Input       string       `json:"input"`
-	Status      string       `json:"status"`
-	Output      string       `json:"output,omitempty"`
-	Error       string       `json:"error,omitempty"`
-	Activity    string       `json:"activity,omitempty"`
-	Approval    *Approval    `json:"approval,omitempty"`
-	Created     time.Time    `json:"created"`
-	Usage       TokenUsage   `json:"usage"`
-	Attachments []Attachment `json:"attachments,omitempty"`
+	ID              string       `json:"id"`
+	Session         string       `json:"session"`
+	Owner           string       `json:"owner"`
+	Kind            string       `json:"kind,omitempty"`
+	Input           string       `json:"input"`
+	Status          string       `json:"status"`
+	Output          string       `json:"output,omitempty"`
+	Error           string       `json:"error,omitempty"`
+	Activity        string       `json:"activity,omitempty"`
+	Approval        *Approval    `json:"approval,omitempty"`
+	Created         time.Time    `json:"created"`
+	Usage           TokenUsage   `json:"usage"`
+	Attachments     []Attachment `json:"attachments,omitempty"`
+	PendingSteering int          `json:"pending_steering,omitempty"`
 }
 type runningJob struct {
 	Job
-	ctx        context.Context
-	cancel     context.CancelFunc
-	decision   chan string
-	done       chan struct{}
-	after      <-chan struct{}
-	modelCalls int
+	ctx         context.Context
+	cancel      context.CancelFunc
+	decision    chan string
+	done        chan struct{}
+	after       <-chan struct{}
+	modelCalls  int
+	accepting   bool
+	steerSignal chan struct{}
 }
 type Engine struct {
 	mu          sync.Mutex
@@ -110,12 +114,17 @@ func (e *Engine) SubmitKey(session, owner, input, key string) (Job, error) {
 	return e.submit(session, owner, input, key, "chat")
 }
 func (e *Engine) submit(session, owner, input, key, kind string, attachments ...Attachment) (Job, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.submitLocked(session, owner, input, key, kind, "", attachments...)
+}
+
+// Caller holds mu, including interactive routing and resume recovery.
+func (e *Engine) submitLocked(session, owner, input, key, kind, resumeFrom string, attachments ...Attachment) (Job, error) {
 	attachments = append([]Attachment(nil), attachments...)
 	if !safeID(session) || len(input) == 0 || len(input) > 32000 {
 		return Job{}, errors.New("invalid session or message (1-32000 bytes)")
 	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	if e.ctx.Err() != nil {
 		return Job{}, errors.New("service shutting down")
 	}
@@ -124,6 +133,12 @@ func (e *Engine) submit(session, owner, input, key, kind string, attachments ...
 	}
 	if !safeID(key) {
 		return Job{}, errors.New("invalid request ID")
+	}
+	var steeringID string
+	if err := e.Memory.DB.QueryRow("SELECT id FROM steering WHERE id=?", key).Scan(&steeringID); err == nil {
+		return Job{}, errors.New("request ID already used for steering")
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Job{}, err
 	}
 	if old, ok := e.getLocked(key); ok {
 		if old.Owner != owner || old.Input != input || old.Session != session || old.Kind != "" && old.Kind != kind || jsonText(old.Attachments) != jsonText(attachments) {
@@ -143,8 +158,8 @@ func (e *Engine) submit(session, owner, input, key, kind string, attachments ...
 		cancel()
 		ctx, cancel = context.WithTimeout(e.ctx, 10*time.Minute)
 	}
-	j := &runningJob{Job: Job{ID: key, Session: session, Owner: owner, Kind: kind, Input: input, Attachments: append([]Attachment(nil), attachments...), Status: "queued", Created: time.Now().UTC()}, ctx: ctx, cancel: cancel, decision: make(chan string, 1), done: make(chan struct{}), after: e.sessionTail[session]}
-	if err := e.persist(j); err != nil {
+	j := &runningJob{Job: Job{ID: key, Session: session, Owner: owner, Kind: kind, Input: input, Attachments: append([]Attachment(nil), attachments...), Status: "queued", Created: time.Now().UTC()}, ctx: ctx, cancel: cancel, decision: make(chan string, 1), done: make(chan struct{}), after: e.sessionTail[session], accepting: true, steerSignal: make(chan struct{}, 1)}
+	if err := e.persistSubmission(j, resumeFrom); err != nil {
 		cancel()
 		return Job{}, err
 	}
@@ -187,7 +202,9 @@ func cloneJob(j Job) Job {
 	return j
 }
 func (e *Engine) Resume(id, owner string) (Job, error) {
-	old, ok := e.Get(id)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	old, ok := e.getLocked(id)
 	if !ok || owner != "" && old.Owner != owner {
 		return Job{}, errors.New("job not found")
 	}
@@ -195,9 +212,9 @@ func (e *Engine) Resume(id, owner string) (Job, error) {
 		return Job{}, errors.New("cancel or finish the active job before resuming")
 	}
 	if old.Kind == "dream" || old.Kind == "reindex" {
-		return e.submit(old.Session, old.Owner, old.Input, "", old.Kind)
+		return e.submitLocked(old.Session, old.Owner, old.Input, "", old.Kind, "")
 	}
-	return e.submit(old.Session, old.Owner, "Resume job "+old.ID+". Original intention: "+truncate(old.Input, 20000)+"\nPrevious outcome: "+old.Status+" "+old.Error+"\nRead the session checkpoint and verify the device's current state before taking another action. Tool calls without recorded results have unknown outcomes; do not blindly repeat them.", "", old.Kind, old.Attachments...)
+	return e.submitLocked(old.Session, old.Owner, "Resume job "+old.ID+". Original intention: "+truncate(old.Input, 20000)+"\nPrevious outcome: "+old.Status+" "+truncate(old.Error, 2000)+"\nRead the session checkpoint and verify the device's current state before taking another action. Tool calls without recorded results have unknown outcomes; do not blindly repeat them.", "", old.Kind, old.ID, old.Attachments...)
 }
 func (e *Engine) Cancel(id, owner string) error {
 	e.mu.Lock()
@@ -219,7 +236,7 @@ func (e *Engine) Approve(id, approvalID, scope, owner string) error {
 	if !ok || owner != "" && owner != j.Owner {
 		return errors.New("job not found")
 	}
-	if j.Status != "approval" || j.Approval == nil || j.Approval.ID != approvalID || time.Now().After(j.Approval.Expires) || j.ctx.Err() != nil {
+	if j.Status != "approval" || j.Approval == nil || j.Approval.ID != approvalID || time.Now().After(j.Approval.Expires) || j.ctx.Err() != nil || j.PendingSteering > 0 {
 		return errors.New("approval expired or no longer pending")
 	}
 	if scope != "deny" && scope != "once" && scope != "restart" && scope != "always" {
@@ -250,6 +267,10 @@ func (e *Engine) allow(j *runningJob, a Action) error {
 		return nil
 	}
 	e.mu.Lock()
+	if j.PendingSteering > 0 {
+		e.mu.Unlock()
+		return errors.New("operation skipped: user steering is pending")
+	}
 	// Each approval owns its channel: a late decision can never approve the
 	// next operation if timeout/cancellation wins this select.
 	decision := make(chan string, 1)
@@ -264,6 +285,15 @@ func (e *Engine) allow(j *runningJob, a Action) error {
 	select {
 	case <-j.ctx.Done():
 		return j.ctx.Err()
+	case <-j.steerSignal:
+		e.mu.Lock()
+		j.Status, j.Approval = "running", nil
+		err := e.persist(j)
+		e.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		return errors.New("operation skipped: user steering superseded the pending approval")
 	case <-time.After(15 * time.Minute):
 		e.mu.Lock()
 		j.Status = "running"
@@ -281,6 +311,9 @@ func (e *Engine) allow(j *runningJob, a Action) error {
 		if scope == "deny" {
 			return errors.New("operation denied by user")
 		}
+		if e.hasSteering(j) {
+			return errors.New("operation skipped: user steering is pending")
+		}
 		return nil
 	}
 }
@@ -289,6 +322,7 @@ func (e *Engine) finish(j *runningJob, output string, err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	j.Output = output
+	j.accepting = false
 	j.Approval = nil
 	j.Status = "completed"
 	if err != nil {
@@ -345,6 +379,7 @@ func (e *Engine) run(j *runningJob) {
 func toolSpecs() []ToolSpec {
 	specs := []ToolSpec{{Name: "shell", Description: "Run an installed command with sh -c. Declare network=true for network access, download=true for arbitrary file downloads, install=true for installation. Strict network policy asks consent for any network access; declared policy asks for downloads/installation. Subprocesses are owned by this invocation and cleaned up on completion.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}, "directory": map[string]any{"type": "string"}, "network": map[string]any{"type": "boolean"}, "download": map[string]any{"type": "boolean"}, "install": map[string]any{"type": "boolean"}}, "required": []string{"command"}}}, {Name: "web_search", Description: "Search the web using openai, tavily or brave. Returns text and source URLs; no arbitrary file downloads.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}, "provider": map[string]any{"type": "string", "enum": []string{"openai", "tavily", "brave"}}}, "required": []string{"query"}}}}
 	specs = append(specs, fileToolSpecs()...)
+	specs = append(specs, fetchToolSpec())
 	return append(append(specs, stateToolSpecs()...), imageToolSpec())
 }
 
@@ -353,6 +388,11 @@ func imageToolSpec() ToolSpec {
 }
 func (e *Engine) tool(j *runningJob, c ToolCall) (string, error) {
 	switch c.Name {
+	case "web_fetch":
+		if j.Kind == "initiative" && !e.Config.Autonomy.Search {
+			return "", errors.New("web research for personal exploration is disabled")
+		}
+		return webFetch(j.ctx, newFetchClient(), c.Arguments)
 	case "read", "write", "edit":
 		return e.fileTool(j, c)
 	case "view_image":

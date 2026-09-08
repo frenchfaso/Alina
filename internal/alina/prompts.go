@@ -43,6 +43,9 @@ func (e *Engine) toolsFor(j *runningJob) []ToolSpec {
 	}
 	visible := specs[:0]
 	for _, s := range specs {
+		if s.Name == "web_fetch" && j.Kind == "initiative" && !e.Config.Autonomy.Search {
+			continue
+		}
 		if s.Name == "memory" && !e.Config.Memory.Enabled {
 			continue
 		}
@@ -71,6 +74,9 @@ func (e *Engine) prompt(specs []ToolSpec) string {
 	if hasTool(specs, "web_search") {
 		parts = append(parts, "Research with web_search is pre-authorized.")
 	}
+	if hasTool(specs, "web_fetch") {
+		parts = append(parts, "Use web_fetch to read public pages; this is pre-authorized. File downloads and installations still require consent.")
+	}
 	if hasTool(specs, "memory") {
 		parts = append(parts, memoryGuidance)
 	}
@@ -84,7 +90,7 @@ func (e *Engine) prompt(specs []ToolSpec) string {
 	host, _ := os.Hostname()
 	parts = append(parts, fmt.Sprintf("Host: %s; OS/arch: %s/%s; command shell: sh -c; workdir: %s.\nWorkspace: %s. Network policy: %s.", jsonText(host), runtime.GOOS, runtime.GOARCH, jsonText(e.Config.WorkDir), jsonText(e.Workspace()), e.Config.NetworkPolicy))
 	if hasTool(specs, "read") {
-		parts = append(parts, "Relative file/shell paths use workdir, or workspace during personal exploration. Procedures index: "+jsonText(filepath.Join(e.Workspace(), "procedures", "index.md")))
+		parts = append(parts, "Relative file/shell paths use workdir, or workspace during personal exploration. Procedures index: "+jsonText(filepath.Join(e.Workspace(), "procedures", "index.md"))+"; document conversion guide: procedures/markitdown.md beside it.")
 	}
 	if prefix := os.Getenv("PREFIX"); prefix != "" {
 		parts = append(parts, "Termux prefix: "+jsonText(prefix))

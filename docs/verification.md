@@ -1,4 +1,40 @@
-# POC verification — 2026-09-08
+# POC verification — 2026-09-09
+
+## Web fetch and steering — 0.7
+
+All **84 offline tests** pass with the macOS ARM64 race detector and natively
+on Galaxy A15 Termux. The additional opt-in public HTTPS smoke also passes on
+the phone (`ALINA_TEST_WEB=1`): actual DNS resolution, TLS certificate validation,
+HTML extraction and the shared HTTP client used for providers and Telegram.
+Go vet, formatting and diff checks pass, as do CGO-free builds for Android/arm64,
+Linux/arm64 and FreeBSD/OpenBSD/NetBSD amd64.
+
+New regressions cover corrections during model requests, tool execution and
+approval waits; stale-tool skipping; final-response races; attachment and
+Telegram update deduplication; queue and step limits; durable restart/resume;
+failed-persistence rollback; concurrent terminal input; HTML extraction,
+Unicode pagination, binary/attachment rejection, bounded response/expanded text,
+public-address/redirect rules, cancellation and Termux resolver configuration.
+
+The live HTTPS test exposed and verified a fix for the pure-Go Termux resolver:
+all clients now use the installed Termux DNS and CA paths. No public DNS server
+was hardcoded and TLS verification remains enabled.
+
+The disposable binary smoke passes setup, private configuration, workspace guide
+creation/preservation, idle reflection, one-shot tasks, soul fallback, shared FTS
+recall, SQLite integrity, persistence and resume. Its small text workload used
+**21,496 KiB RSS**, not a peak bound. Provider and Telegram protocol tests use
+fixtures; no live model or Telegram account was used.
+
+Version 0.7 is installed at `~/alina-poc/bin/alina`, retaining 0.6 as
+`~/alina-poc/bin/alina-v06-c1337756`. Android SHA-256:
+`c4f87ce3655c9acc00ed188cc9ac1f642c3f511f5354b5722ad7e85f991018b1`.
+No packages, services or permanent account configuration were changed.
+
+MarkItDown 0.1.7 is documented as optional. Its ONNX Runtime dependency has no
+compatible distribution in the Galaxy's pip index check; conversion itself is
+not claimed as tested or available on Termux. See [behavior and sources](web-steering.md)
+and the [actual rendered prompt](prompt-example.md).
 
 ## Architecture and prompt review — 0.6
 

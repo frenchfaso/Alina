@@ -3,12 +3,16 @@ package alina
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+//go:embed procedures/markitdown.md
+var markitdownGuide string
 
 func (e *Engine) Workspace() string { return filepath.Join(e.Dir, "workspace") }
 func within(root, path string) bool {
@@ -23,9 +27,20 @@ func (e *Engine) initWorkspace() error {
 	}
 	path := filepath.Join(e.Workspace(), "procedures", "index.md")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return writeText(path, "# Procedures\n\nKeep reusable scripts and short instructions here. For each capability, record its purpose, path, inputs, last actual verification and known limitations. Mark experiments as unverified until tested. Update this index when a procedure changes.\n")
+		if err = writeText(path, "# Procedures\n\nKeep reusable scripts and short instructions here. For each capability, record its purpose, path, inputs, last actual verification and known limitations. Mark experiments as unverified until tested. Update this index when a procedure changes.\n\n- [Document conversion with MarkItDown](markitdown.md): optional dependency; check platform limitations first.\n"); err != nil {
+			return err
+		}
 	}
-	return nil
+	// Seed once; Alina's later edits to her procedures remain hers.
+	f, err := os.OpenFile(filepath.Join(e.Workspace(), "procedures", "markitdown.md"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if os.IsExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString(markitdownGuide)
+	return errors.Join(err, f.Close())
 }
 
 type Intention struct {

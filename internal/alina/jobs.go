@@ -62,8 +62,11 @@ func (e *Engine) loadJobs() error {
 	}
 	return nil
 }
+
+const saveJobSQL = `INSERT INTO jobs VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,payload=excluded.payload`
+
 func (e *Engine) persist(j *runningJob) error {
-	_, err := e.Memory.DB.Exec(`INSERT INTO jobs VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,payload=excluded.payload`, j.ID, j.Owner, j.Created.Format(time.RFC3339Nano), j.Status, jsonText(j.Job))
+	_, err := e.Memory.DB.Exec(saveJobSQL, j.ID, j.Owner, j.Created.Format(time.RFC3339Nano), j.Status, jsonText(j.Job))
 	return err
 }
 func (e *Engine) getLocked(id string) (Job, bool) {

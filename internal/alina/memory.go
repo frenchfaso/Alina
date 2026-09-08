@@ -67,6 +67,8 @@ func OpenMemory(dir string, c Config) (*Memory, error) {
 	m := &Memory{DB: db, Dir: dir, Config: c, loc: loc, goodSoul: initialSoul}
 	_, err = db.Exec(`PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, owner TEXT, created TEXT, status TEXT, payload TEXT);
+CREATE TABLE IF NOT EXISTS steering (id TEXT PRIMARY KEY, job TEXT, payload TEXT, applied INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS steering_job ON steering(job,applied);
 CREATE INDEX IF NOT EXISTS jobs_owner_created ON jobs(owner,created DESC);
 CREATE INDEX IF NOT EXISTS jobs_created ON jobs(created DESC);
 CREATE TABLE IF NOT EXISTS journal (id TEXT PRIMARY KEY, day TEXT NOT NULL, stamp TEXT, session TEXT, job TEXT, role TEXT, content TEXT);

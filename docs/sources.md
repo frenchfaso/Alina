@@ -44,3 +44,7 @@ separate transport code are the initial extension points.
 
 The [0.6 review](review-2026-09-08.md) compares the current Pi and Hermes prompt,
 compaction, memory and loop implementations at pinned source revisions.
+
+The [0.7 notes](web-steering.md) cover Pi-inspired steering, Go HTML extraction,
+Microsoft MarkItDown and its Termux dependency limitation, and the verified
+Termux DNS/certificate adapter.

@@ -76,8 +76,12 @@ curl --unix-socket "$HOME/.config/alina/alina.sock" http://alina/v1/status
 with an explicit instruction to check current state before repeating effects.
 `alina intentions` lists Alina's personal questions and projects.
 
-`chat` supports `/new`, `/status`, `/permissions`, `/revoke ID`, and `/quit`.
-Ctrl-C cancels the current job and exits the terminal client. A detached job
+`chat` stays usable while Alina works: new lines steer the active chat job.
+It supports `/new`, `/status`, `/permissions`, `/revoke ID`, `/cancel ID`,
+`/approve 1|2|3|4`, and `/quit`. `alina steer ID "correction"` works from another
+terminal. Telegram text and attachments also steer active chat work.
+Ctrl-C cancels followed jobs and exits the terminal client; `/quit` detaches.
+See [web reading, steering and optional document conversion](web-steering.md). A detached job
 continues without a client. Piped requests that need approval leave the job
 pending and print an `alina approve` command; EOF never means approval.
 
@@ -127,8 +131,8 @@ send an image as a file when preserving the original matters. See the
 
 ## Native file tools
 
-The ordinary agent loop exposes up to eight tools: `shell`, `read`, `write`, `edit`,
-`web_search`, `memory`, `schedule` and `view_image`. The file tools follow Pi's
+The ordinary agent loop exposes up to nine tools: `shell`, `read`, `write`, `edit`,
+`web_search`, `web_fetch`, `memory`, `schedule` and `view_image`. The file tools follow Pi's
 small interfaces, implemented directly in Go without additional dependencies:
 
 Disabled search/memory and unsupported image adapters are omitted from the tool
@@ -249,13 +253,13 @@ operation's outcome unknown.
   uncertainty and next actions. Whole tool exchanges stay together. The shared
   SQLite archive and earlier JSON transcripts remain intact on success or failure.
 - Context snapshots (time, current source, intentions and recalled notes) are
-  appended before each new user message. Earlier snapshots stay unchanged until
+  appended at the start of each new turn; steering messages join that turn. Earlier snapshots stay unchanged until
   compaction, allowing the previous request prefix to be reused by the provider.
   They are not inserted into the event archive as new observations. Stable
   instructions include the host, soul and configured permissions.
 - Responses usage is saved with each response and aggregated in job `usage` for
-  the agent loop and checkpoints. Hosted search is a separate request and is not
-  included in this aggregate. The counters describe tokens, not Plus/Pro quota
+  the agent loop and checkpoints. Hosted OpenAI search uses a separate request but shares the job budget,
+  model gate and usage aggregate. The counters describe tokens, not Plus/Pro quota
   percentages. Model HTTP timeout is 600 seconds; auth, Telegram and other HTTP
   clients retain their separate timeout. Job cancellation and job time budgets
   still take precedence.
@@ -263,7 +267,7 @@ operation's outcome unknown.
   and approval state. The Responses adapter parses SSE, but token-by-token chat
   display is not implemented. Telegram response delivery is best-effort retry;
   a crash between send and checkpoint can duplicate a notification. Incoming
-  update IDs deduplicate submitted jobs.
+  update IDs deduplicate submitted jobs and steering messages.
 
 ## Termux service
 
