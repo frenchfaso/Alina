@@ -102,7 +102,7 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 				err = localRequest(ctx, dir, method, path, nil, &map[string]any{})
 			case "/approve":
 				if len(fields) != 2 || len(approvals) != 1 {
-					err = errors.New("use /approve 1|2|3|4 with one displayed approval; otherwise use alina approve JOB APPROVAL scope")
+					err = errors.New("use /approve 1|2|3|4 with one displayed approval; otherwise use the approval API command printed with the job")
 					break
 				}
 				scope := map[string]string{"1": "once", "2": "restart", "3": "always", "4": "deny"}[fields[1]]
@@ -156,7 +156,7 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 				if j.Approval != nil {
 					a := j.Approval
 					approvals[id] = a
-					fmt.Fprintf(out, "\nConsenso · %s · %s\nDirectory: %s\n%s\n1) Solo una volta\n2) Fino al riavvio di Alina\n3) Fino a revoca\n4) Nega\n/approve 1|2|3|4 oppure scrivi una correzione.\nalina approve %s %s once|restart|always|deny\n", id, a.Action.Reason, a.Action.Directory, a.Action.Command, id, a.ID)
+					fmt.Fprintf(out, "\nConsenso · %s · %s\nDirectory: %s\n%s\n1) Solo una volta\n2) Fino al riavvio di Alina\n3) Fino a revoca\n4) Nega\n/approve 1|2|3|4 oppure scrivi una correzione.\n%s\n", id, a.Action.Reason, a.Action.Directory, a.Action.Command, approvalCommand(id, a.ID))
 					if lines == nil {
 						return errors.New("input closed; approval remains pending")
 					}
@@ -166,7 +166,7 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 						fmt.Fprintln(out, "Errore:", j.Error)
 					}
 					if j.PendingSteering > 0 {
-						fmt.Fprintln(out, "Messaggi salvati in attesa: alina resume", id)
+						fmt.Fprintln(out, "Messaggi salvati in attesa:", resumeCommand(id))
 					}
 					delete(watch, id)
 				} else if j.Activity != "" {

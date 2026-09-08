@@ -21,7 +21,7 @@ import (
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "__cli" {
 		if e := Main(os.Args[2:]); e != nil {
-			fmt.Fprintln(os.Stderr, e)
+			WriteError(os.Stderr, e)
 			os.Exit(1)
 		}
 		os.Exit(0)
@@ -325,7 +325,7 @@ func TestDaemonAndCLIOnUnixSocket(t *testing.T) {
 	cli := exec.Command(self, "__cli", "status")
 	cli.Env = append(os.Environ(), "ALINA_HOME="+d)
 	out, err := cli.CombinedOutput()
-	if err != nil || !bytes.Contains(out, []byte("Alina")) {
+	if err != nil || !json.Valid(out) || !bytes.Contains(out, []byte(`"logging"`)) {
 		t.Fatal(string(out), err)
 	}
 	second := exec.Command(self, "__cli", "serve")

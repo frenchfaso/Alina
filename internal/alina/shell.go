@@ -69,7 +69,7 @@ func (b *cappedBuffer) String() string {
 }
 func shellEnvironment() []string {
 	// Keep only ordinary execution settings; never inherit provider credentials.
-	keys := []string{"PATH", "HOME", "PREFIX", "TMPDIR", "LANG", "LC_ALL", "TERM", "SHELL", "LD_LIBRARY_PATH", "ANDROID_ROOT", "ANDROID_DATA", "EXTERNAL_STORAGE"}
+	keys := []string{"PATH", "HOME", "ALINA_HOME", "XDG_CONFIG_HOME", "PREFIX", "TMPDIR", "LANG", "LC_ALL", "TERM", "SHELL", "LD_LIBRARY_PATH", "ANDROID_ROOT", "ANDROID_DATA", "EXTERNAL_STORAGE"}
 	env := []string{}
 	for _, k := range keys {
 		if v, ok := os.LookupEnv(k); ok {

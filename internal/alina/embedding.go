@@ -281,7 +281,7 @@ func (m *Memory) Recall(ctx context.Context, query string) (MemoryResults, error
 	if compatible > 0 {
 		out.Mode = "semantic+text"
 	} else if len(vec) > 0 {
-		out.Notice = "No compatible indexed notes; run alina memory reindex."
+		out.Notice = "No compatible indexed notes; use POST /v1/memory/jobs with kind=reindex through alina api."
 	}
 	return out, nil
 }

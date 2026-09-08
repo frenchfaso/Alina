@@ -78,16 +78,10 @@ func (s *Search) complete(ctx context.Context, session, provider, query string) 
 		key := s.Config.OpenAIKey
 		account := ""
 		endpoint := "https://api.openai.com/v1/responses"
-		model := s.Config.OpenAIModel
-		if model == "" {
-			model = defaultModel
-			if s.Provider.Config.Provider == "chatgpt" {
-				model = s.Provider.Config.Model
-			}
-		}
+		model := s.openAIModel()
 		if key == "" {
 			if s.Provider.Auth == nil {
-				return Message{}, errors.New("OpenAI search requires ChatGPT login: alina login")
+				return Message{}, errors.New("OpenAI search requires ChatGPT login: alina setup login")
 			}
 			c, e := s.Provider.Auth.Get(ctx)
 			if e != nil {
@@ -115,4 +109,14 @@ func truncate(s string, n int) string {
 		n--
 	}
 	return s[:n] + "\n[output truncated]"
+}
+
+func (s *Search) openAIModel() string {
+	if s.Config.OpenAIModel != "" {
+		return s.Config.OpenAIModel
+	}
+	if s.Provider != nil && s.Provider.Config.Provider == "chatgpt" {
+		return s.Provider.Config.Model
+	}
+	return defaultModel
 }

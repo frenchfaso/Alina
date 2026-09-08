@@ -65,13 +65,17 @@ type jobModel struct {
 }
 
 func (m jobModel) Complete(ctx context.Context, session string, messages []Message, specs []ToolSpec, delta func(string)) (Message, error) {
-	return m.infer(ctx, func(ctx context.Context) (Message, error) {
+	purpose := "turn"
+	if strings.HasPrefix(session, "checkpoint-") {
+		purpose = "checkpoint"
+	}
+	return m.infer(ctx, purpose, func(ctx context.Context) (Message, error) {
 		return m.e.Model.Complete(ctx, session, messages, specs, delta)
 	})
 }
 
 // Auxiliary OpenAI research uses the same gate, budget and usage accounting.
-func (m jobModel) infer(ctx context.Context, call func(context.Context) (Message, error)) (Message, error) {
+func (m jobModel) infer(ctx context.Context, purpose string, call func(context.Context) (Message, error)) (Message, error) {
 	release, err := m.e.gate.acquire(ctx, m.j.Kind == "dream" || m.j.Kind == "initiative")
 	if err != nil {
 		return Message{}, err
@@ -98,7 +102,21 @@ func (m jobModel) infer(ctx context.Context, call func(context.Context) (Message
 	if m.j.Kind == "dream" && ctx.Value(reasoningEffortKey{}) == nil {
 		ctx = context.WithValue(ctx, reasoningEffortKey{}, m.e.Config.DreamEffort)
 	}
+	started := time.Now()
+	callID := randomID()
+	provider, model := m.e.Config.Provider, m.e.Config.Model
+	effort := m.e.Config.ReasoningEffort
+	if override, ok := ctx.Value(reasoningEffortKey{}).(string); ok {
+		effort = override
+	}
+	if purpose == "search" {
+		provider = "openai"
+		model = m.e.Search.openAIModel()
+		effort = "low"
+	}
+	m.e.Events.emit("model.started", nil, "job_id", m.j.ID, "call_id", callID, "provider", provider, "model", model, "purpose", purpose, "reasoning", effort)
 	answer, err := call(ctx)
+	m.e.Events.emit("model.finished", err, "job_id", m.j.ID, "call_id", callID, "duration_ms", time.Since(started).Milliseconds(), "usage", answer.Usage)
 	if answer.Usage != nil {
 		m.e.mu.Lock()
 		m.j.Usage.add(*answer.Usage)
@@ -229,6 +247,7 @@ func (e *Engine) compact(j *runningJob, history []Message, path string, overhead
 			return nil, err
 		}
 	}
+	e.Events.emit("context.compacting", nil, "job_id", j.ID, "messages", len(history), "budget_tokens", budget)
 	checkpoint := ""
 	// Bounded chunks also recover sessions produced by older versions.
 	transcript := make([]Message, 0, len(prefix))
@@ -268,5 +287,6 @@ func (e *Engine) compact(j *runningJob, history []Message, path string, overhead
 	if err := writeJSON(path, next); err != nil {
 		return history, err
 	}
+	e.Events.emit("context.compacted", nil, "job_id", j.ID, "messages", len(next))
 	return next, nil
 }

@@ -39,12 +39,12 @@ Files are private plaintext, not encrypted. Configuration updates are atomic.
 
 ## Providers
 
-- **ChatGPT Plus/Pro:** `alina login` runs a dedicated OAuth device login.
+- **ChatGPT Plus/Pro:** `alina setup login` runs a dedicated OAuth device login.
   The default model is `gpt-6-astra`, with a 272,000-token working window.
   Chat uses medium reasoning, dream uses high, checkpoints and hosted search
   use low. See [Astra defaults and verification](astra.md).
   Enable device login in ChatGPT security settings if required. The fallback
-  `alina login browser` uses PKCE and validates OAuth state. Its callback binds
+  `alina setup login browser` uses PKCE and validates OAuth state. Its callback binds
   only `127.0.0.1:1455`; on a remote device you can paste the complete callback
   URL after authenticating. Credentials are stored in `chatgpt.json`; Alina
   refreshes its own token and never imports another application's login.
@@ -56,8 +56,9 @@ Files are private plaintext, not encrypted. Configuration updates are atomic.
   `x-opencode-session`. The initial example is `glm-5.1` / `chat`; availability
   depends on the account and current provider catalog. No automatic paid fallback.
 
-`alina doctor` checks configuration without disclosing credentials.
-`alina doctor --live` sends a small model request, tests each configured search
+`alina doctor` returns JSON diagnostics without disclosing credentials. See
+[the minimal CLI and operational logs](operations.md) for configuration, debugging and repairs.
+`alina doctor --live` sends a small model request, tests the selected search
 provider and checks the Telegram bot with `getMe`. Live checks consume the
 respective provider's normal usage. It does not send Telegram messages.
 
@@ -79,13 +80,12 @@ switches to API billing. Tavily and Brave each require their own API key.
 ## Terminal and Telegram
 
 ```sh
-alina chat                        # plain text, no full-screen TUI
-alina ask "Show free disk space"
-alina ask -session maintenance -detach "Inspect recent logs"
-alina job JOB_ID
+alina chat
+alina chat "Show free disk space"
 alina status
-alina cancel JOB_ID
-cat error.log | alina ask "Explain this log"
+alina status JOB_ID
+alina api POST /v1/jobs/JOB_ID/cancel
+cat error.log | alina chat "Explain this log"
 ```
 
 The terminal client talks HTTP/JSON over a private Unix socket. For example:
@@ -94,18 +94,18 @@ The terminal client talks HTTP/JSON over a private Unix socket. For example:
 curl --unix-socket "$HOME/.config/alina/alina.sock" http://alina/v1/status
 ```
 
-`alina resume JOB_ID` resumes interrupted/failed work in its original session,
+`alina api POST /v1/jobs/JOB_ID/resume` resumes interrupted/failed work in its original session,
 with an explicit instruction to check current state before repeating effects.
-`alina intentions` lists Alina's personal questions and projects.
+`alina api GET /v1/intentions` lists Alina's personal questions and projects.
 
 `chat` stays usable while Alina works: new lines steer the active chat job.
 It supports `/new`, `/status`, `/permissions`, `/revoke ID`, `/cancel ID`,
-`/approve 1|2|3|4`, and `/quit`. `alina steer ID "correction"` works from another
+`/approve 1|2|3|4`, and `/quit`. `alina api POST /v1/jobs/ID/steer` with a JSON message works from another
 terminal. Telegram text and attachments also steer active chat work.
 Ctrl-C cancels followed jobs and exits the terminal client; `/quit` detaches.
 See [web reading, steering and optional document conversion](web-steering.md). A detached job
 continues without a client. Piped requests that need approval leave the job
-pending and print an `alina approve` command; EOF never means approval.
+pending and print an `alina api` approval command; EOF never means approval.
 
 Telegram uses Bot API long polling. Setup explains `/newbot` in BotFather,
 verifies the token using `getMe`, then pairs the owner: open its generated link
@@ -201,7 +201,7 @@ Both clients offer:
 
 1. **Solo una volta** — only the pending invocation.
 2. **Fino al riavvio di Alina** — an in-memory grant for identical operations.
-3. **Fino a revoca** — a persisted grant, removed with `alina revoke ID`.
+3. **Fino a revoca** — a persisted grant, removed with `alina api DELETE /v1/grants/ID`.
 4. **Nega** — returns denial to the agent without executing the command.
 
 Grants match the exact shell command text, absolute working directory, and
@@ -212,8 +212,8 @@ variables or invoking a mutable script still has that command's dynamic
 meaning; grants do not freeze script contents. Pending requests expire after
 15 minutes and cannot be replayed by reusing an old approval ID.
 
-`alina permissions` lists reusable grants. Revocation prevents future reuse;
-use `alina cancel JOB_ID` to stop an already-running operation. A service restart
+`alina api GET /v1/grants` lists reusable grants. Revocation prevents future reuse;
+use `alina api POST /v1/jobs/JOB_ID/cancel` to stop an already-running operation. A service restart
 clears restart-scoped grants and marks unfinished jobs interrupted, without
 replaying commands. A crash before the final result is saved can leave an
 operation's outcome unknown.
@@ -367,7 +367,7 @@ time. No new events means no model call, except for active personal intentions
 under enabled autonomy (at most once successfully per date). Personal exploration
 still runs in separately budgeted one-shot initiatives.
 
-Embeddings are optional. `alina memory reindex` indexes up to 100 current notes
+Embeddings are optional. `POST /v1/memory/jobs` with `kind: "reindex"` indexes up to 100 current notes
 per invocation, including legacy nuclei, through the configured endpoint. Only
 notes and explicit search queries are sent there; ordinary prompt preparation
 makes no embedding call. Exact cosine search is linear in indexed notes; the full
@@ -382,18 +382,12 @@ remain read aliases for date views, without lifecycle transitions. Old Markdown
 views from 0.2 are retained snapshots and are no longer refreshed.
 
 ```sh
-alina dream
-alina memory read focus
-alina memory read recent
-alina memory read archive
-alina memory read soul
-alina memory read 2026-09-01
-alina memory read SOURCE_ID 16000  # use the returned next_offset
-alina memory search "What did we decide about backups?"
-alina memory focus NOTE_ID
-alina memory focus NOTE_ID pin
-alina memory focus NOTE_ID unpin
-alina memory reindex
+alina api POST /v1/memory/jobs '{"kind":"dream"}'
+alina api GET '/v1/memory/read?q=focus'
+alina api GET '/v1/memory/read?q=SOURCE_ID&offset=16000'
+alina api GET '/v1/memory/search?q=backups'
+alina api POST /v1/memory/focus '{"id":"NOTE_ID","pinned":true}'
+alina api POST /v1/memory/jobs '{"kind":"reindex"}'
 ```
 
 Storage remains private plaintext. Recognized credentials are redacted in the
@@ -410,20 +404,17 @@ the same shell permissions as interactive work. Each occurrence has a fresh
 session and stable job ID; restarts do not replay a submitted occurrence.
 
 ```sh
-alina tasks
-alina tasks add "Disk check" "0 9 * * *" "Check local free disk space"
-alina tasks pause TASK_ID
-alina tasks resume TASK_ID
-alina tasks remove TASK_ID
+alina api GET /v1/tasks
+alina api POST /v1/tasks '{"name":"Disk check","cron":"0 9 * * *","prompt":"Check local free disk space","catch_up":true}'
+alina api POST /v1/tasks/TASK_ID '{"action":"pause"}'
 ```
 
-The agent manages user tasks through `schedule`. Use `alina tasks once NAME AT
-PROMPT` (AT in RFC3339) for a single wake-up. A submitted one-shot is disabled;
+The agent manages user tasks through `schedule`. Use `alina api POST /v1/tasks` with `name`, `at` (RFC3339) and `prompt` for a single wake-up. A submitted one-shot is disabled;
 its occurrence ID prevents replay after a crash. Personal wake-ups additionally
 require an active intention ID and the enabled autonomy configuration. Catch-up
 coalesces missed occurrences to one execution; it never replays every missed
-tick. Executions of the same task do not overlap. The terminal command defaults
-to catch-up; the tool can disable it. Scheduled Telegram tasks inherit the chat
+tick. Executions of the same task do not overlap. Include `catch_up:true` in API requests to coalesce missed runs; the native
+tool can enable or disable it. Scheduled Telegram tasks inherit the chat
 owner and deliver results/approval requests there. System dream jobs are visible
 through `alina status`; they do not send routine Telegram notifications.
 
@@ -441,7 +432,7 @@ required. Administrative credentials, grants and configuration remain separate.
 The `memory` tool's `intentions` action lists personal projects; `intend` creates/updates one
 with title, reason, next step, stopping condition and status `active/done/dropped`.
 There are at most eight active intentions. They are exposed in the prompt and
-through `alina intentions` / Telegram `/intentions` and persist across restarts.
+through `alina api GET /v1/intentions` / Telegram `/intentions` and persist across restarts.
 They do not represent user requests or confer permissions.
 
 New quick setups enable personal exploration with 12 model calls per calendar

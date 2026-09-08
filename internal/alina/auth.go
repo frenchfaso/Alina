@@ -62,11 +62,11 @@ func (a *Auth) token(ctx context.Context, form url.Values) (Credential, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r, e := a.Client.Do(req)
 	if e != nil {
-		return Credential{}, errors.New("OAuth token request failed")
+		return Credential{}, &networkFailure{cause: e}
 	}
 	defer r.Body.Close()
 	if r.StatusCode != 200 {
-		return Credential{}, fmt.Errorf("OAuth token exchange: HTTP %d", r.StatusCode)
+		return Credential{}, fmt.Errorf("OAuth token exchange: %w", &remoteHTTPError{Status: r.StatusCode})
 	}
 	var j struct {
 		Access  string `json:"access_token"`
@@ -91,7 +91,7 @@ func (a *Auth) Get(ctx context.Context) (Credential, error) {
 	var c Credential
 	b, e := os.ReadFile(filepath.Join(a.Dir, "chatgpt.json"))
 	if e != nil {
-		return c, errors.New("ChatGPT login required: alina login")
+		return c, errors.New("ChatGPT login required: alina setup login")
 	}
 	if e = json.Unmarshal(b, &c); e != nil {
 		return c, e
@@ -100,7 +100,7 @@ func (a *Auth) Get(ctx context.Context) (Credential, error) {
 		return c, nil
 	}
 	if c.Refresh == "" {
-		return c, errors.New("ChatGPT login expired: alina login")
+		return c, errors.New("ChatGPT login expired: alina setup login")
 	}
 	n, e := a.token(ctx, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {c.Refresh}, "client_id": {oauthClientID}})
 	if e != nil {
@@ -159,7 +159,7 @@ func (a *Auth) LoginDevice(ctx context.Context, w io.Writer) error {
 			continue
 		}
 		if r.StatusCode != 200 {
-			return fmt.Errorf("device login: HTTP %d; try alina login browser", r.StatusCode)
+			return fmt.Errorf("device login: HTTP %d; try alina setup login browser", r.StatusCode)
 		}
 		if e != nil {
 			return e

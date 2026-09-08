@@ -1,5 +1,33 @@
 # POC verification — 2026-09-09
 
+## Minimal CLI and operational logs — 0.9
+
+The full suite passes with the macOS ARM64 race detector and Go vet. Formatting
+and diff checks pass, with CGO-free builds for Android/arm64, Linux/arm64 and
+FreeBSD/OpenBSD/NetBSD amd64. Native Termux verification uses the same suite,
+including the opt-in public HTTPS test. Provider/OAuth/Telegram checks use
+fixtures, with no live account calls or Telegram messages.
+
+New regressions cover removed command aliases, stdin chat and JSON API errors,
+redacted configuration round-trips, atomic validation/repair, daemon-lock
+exclusion, live-check OAuth exclusion, Telegram webhook conflicts, private
+correlated events, HTTP error classifications, concurrent log rotation, log
+write failures, filters, follow across rotation and partial lines, safe doctor
+repairs, read-only SQLite checks and instance propagation to shell tools.
+
+The disposable binary smoke on macOS and Galaxy A15 covers config apply/check,
+status and API discovery, lock rejection, idle reflection, scheduled work,
+failed-job diagnostics, secret-free JSONL logs, permission repair, memory recall,
+and persistence/resume. PTY checks confirm hidden tokens and terminal restoration
+on Ctrl-C/SIGTERM. The phone's small smoke workload used 21,704 KiB RSS; this is
+not a peak-memory bound.
+
+Version 0.9 is installed at `~/alina-poc/bin/alina`, with 0.8 retained as
+`~/alina-poc/bin/alina-v08-d9105b69`. Android SHA-256:
+`6a59f122c05bc5b04fdd1d427bf9406d1a00fe2f28d622741c266e9c0d4e0e4b`.
+No packages, system services or permanent account configuration were changed.
+See [CLI and logs](operations.md) for the intentionally breaking command changes.
+
 ## Quick onboarding — 0.8
 
 The full suite passes with the macOS ARM64 race detector and natively on the

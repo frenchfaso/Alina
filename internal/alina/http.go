@@ -14,6 +14,11 @@ func newHTTPClient() *http.Client {
 	return &http.Client{Transport: hostHTTPTransport(), Timeout: 180 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
+type networkFailure struct{ cause error }
+
+func (e *networkFailure) Error() string { return "network request failed" }
+func (e *networkFailure) Unwrap() error { return e.cause }
+
 type remoteHTTPError struct{ Status int }
 
 func (e *remoteHTTPError) Error() string {
@@ -45,7 +50,7 @@ func requestJSON(ctx context.Context, client *http.Client, method, url string, b
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("network request failed (%T)", e)
+		return &networkFailure{cause: e}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

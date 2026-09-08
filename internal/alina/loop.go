@@ -140,7 +140,14 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			continue
 		}
 		for _, call := range msg.Calls {
-			e.activity(j, call.Name)
+			started := time.Now()
+			toolName := call.Name
+			if !hasTool(specs, toolName) {
+				toolName = "unknown"
+			}
+			traceID := randomID()
+			e.Events.emit("tool.started", nil, "job_id", j.ID, "call_id", traceID, "tool", toolName)
+			e.activity(j, toolName)
 			var result string
 			var toolErr error
 			if e.hasSteering(j) {
@@ -152,6 +159,18 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			} else {
 				result, toolErr = e.tool(j, call)
 			}
+			attrs := []any{"job_id", j.ID, "call_id", traceID, "tool", toolName, "duration_ms", time.Since(started).Milliseconds()}
+			logErr := toolErr
+			if call.Name == "shell" {
+				var exitCode int
+				if _, err := fmt.Sscanf(result, "exit_code: %d", &exitCode); err == nil {
+					attrs = append(attrs, "exit_code", exitCode)
+					if exitCode != 0 && logErr == nil {
+						logErr = &shellExitError{code: exitCode}
+					}
+				}
+			}
+			e.Events.emit("tool.finished", logErr, attrs...)
 			if toolErr != nil {
 				result = "ERROR: " + toolErr.Error()
 			}
@@ -169,5 +188,5 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			}
 		}
 	}
-	return "", errors.New("step budget reached; progress saved; use alina resume to continue")
+	return "", errors.New("step budget reached; progress saved; use POST /v1/jobs/{id}/resume through alina api to continue")
 }

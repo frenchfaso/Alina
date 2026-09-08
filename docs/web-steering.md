@@ -51,8 +51,9 @@ at toolchain build time.
 - Telegram text and attachments, and ordinary lines in `alina chat`, steer the
   oldest accepting chat job with the same conversation and owner. With no such
   job they start a new one. `/new` explicitly changes conversation; it does not
-  cancel earlier work. `alina ask` and scheduled work retain FIFO submission.
-- `alina steer JOB_ID "correction"` explicitly targets a local chat job. HTTP:
+  cancel earlier work. One-shot `alina chat "message"` and piped input use the same steering behavior.
+  API submissions with `interactive:false` and scheduled work retain FIFO submission.
+- `alina api POST /v1/jobs/JOB_ID/steer` with a JSON message targets a local job. HTTP:
   `POST /v1/jobs/{id}/steer` with `message` and an optional stable `request_id`.
   `POST /v1/jobs` supports `interactive: true` for automatic routing.
 - A running model request finishes normally. Before another model call, after
@@ -61,7 +62,7 @@ at toolchain build time.
   the provider's call/result protocol valid. Messages enter as actual user input,
   with attachments, and the same objective and transcript remain in context.
 - A running shell command finishes normally; subsequent tools are reconsidered.
-  Use `/cancel ID` or `alina cancel ID` for immediate cancellation. Steering is
+  Use `/cancel ID` or `alina api POST /v1/jobs/ID/cancel` for immediate cancellation. Steering is
   a correction at a safe boundary, not process preemption.
 - A pending approval is superseded by steering without granting permission.
   Its old button/ID cannot authorize a later action. The chat uses `/approve

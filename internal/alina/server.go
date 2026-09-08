@@ -16,23 +16,52 @@ import (
 )
 
 func socketPath(dir string) string { return filepath.Join(dir, "alina.sock") }
-func Serve(ctx context.Context, dir string, c Config) error {
-	if e := os.MkdirAll(dir, 0700); e != nil {
-		return e
+
+var errStateLocked = errors.New("Alina already running or state locked; stop it before changing files")
+
+func lockDaemonState(dir string) (*os.File, error) {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, err
 	}
-	lock, e := os.OpenFile(filepath.Join(dir, "daemon.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	lock, err := os.OpenFile(filepath.Join(dir, "daemon.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err = unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		lock.Close()
+		return nil, errStateLocked
+	}
+	return lock, nil
+}
+
+func Serve(ctx context.Context, dir string, c Config) (result error) {
+	lock, e := lockDaemonState(dir)
 	if e != nil {
 		return e
 	}
 	defer lock.Close()
-	if e = unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); e != nil {
-		return errors.New("Alina already running (or service lock unavailable)")
+	events, e := openEventLog(dir)
+	if e != nil {
+		return e
+	}
+	defer events.Close()
+	events.emit("service.starting", nil)
+	defer func() { events.emit("service.stopped", result) }()
+	if c.Version == 0 {
+		c, e = LoadConfig(dir)
+		if e != nil {
+			return configError(e)
+		}
+	}
+	if e = c.Validate(); e != nil {
+		return e
 	}
 	client := newHTTPClient()
 	p := &Provider{Config: c, Auth: &Auth{Dir: dir, Client: client}, Client: client}
 	search := &Search{Config: c.Search, Provider: p, Client: client}
-	engine, e := NewEngine(dir, c, p, search)
+	engine, e := NewEngine(dir, c, p, search, events)
 	if e != nil {
+		events.emit("service.init_failed", e)
 		return e
 	}
 	defer engine.Close()
@@ -55,7 +84,7 @@ func Serve(ctx context.Context, dir string, c Config) error {
 	if e = os.Chmod(sock, 0600); e != nil {
 		return e
 	}
-	s := &http.Server{Handler: handler(engine), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second}
+	s := &http.Server{Handler: logAPI(handler(engine), events), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second}
 	serviceCtx, cancel := context.WithCancel(ctx)
 	var background sync.WaitGroup
 	defer func() { cancel(); background.Wait() }()
@@ -68,6 +97,7 @@ func Serve(ctx context.Context, dir string, c Config) error {
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- s.Serve(ln) }()
+	events.emit("service.ready", nil, "provider", c.Provider, "model", c.Model)
 	fmt.Fprintln(os.Stderr, "Alina", Version, "listening on", sock)
 	select {
 	case <-ctx.Done():
@@ -88,6 +118,9 @@ func handler(e *Engine) http.Handler {
 	mux := http.NewServeMux()
 	reply := func(w http.ResponseWriter, v any) {
 		w.Header().Set("Content-Type", "application/json")
+		if job, ok := v.(Job); ok {
+			w.Header().Set("X-Alina-Job-ID", job.ID)
+		}
 		_ = json.NewEncoder(w).Encode(v)
 	}
 	decode := func(w http.ResponseWriter, r *http.Request, v any) bool {
@@ -101,7 +134,7 @@ func handler(e *Engine) http.Handler {
 		return true
 	}
 	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, map[string]any{"version": Version, "provider": e.Config.Provider, "model": e.Config.Model, "network_sandbox": sandboxAvailable(), "jobs": e.Jobs("")})
+		reply(w, map[string]any{"version": Version, "provider": e.Config.Provider, "model": e.Config.Model, "network_sandbox": sandboxAvailable(), "jobs": jobSummaries(e.Jobs("")), "logging": e.Events.health()})
 	})
 	mux.HandleFunc("POST /v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -198,7 +231,80 @@ func handler(e *Engine) http.Handler {
 	return mux
 }
 func LocalClient(dir string) *http.Client {
-	return &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", socketPath(dir))
 	}}}
+}
+
+// Polls stay quiet. Mutations and failed requests log route templates and IDs,
+// never query strings, headers or bodies.
+func logAPI(next http.Handler, events *EventLog) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		id := randomID()
+		w.Header().Set("X-Alina-Request-ID", id)
+		recorder := &apiResponse{ResponseWriter: w, status: 200}
+		next.ServeHTTP(recorder, r)
+		if r.Method == http.MethodGet && recorder.status < 400 {
+			return
+		}
+		route := r.Pattern
+		if route == "" {
+			route = "unmatched"
+		}
+		method := r.Method
+		if method != "GET" && method != "POST" && method != "DELETE" {
+			method = "OTHER"
+		}
+		attrs := []any{"request_id", id, "route", route, "method", method, "status", recorder.status, "duration_ms", time.Since(started).Milliseconds()}
+		job := w.Header().Get("X-Alina-Job-ID")
+		if job == "" {
+			job = r.PathValue("id")
+		}
+		if safeID(job) {
+			attrs = append(attrs, "job_id", job)
+		}
+		var err error
+		if recorder.status >= 400 {
+			err = &remoteHTTPError{Status: recorder.status}
+		}
+		events.emit("api.request", err, attrs...)
+	})
+}
+
+type apiResponse struct {
+	http.ResponseWriter
+	status  int
+	written bool
+}
+
+func (w *apiResponse) WriteHeader(status int) {
+	if !w.written {
+		w.status = status
+		w.written = true
+		w.ResponseWriter.WriteHeader(status)
+	}
+}
+func (w *apiResponse) Write(p []byte) (int, error) {
+	if !w.written {
+		w.WriteHeader(200)
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+type jobSummary struct {
+	ID              string    `json:"id"`
+	Kind            string    `json:"kind"`
+	Status          string    `json:"status"`
+	Activity        string    `json:"activity,omitempty"`
+	Created         time.Time `json:"created"`
+	PendingSteering int       `json:"pending_steering,omitempty"`
+}
+
+func jobSummaries(jobs []Job) []jobSummary {
+	out := make([]jobSummary, 0, len(jobs))
+	for _, j := range jobs {
+		out = append(out, jobSummary{j.ID, j.Kind, j.Status, j.Activity, j.Created, j.PendingSteering})
+	}
+	return out
 }

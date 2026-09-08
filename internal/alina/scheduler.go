@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -224,6 +223,7 @@ func (s *Scheduler) Tick(now time.Time) error {
 			if err != nil {
 				return err
 			}
+			s.Engine.Events.emit("scheduler.submitted", nil, "task_id", t.ID, "job_id", j.ID, "kind", t.Kind)
 			t.LastJob = j.ID
 		}
 		if t.Once {
@@ -245,10 +245,10 @@ func (s *Scheduler) Run(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		if err := s.Engine.Memory.Render(time.Now()); err != nil {
-			log.Print("Memory view: ", err)
+			s.Engine.Events.emit("memory.render_failed", err)
 		}
 		if err := s.Tick(time.Now()); err != nil {
-			log.Print("Scheduler: ", err)
+			s.Engine.Events.emit("scheduler.tick_failed", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -257,14 +257,6 @@ func (s *Scheduler) Run(ctx context.Context) {
 		}
 	}
 }
-func formatTasks(tasks []ScheduledTask) string {
-	var b strings.Builder
-	for _, t := range tasks {
-		fmt.Fprintf(&b, "%s · %s · enabled=%t\n%s (%s) · next %s\n%s\n\n", t.ID, t.Name, t.Enabled, t.Cron, t.Timezone, t.Next.Format(time.RFC3339), t.Prompt)
-	}
-	return b.String()
-}
-
 func (s *Scheduler) AddOnce(name, at, prompt, owner, origin, intentionID string) (ScheduledTask, error) {
 	next, err := time.Parse(time.RFC3339, at)
 	if err != nil || next.Before(time.Now().Add(time.Minute)) {
@@ -313,4 +305,12 @@ func (s *Scheduler) AddOnce(name, at, prompt, owner, origin, intentionID string)
 		return ScheduledTask{}, err
 	}
 	return t, nil
+}
+
+func formatTasks(tasks []ScheduledTask) string {
+	var b strings.Builder
+	for _, t := range tasks {
+		fmt.Fprintf(&b, "%s · %s · enabled=%t\n%s (%s) · next %s\n%s\n\n", t.ID, t.Name, t.Enabled, t.Cron, t.Timezone, t.Next.Format(time.RFC3339), t.Prompt)
+	}
+	return b.String()
 }

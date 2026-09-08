@@ -45,6 +45,7 @@ type runningJob struct {
 	steerSignal chan struct{}
 }
 type Engine struct {
+	Events      *EventLog
 	mu          sync.Mutex
 	Dir         string
 	Config      Config
@@ -64,13 +65,16 @@ type Engine struct {
 	wg          sync.WaitGroup
 }
 
-func NewEngine(dir string, c Config, m Model, s *Search) (*Engine, error) {
+func NewEngine(dir string, c Config, m Model, s *Search, events ...*EventLog) (*Engine, error) {
 	p, e := NewPermissions(dir)
 	if e != nil {
 		return nil, e
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	en := &Engine{Dir: dir, Config: c, Model: m, Search: s, Permissions: p, jobs: map[string]*runningJob{}, sessionTail: map[string]<-chan struct{}{}, ctx: ctx, cancel: cancel}
+	if len(events) > 0 {
+		en.Events = events[0]
+	}
 	if provider, ok := m.(*Provider); ok {
 		provider.Workspace = en.Workspace()
 	}
@@ -79,6 +83,7 @@ func NewEngine(dir string, c Config, m Model, s *Search) (*Engine, error) {
 		cancel()
 		return nil, e
 	}
+	en.Memory.Events = en.Events
 	if e = en.loadJobs(); e != nil {
 		en.Memory.DB.Close()
 		cancel()
@@ -163,6 +168,7 @@ func (e *Engine) submitLocked(session, owner, input, key, kind, resumeFrom strin
 		cancel()
 		return Job{}, err
 	}
+	e.Events.emit("job.queued", nil, "job_id", j.ID, "kind", j.Kind)
 	e.jobs[j.ID] = j
 	e.sessionTail[session] = j.done
 	e.inFlight++
@@ -256,6 +262,7 @@ func (e *Engine) Approve(id, approvalID, scope, owner string) error {
 			return errors.Join(err, e.persist(j))
 		}
 	}
+	e.Events.emit("approval.decided", nil, "job_id", j.ID, "approval_id", approvalID, "scope", scope)
 	j.decision <- scope
 	return nil
 }
@@ -278,10 +285,12 @@ func (e *Engine) allow(j *runningJob, a Action) error {
 	j.Status = "approval"
 	j.Approval = &Approval{ID: randomID(), Action: a, Expires: time.Now().Add(15 * time.Minute)}
 	err := e.persist(j)
+	approvalID := j.Approval.ID
 	e.mu.Unlock()
 	if err != nil {
 		return err
 	}
+	e.Events.emit("approval.requested", nil, "job_id", j.ID, "approval_id", approvalID)
 	select {
 	case <-j.ctx.Done():
 		return j.ctx.Err()
@@ -338,7 +347,9 @@ func (e *Engine) finish(j *runningJob, output string, err error) {
 		persisted = false
 		j.Status = "failed"
 		j.Error = "cannot persist job: " + er.Error()
+		e.Events.emit("job.persist_failed", er, "job_id", j.ID)
 	}
+	e.Events.emit("job.finished", err, "job_id", j.ID, "kind", j.Kind, "status", j.Status, "elapsed_ms", time.Since(j.Created).Milliseconds(), "usage", j.Usage)
 	j.cancel()
 	j.cancel = nil
 	if persisted {
@@ -358,6 +369,7 @@ func (e *Engine) run(j *runningJob) {
 		e.finish(j, "", err)
 		return
 	}
+	e.Events.emit("job.started", nil, "job_id", j.ID, "kind", j.Kind)
 	var output string
 	switch j.Kind {
 	case "dream":
@@ -463,7 +475,7 @@ func (e *Engine) tool(j *runningJob, c ToolCall) (string, error) {
 			a.Provider = e.Search.Config.Default
 		}
 		if a.Provider == "openai" {
-			m, err := (jobModel{e: e, j: j}).infer(j.ctx, func(ctx context.Context) (Message, error) {
+			m, err := (jobModel{e: e, j: j}).infer(j.ctx, "search", func(ctx context.Context) (Message, error) {
 				return e.Search.complete(ctx, j.Session, a.Provider, a.Query)
 			})
 			return m.Content, err

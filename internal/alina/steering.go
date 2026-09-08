@@ -137,6 +137,7 @@ func (e *Engine) steerLocked(j *runningJob, input, key string, attachments ...At
 		j.PendingSteering--
 		return Job{}, err
 	}
+	e.Events.emit("steering.queued", nil, "job_id", j.ID, "pending", j.PendingSteering)
 	select {
 	case j.steerSignal <- struct{}{}:
 	default:

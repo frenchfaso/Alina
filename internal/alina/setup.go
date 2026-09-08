@@ -18,6 +18,19 @@ import (
 )
 
 func setupCLI(ctx context.Context, dir string, args []string, in *bufio.Reader, out io.Writer) error {
+	if len(args) > 0 && args[0] == "login" {
+		if len(args) > 2 || len(args) == 2 && args[1] != "browser" {
+			return errors.New("usage: alina setup login [browser]")
+		}
+		if err := requireStopped(dir); err != nil {
+			return err
+		}
+		auth := Auth{Dir: dir, Client: newHTTPClient()}
+		if len(args) == 2 {
+			return auth.LoginBrowser(ctx, in, out)
+		}
+		return auth.LoginDevice(ctx, out)
+	}
 	noStart, telegramOnly, advanced := false, false, false
 	for _, arg := range args {
 		switch arg {
@@ -141,7 +154,7 @@ func setupQuick(ctx context.Context, dir string, in *bufio.Reader, out io.Writer
 		if checkErr == nil && strings.TrimSpace(m.Content) == "ALINA_OK" && len(m.Calls) == 0 {
 			break
 		}
-		fmt.Fprintln(out, "Modello non verificato. Controlla connessione e accesso al modello; login: alina login.")
+		fmt.Fprintln(out, "Modello non verificato. Controlla connessione e accesso al modello; login: alina setup login.")
 		if checkErr != nil {
 			fmt.Fprintln(out, truncate(checkErr.Error(), 200))
 		}

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -26,6 +25,7 @@ const initialSoul = "# Alina\n\nI am Alina. I prefer to understand before adding
 const legacyInitialSoul = "# Alina\n\nSono Alina. Preferisco capire prima di complicare.\nColtivo curiosità, franchezza e attenzione alle piccole cose.\nImparo dagli errori e conservo ciò che rende il mio lavoro più utile.\n"
 
 type Memory struct {
+	Events        *EventLog
 	DB            *sql.DB
 	Dir           string
 	Config        Config
@@ -246,7 +246,7 @@ func (m *Memory) Soul() (string, string) {
 	if err == nil && validSoul(soul) {
 		if soul != m.goodSoul {
 			if er := writeText(filepath.Join(m.Dir, "soul.last.md"), soul); er != nil {
-				log.Print("Soul checkpoint: ", er)
+				m.Events.emit("soul.checkpoint_failed", er)
 			}
 		}
 		m.goodSoul = soul

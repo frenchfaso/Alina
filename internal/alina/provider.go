@@ -321,11 +321,11 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		if ctx.Err() != nil {
 			return Message{}, ctx.Err()
 		}
-		return Message{}, errors.New("model connection failed")
+		return Message{}, &networkFailure{cause: e}
 	}
 	defer r.Body.Close()
 	if r.StatusCode != 200 {
-		return Message{}, fmt.Errorf("model returned HTTP %d (check account, model and endpoint)", r.StatusCode)
+		return Message{}, fmt.Errorf("model request failed (check account, model and endpoint): %w", &remoteHTTPError{Status: r.StatusCode})
 	}
 	var result responseBody
 	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {

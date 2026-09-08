@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -160,7 +159,7 @@ func (t *Telegram) Run(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if t.stateErr != nil {
-		log.Print("Telegram stopped: invalid persisted state")
+		t.Engine.Events.emit("telegram.state_invalid", t.stateErr)
 		return
 	}
 	done := make(chan struct{})
@@ -176,7 +175,7 @@ func (t *Telegram) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			log.Print("Telegram polling failed; retrying in 5 seconds")
+			t.Engine.Events.emit("telegram.poll_failed", e)
 			select {
 			case <-ctx.Done():
 				return
@@ -186,7 +185,7 @@ func (t *Telegram) Run(ctx context.Context) {
 		}
 		for _, u := range updates {
 			if e = t.process(ctx, u); e != nil {
-				log.Print("Telegram update failed; will retry")
+				t.Engine.Events.emit("telegram.update_failed", e)
 				select {
 				case <-ctx.Done():
 					return
@@ -199,7 +198,7 @@ func (t *Telegram) Run(ctx context.Context) {
 			e = t.saveLocked()
 			t.mu.Unlock()
 			if e != nil {
-				log.Print("Telegram state write failed")
+				t.Engine.Events.emit("telegram.checkpoint_failed", e)
 				return
 			}
 		}
@@ -385,7 +384,7 @@ func (t *Telegram) notify(ctx context.Context) {
 				continue
 			}
 			if er := t.send(ctx, text, keyboard); er != nil {
-				log.Print("Telegram delivery failed; retry pending")
+				t.Engine.Events.emit("telegram.delivery_failed", er, "job_id", j.ID)
 				break
 			}
 			t.mu.Lock()
@@ -393,7 +392,7 @@ func (t *Telegram) notify(ctx context.Context) {
 			er := t.saveLocked()
 			t.mu.Unlock()
 			if er != nil {
-				log.Print("Telegram delivery checkpoint failed")
+				t.Engine.Events.emit("telegram.delivery_checkpoint_failed", er, "job_id", j.ID)
 			}
 		}
 	}

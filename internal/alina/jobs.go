@@ -2,7 +2,6 @@ package alina
 
 import (
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,7 +21,7 @@ func (e *Engine) loadJobs() error {
 			err = json.Unmarshal(b, &j)
 		}
 		if err != nil || !safeID(j.ID) || !safeID(j.Session) {
-			log.Printf("Ignoring unreadable legacy job %s", filepath.Base(path))
+			e.Events.emit("job.legacy_unreadable", err)
 			continue
 		}
 		if _, err = e.Memory.DB.Exec("INSERT OR IGNORE INTO jobs VALUES(?,?,?,?,?)", j.ID, j.Owner, j.Created.Format(time.RFC3339Nano), j.Status, jsonText(j)); err != nil {
@@ -53,6 +52,7 @@ func (e *Engine) loadJobs() error {
 		return err
 	}
 	for _, j := range interrupted {
+		e.Events.emit("job.interrupted", nil, "job_id", j.ID)
 		j.Status = "interrupted"
 		j.Approval = nil
 		j.Error = "Service restarted; use resume to recover the intention and verify the current state. No command was replayed."
@@ -105,7 +105,7 @@ func (e *Engine) Jobs(owner string) []Job {
 	query += " ORDER BY created DESC LIMIT 50"
 	rows, err := e.Memory.DB.Query(query, args...)
 	if err != nil {
-		log.Print("Job history: ", err)
+		e.Events.emit("job.history_failed", err)
 		return out
 	}
 	defer rows.Close()

@@ -3,15 +3,13 @@ package alina
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -32,139 +30,82 @@ func Main(args []string) error {
 	}
 	in := bufio.NewReader(os.Stdin)
 	out := os.Stdout
+	return commandCLI(ctx, dir, args, in, out, term.IsTerminal(int(os.Stdin.Fd())))
+}
+
+const cliHelp = `Alina — start simple, stay simple.
+
+  alina setup                 Connect accounts and get started
+  alina serve                 Run the daemon
+  alina chat ["message"]       Chat, or send one request (also accepts stdin)
+  alina config [check|apply]   Show redacted JSON, validate or patch via stdin
+  alina status [JOB]           Service or job status as JSON
+  alina doctor [--live|--fix]  Diagnose; repair only safe local setup issues
+  alina logs [--follow]        Read operational logs as JSON Lines
+  alina api METHOD PATH [JSON] Access the local API; no arguments list endpoints
+
+Use --version for the version. ALINA_HOME selects the state directory.
+Config, status, doctor and api output JSON; errors go to stderr, exit code 1.
+setup --no-start configures without starting; setup telegram pairs the bot.
+setup login [browser] reconnects ChatGPT; setup --advanced edits preferences.
+logs accepts --job ID, --level ERROR, --lines 1-1000 (default 100).
+Config patches are JSON objects on stdin: omitted fields keep their values.
+`
+
+func commandCLI(ctx context.Context, dir string, args []string, in *bufio.Reader, out io.Writer, interactive bool) error {
+	if len(args) == 0 {
+		args = []string{"help"}
+	}
 	switch args[0] {
-	case "version", "--version":
+	case "--version":
+		if len(args) != 1 {
+			return errors.New("usage: alina --version")
+		}
 		fmt.Fprintln(out, Version)
 		return nil
 	case "help", "--help", "-h":
-		fmt.Fprintln(out, `Alina — start simple, stay simple.
-
-  alina setup                  Collega, verifica e avvia
-  alina setup telegram         Collega o cambia il bot
-  alina setup --advanced       Impostazioni avanzate
-  alina login [device|browser]  Login ChatGPT dedicato
-  alina serve                  Avvia il servizio in foreground
-  alina chat [session]         Chat testuale con il servizio
-  alina ask [-session ID] [-detach] "richiesta"
-  alina status                 Stato e lavori
-  alina job ID                 Segui un lavoro / rispondi al consenso
-  alina cancel ID              Interrompi un lavoro
-  alina steer ID "correzione"  Aggiorna un lavoro in corso
-  alina resume ID              Riprendi verificando lo stato attuale
-  alina intentions             Intenzioni personali e domande aperte
-  alina approve JOB APPROVAL once|restart|always|deny
-  alina permissions            Elenca i consensi
-  alina revoke ID              Revoca un consenso
-  alina dream                  Un momento di riflessione
-  alina memory read focus|recent|archive|soul|YYYY-MM-DD|ID [offset]
-  alina memory focus ID [pin|unpin]  Riporta una nota in primo piano
-  alina memory search "query"   Ricerca in tutta la memoria
-  alina memory reindex          Prepara gli embedding mancanti
-  alina tasks                  Elenca i task ricorrenti
-  alina tasks add "nome" "cron" "richiesta"
-  alina tasks once "nome" "data RFC3339" "richiesta"
-  alina tasks pause|resume|remove ID
-  alina doctor [--live]        Diagnostica (live usa gli account configurati)
-
-ALINA_HOME cambia la directory di configurazione e stato.
-Esegui setup con il servizio fermo; --no-start configura senza avviare.`)
+		fmt.Fprint(out, cliHelp)
 		return nil
-	case "intentions":
-		var r []Intention
-		if err := localRequest(ctx, dir, "GET", "/v1/intentions", nil, &r); err != nil {
-			return err
-		}
-		fmt.Fprintln(out, jsonText(r))
-		return nil
-	case "memory", "dream", "tasks":
-		return stateCLI(ctx, dir, args, in, out)
 	case "setup":
 		return setupCLI(ctx, dir, args[1:], in, out)
-	case "login":
-		if e := requireStopped(dir); e != nil {
-			return e
-		}
-		a := Auth{Dir: dir, Client: newHTTPClient()}
-		if len(args) > 1 && args[1] == "browser" {
-			return a.LoginBrowser(ctx, in, out)
-		}
-		return a.LoginDevice(ctx, out)
 	case "serve":
-		c, e := LoadConfig(dir)
-		if e != nil {
-			return configError(e)
+		if len(args) != 1 {
+			return errors.New("usage: alina serve")
 		}
-		return Serve(ctx, dir, c)
+		return Serve(ctx, dir, Config{})
+	case "config":
+		return configCLI(ctx, dir, args[1:], in, out)
 	case "doctor":
-		return doctor(ctx, dir, len(args) > 1 && args[1] == "--live", out)
+		return doctorCLI(ctx, dir, args[1:], out)
+	case "logs":
+		return logsCLI(ctx, dir, args[1:], out)
+	case "api":
+		return apiCLI(ctx, dir, args[1:], in, out)
 	case "status":
-		var r struct {
-			Version, Provider, Model string
-			Jobs                     []Job
+		if len(args) > 2 {
+			return errors.New("usage: alina status [JOB]")
 		}
-		if e := localRequest(ctx, dir, "GET", "/v1/status", nil, &r); e != nil {
-			return e
+		path := "/v1/status"
+		if len(args) == 2 {
+			if !safeID(args[1]) {
+				return errors.New("invalid job ID")
+			}
+			path = "/v1/jobs/" + args[1]
 		}
-		fmt.Fprintf(out, "Alina %s · %s / %s\n%s", r.Version, r.Provider, r.Model, formatJobs(r.Jobs))
-		return nil
-	case "permissions":
-		var grants []Grant
-		if e := localRequest(ctx, dir, "GET", "/v1/grants", nil, &grants); e != nil {
-			return e
-		}
-		fmt.Fprintln(out, formatGrants(grants))
-		return nil
-	case "revoke":
-		if len(args) != 2 {
-			return errors.New("usage: alina revoke ID")
-		}
-		return localRequest(ctx, dir, "DELETE", "/v1/grants/"+args[1], nil, &map[string]any{})
-	case "resume":
-		if len(args) != 2 {
-			return errors.New("usage: alina resume ID")
-		}
-		var j Job
-		if err := localRequest(ctx, dir, "POST", "/v1/jobs/"+args[1]+"/resume", nil, &j); err != nil {
+		var result any
+		if err := localRequest(ctx, dir, "GET", path, nil, &result); err != nil {
 			return err
 		}
-		return waitJob(ctx, dir, j.ID, in, out)
-	case "steer":
-		if len(args) < 3 || !safeID(args[1]) {
-			return errors.New("usage: alina steer ID message")
+		return printJSON(out, result)
+	case "chat":
+		if len(args) == 1 && interactive {
+			return chat(ctx, dir, "local", in, out)
 		}
-		var j Job
-		if err := localRequest(ctx, dir, "POST", "/v1/jobs/"+args[1]+"/steer", map[string]string{"message": strings.Join(args[2:], " "), "request_id": randomID()}, &j); err != nil {
-			return err
-		}
-		fmt.Fprintln(out, "Messaggio aggiunto al lavoro ·", j.ID)
-		return nil
-	case "cancel":
-		if len(args) != 2 {
-			return errors.New("usage: alina cancel ID")
-		}
-		return localRequest(ctx, dir, "POST", "/v1/jobs/"+args[1]+"/cancel", nil, &map[string]any{})
-	case "approve":
-		if len(args) != 4 {
-			return errors.New("usage: alina approve JOB APPROVAL once|restart|always|deny")
-		}
-		return localRequest(ctx, dir, "POST", "/v1/jobs/"+args[1]+"/approve", map[string]string{"approval_id": args[2], "scope": args[3]}, &map[string]any{})
-	case "job":
-		if len(args) != 2 {
-			return errors.New("usage: alina job ID")
-		}
-		return waitJob(ctx, dir, args[1], in, out)
-	case "ask":
-		f := flag.NewFlagSet("ask", flag.ContinueOnError)
-		session := f.String("session", "local", "session ID")
-		detach := f.Bool("detach", false, "return job ID immediately")
-		if e := f.Parse(args[1:]); e != nil {
-			return e
-		}
-		text := strings.Join(f.Args(), " ")
-		if !term.IsTerminal(int(os.Stdin.Fd())) {
-			b, e := io.ReadAll(io.LimitReader(in, 32001))
-			if e != nil {
-				return e
+		text := strings.Join(args[1:], " ")
+		if !interactive {
+			b, err := io.ReadAll(io.LimitReader(in, 32001))
+			if err != nil {
+				return err
 			}
 			if len(b) > 32000 {
 				return errors.New("stdin exceeds 32000 bytes")
@@ -173,25 +114,26 @@ Esegui setup con il servizio fermo; --no-start configura senza avviare.`)
 				text += "\n\n" + string(b)
 			}
 		}
-		var j Job
-		if e := localRequest(ctx, dir, "POST", "/v1/jobs", map[string]string{"session": *session, "message": strings.TrimSpace(text), "request_id": randomID()}, &j); e != nil {
-			return e
+		text = strings.TrimSpace(text)
+		if len(text) == 0 || len(text) > 32000 {
+			return errors.New("message must be 1-32000 bytes")
 		}
-		if *detach {
-			fmt.Fprintln(out, j.ID)
-			return nil
+		var j Job
+		if err := localRequest(ctx, dir, "POST", "/v1/jobs", map[string]any{"session": "local", "message": text, "request_id": randomID(), "interactive": true}, &j); err != nil {
+			return err
 		}
 		return waitJob(ctx, dir, j.ID, in, out)
-	case "chat":
-		session := "local"
-		if len(args) > 1 {
-			session = args[1]
-		}
-		return chat(ctx, dir, session, in, out)
 	default:
-		return fmt.Errorf("unknown command %q; use alina help", args[0])
+		return errors.New("unknown command; run alina help")
 	}
 }
+
+func printJSON(out io.Writer, v any) error {
+	encoder := json.NewEncoder(out)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(v)
+}
+
 func localRequest(ctx context.Context, dir, method, path string, body, out any) error {
 	return requestJSON(ctx, LocalClient(dir), method, "http://alina"+path, body, nil, out)
 }
@@ -219,7 +161,7 @@ func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Write
 			a := j.Approval
 			fmt.Fprintf(out, "\nConsenso · %s\nDirectory: %s\n%s\n\n1) Solo una volta\n2) Fino al riavvio di Alina\n3) Fino a revoca\n4) Nega\n", a.Action.Reason, a.Action.Directory, a.Action.Command)
 			if !term.IsTerminal(int(os.Stdin.Fd())) {
-				fmt.Fprintf(out, "In attesa: alina approve %s %s once|restart|always|deny\n", id, a.ID)
+				fmt.Fprintln(out, "In attesa:", approvalCommand(id, a.ID))
 				return errors.New("approval requires an interactive terminal; job remains pending")
 			}
 			fmt.Fprint(out, "> ")
@@ -242,7 +184,7 @@ func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Write
 		}
 		if terminalStatus(j.Status) {
 			if j.PendingSteering > 0 {
-				fmt.Fprintln(out, "Messaggi salvati in attesa: alina resume", j.ID)
+				fmt.Fprintln(out, "Messaggi salvati in attesa:", resumeCommand(j.ID))
 			}
 			if j.Output != "" {
 				fmt.Fprintln(out, j.Output)
@@ -269,7 +211,11 @@ func formatJobs(jobs []Job) string {
 	}
 	var b strings.Builder
 	for _, j := range jobs {
-		fmt.Fprintf(&b, "%s · %s · %s", j.ID, j.Status, truncate(j.Input, 100))
+		label := j.Kind
+		if j.Input != "" {
+			label = truncate(j.Input, 100)
+		}
+		fmt.Fprintf(&b, "%s · %s · %s", j.ID, j.Status, label)
 		if j.PendingSteering > 0 {
 			fmt.Fprintf(&b, " · %d messaggi in attesa", j.PendingSteering)
 		}
@@ -397,75 +343,23 @@ func (w *wizard) secret(label, existing string) string {
 	}
 	return s
 }
-func doctor(ctx context.Context, dir string, live bool, out io.Writer) error {
-	c, e := LoadConfig(dir)
-	if e != nil {
-		return configError(e)
+
+func approvalCommand(job, id string) string {
+	if !safeID(job) || !safeID(id) {
+		return "alina api"
 	}
-	fmt.Fprintf(out, "Alina %s\nProvider: %s / %s\nDirectory: %s\nNetwork sandbox: %t\n", Version, c.Provider, c.Model, c.WorkDir, sandboxAvailable())
-	fmt.Fprintf(out, "Context: %d tokens; compact above %d (95%%)\nReasoning: %s; dream: %s; checkpoint: %s; verbosity: %s; model timeout: %ds\n", c.ContextTokens, c.ContextTokens*95/100, c.ReasoningEffort, c.DreamEffort, c.CheckpointEffort, c.Verbosity, c.ModelTimeout)
-	fmt.Fprintf(out, "Personal exploration: %t · %d model calls/day · %d minutes/run · network policy: %s\n", c.Autonomy.Enabled, c.Autonomy.MaxCalls, c.Autonomy.Minutes, c.NetworkPolicy)
-	fmt.Fprintf(out, "Memory: %t · dream: %t (%s, %s) · embeddings: %t\n", c.Memory.Enabled, c.Memory.Dream, c.Memory.DreamCron, c.Timezone, c.Memory.EmbeddingURL != "")
-	markitdown, _ := exec.LookPath("markitdown")
-	if markitdown == "" {
-		markitdown = "not on PATH (optional; see workspace/procedures/markitdown.md)"
+	body, _ := json.Marshal(map[string]string{"approval_id": id, "scope": "once"})
+	return fmt.Sprintf("alina api POST /v1/jobs/%s/approve '%s'", job, body)
+}
+func resumeCommand(id string) string {
+	if !safeID(id) {
+		return "alina api"
 	}
-	fmt.Fprintln(out, "MarkItDown:", markitdown)
-	_, authErr := os.Stat(filepath.Join(dir, "chatgpt.json"))
-	fmt.Fprintf(out, "ChatGPT login file: %t\nOpenCode key: %t\nTavily key: %t\nBrave key: %t\nOpenAI search API key: %t\nTelegram enabled: %t\n", authErr == nil, c.OpenCodeKey != "", c.Search.TavilyKey != "", c.Search.BraveKey != "", c.Search.OpenAIKey != "", c.Telegram.Enabled)
-	if !live {
-		return nil
-	}
-	client := newHTTPClient()
-	p := &Provider{Config: c, Client: client, Auth: &Auth{Dir: dir, Client: client}}
-	failed := false
-	m, er := p.Complete(ctx, "doctor-"+randomID(), []Message{{Role: "system", Content: "Reply briefly."}, {Role: "user", Content: "Reply with ALINA_OK only."}}, nil, nil)
-	if er != nil {
-		fmt.Fprintln(out, "Model FAIL:", er)
-		failed = true
-	} else {
-		fmt.Fprintln(out, "Model OK:", truncate(m.Content, 150))
-		if m.Usage != nil {
-			fmt.Fprintln(out, "Model usage:", jsonText(m.Usage))
-		}
-	}
-	s := Search{Config: c.Search, Provider: p, Client: client}
-	for _, name := range []string{"openai", "tavily", "brave"} {
-		enabled := name == "openai" && (authErr == nil || c.Search.OpenAIKey != "") || name == "tavily" && c.Search.TavilyKey != "" || name == "brave" && c.Search.BraveKey != ""
-		if !enabled {
-			continue
-		}
-		r, er := s.Run(ctx, "doctor-"+randomID(), name, "Termux official website")
-		if er != nil {
-			fmt.Fprintln(out, name, "FAIL:", er)
-			failed = true
-		} else {
-			fmt.Fprintln(out, name, "OK:", truncate(r, 300))
-		}
-	}
-	if c.Telegram.Enabled {
-		t := NewTelegram(dir, c.Telegram, nil, client)
-		var me struct {
-			Username string `json:"username"`
-		}
-		if er := t.api(ctx, "getMe", nil, &me); er != nil {
-			fmt.Fprintln(out, "Telegram FAIL:", er)
-			failed = true
-		} else {
-			fmt.Fprintln(out, "Telegram bot OK:", me.Username)
-		}
-	}
-	if c.Memory.Enabled && c.Memory.EmbeddingURL != "" {
-		memory := Memory{Config: c}
-		if vec, er := memory.embedding(ctx, "Alina embedding connectivity check"); er != nil {
-			fmt.Fprintln(out, "Embedding FAIL:", er)
-			failed = true
-		} else {
-			fmt.Fprintln(out, "Embedding OK · dimensions:", len(vec))
-		}
-	}
-	if failed {
-		return errors.New("one or more live checks failed")
-	}
-	return nil
+	return "alina api POST /v1/jobs/" + id + "/resume"
+}
+
+func WriteError(out io.Writer, err error) {
+	info := errorInfo(err)
+	info["message"] = err.Error()
+	_ = json.NewEncoder(out).Encode(map[string]any{"ok": false, "error": info})
 }
