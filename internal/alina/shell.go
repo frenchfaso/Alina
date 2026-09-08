@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-var packageCommand = regexp.MustCompile(`(?i)(^|[^a-z0-9_-])(pkg|apt|apt-get|pip|pip3|npm|pnpm|yarn|bun|brew|port|dnf|yum|apk|gem|cargo|go|uv|nix)\s+(-[^\s]+\s+)*(install|add|upgrade|update|reinstall|remove|uninstall|sync|tool|run|dlx|exec|get|fetch)\b|(^|[^a-z0-9_-])(dpkg|pacman|npx)\s`)
+var packageCommand = regexp.MustCompile(`(?i)(^|[^a-z0-9_-])(pkg|apt|apt-get|pip|pip3|npm|pnpm|yarn|bun|brew|port|dnf|yum|apk|gem|cargo|go|uv|nix)\s+(-[^\s]+\s+)*(install|add|upgrade|update|reinstall|remove|uninstall|sync|tool|dlx|get|fetch)\b|(^|[^a-z0-9_-])(dpkg|pacman|npx)\s`)
 var networkCommand = regexp.MustCompile(`(?i)(https?://|ftp://|(^|[^a-z0-9_-])(curl|wget|aria2c|ssh|scp|sftp|rsync|nc|ncat|netcat|socat|telnet|ftp)(\s|["'])|git\s+(clone|fetch|pull|push|ls-remote))`)
 
 func shellAction(command, dir string, network bool) Action {
@@ -133,3 +133,27 @@ func runShell(ctx context.Context, a Action, timeout int) (string, error) {
 	}
 	return result, nil
 }
+
+// The declared policy is a trusted-agent contract, not OS enforcement of file
+// downloads. Strict policy remains available where network isolation is needed.
+func declaredAction(command, dir string, network, download, install bool) Action {
+	a := Action{Tool: "shell", Command: command, Directory: dir, Network: network || networkCommand.MatchString(command)}
+	if install || packageCommand.MatchString(command) {
+		a.Network = true
+		a.Reason = "Package installation or modification"
+	}
+	if download || downloadCommand.MatchString(command) {
+		a.Network = true
+		if a.Reason != "" {
+			a.Reason += "; "
+		}
+		a.Reason += "File download"
+	}
+	// Platforms without a filter run local commands normally under this policy.
+	if !sandboxAvailable() {
+		a.Network = true
+	}
+	return a
+}
+
+var downloadCommand = regexp.MustCompile(`(?i)(\b(wget|aria2c|scp|sftp)\b|git\s+(clone|fetch|pull)\b|curl\b[^\n]*(\s-[a-z]*[oO]|--output|--remote-name|\s>))`)

@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -46,20 +47,30 @@ func Main(args []string) error {
   alina status                 Stato e lavori
   alina job ID                 Segui un lavoro / rispondi al consenso
   alina cancel ID              Interrompi un lavoro
+  alina resume ID              Riprendi verificando lo stato attuale
+  alina intentions             Intenzioni personali e domande aperte
   alina approve JOB APPROVAL once|restart|always|deny
   alina permissions            Elenca i consensi
   alina revoke ID              Revoca un consenso
   alina dream                  Esegui consolidamento e riflessione
-  alina memory read today|week|soul|YYYY-MM-DD
-  alina memory search "query"   Ricerca ricordi archiviati
+  alina memory read today|week|soul|YYYY-MM-DD|ID [offset]
+  alina memory search "query"   Ricerca in tutta la memoria
   alina memory reindex          Prepara gli embedding mancanti
   alina tasks                  Elenca i task ricorrenti
   alina tasks add "nome" "cron" "richiesta"
+  alina tasks once "nome" "data RFC3339" "richiesta"
   alina tasks pause|resume|remove ID
   alina doctor [--live]        Diagnostica (live usa gli account configurati)
 
 ALINA_HOME cambia la directory di configurazione e stato.
 Il servizio deve essere riavviato dopo setup.`)
+		return nil
+	case "intentions":
+		var r []Intention
+		if err := localRequest(ctx, dir, "GET", "/v1/intentions", nil, &r); err != nil {
+			return err
+		}
+		fmt.Fprintln(out, jsonText(r))
 		return nil
 	case "memory", "dream", "tasks":
 		return stateCLI(ctx, dir, args, in, out)
@@ -104,6 +115,15 @@ Il servizio deve essere riavviato dopo setup.`)
 			return errors.New("usage: alina revoke ID")
 		}
 		return localRequest(ctx, dir, "DELETE", "/v1/grants/"+args[1], nil, &map[string]any{})
+	case "resume":
+		if len(args) != 2 {
+			return errors.New("usage: alina resume ID")
+		}
+		var j Job
+		if err := localRequest(ctx, dir, "POST", "/v1/jobs/"+args[1]+"/resume", nil, &j); err != nil {
+			return err
+		}
+		return waitJob(ctx, dir, j.ID, in, out)
 	case "cancel":
 		if len(args) != 2 {
 			return errors.New("usage: alina cancel ID")
@@ -414,6 +434,9 @@ func Setup(ctx context.Context, dir string, in *bufio.Reader, out io.Writer) err
 	if e != nil && !os.IsNotExist(e) {
 		return e
 	}
+	if os.IsNotExist(e) {
+		c.NetworkPolicy = "declared"
+	}
 	w := &wizard{ctx: ctx, in: in, out: out}
 	fmt.Fprintln(out, "Alina · configurazione\nI segreti restano nel file locale config.json (permessi 0600).\nNessuna modifica ai servizi o ai pacchetti del sistema.")
 	choice := "1"
@@ -490,6 +513,24 @@ func Setup(ctx context.Context, dir string, in *bufio.Reader, out io.Writer) err
 		}
 	}
 
+	fmt.Fprintln(out, "\nRete: declared chiede consenso per download/installazioni dichiarati o riconosciuti; si affida alla collaborazione dell'agente. strict isola la rete e chiede consenso per ogni uso dalla shell.")
+	c.NetworkPolicy = w.ask("Politica rete: declared / strict", c.NetworkPolicy)
+	c.Autonomy.Enabled = w.yes("Consentire iniziative personali locali entro un budget", c.Autonomy.Enabled)
+	if c.Autonomy.Enabled {
+		c.Autonomy.Scope = w.ask("Ambito delle iniziative personali", c.Autonomy.Scope)
+		calls, err := strconv.Atoi(w.ask("Massimo chiamate al modello al giorno per iniziative", strconv.Itoa(c.Autonomy.MaxCalls)))
+		if err != nil {
+			return err
+		}
+		c.Autonomy.MaxCalls = calls
+		minutes, err := strconv.Atoi(w.ask("Minuti massimi per iniziativa", strconv.Itoa(c.Autonomy.Minutes)))
+		if err != nil {
+			return err
+		}
+		c.Autonomy.Minutes = minutes
+		c.Autonomy.Search = w.yes("Consentire websearch nelle iniziative personali", c.Autonomy.Search)
+	}
+
 	if w.err != nil {
 		return fmt.Errorf("setup cancelled: %w", w.err)
 	}
@@ -531,6 +572,7 @@ func doctor(ctx context.Context, dir string, live bool, out io.Writer) error {
 		return configError(e)
 	}
 	fmt.Fprintf(out, "Alina %s\nProvider: %s / %s\nDirectory: %s\nNetwork sandbox: %t\n", Version, c.Provider, c.Model, c.WorkDir, sandboxAvailable())
+	fmt.Fprintf(out, "Personal exploration: %t · %d model calls/day · %d minutes/run · network policy: %s\n", c.Autonomy.Enabled, c.Autonomy.MaxCalls, c.Autonomy.Minutes, c.NetworkPolicy)
 	fmt.Fprintf(out, "Memory: %t · dream: %t (%s, %s) · embeddings: %t\n", c.Memory.Enabled, c.Memory.Dream, c.Memory.DreamCron, c.Timezone, c.Memory.EmbeddingURL != "")
 	_, authErr := os.Stat(filepath.Join(dir, "chatgpt.json"))
 	fmt.Fprintf(out, "ChatGPT login file: %t\nOpenCode key: %t\nTavily key: %t\nBrave key: %t\nOpenAI search API key: %t\nTelegram enabled: %t\n", authErr == nil, c.OpenCodeKey != "", c.Search.TavilyKey != "", c.Search.BraveKey != "", c.Search.OpenAIKey != "", c.Telegram.Enabled)

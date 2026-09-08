@@ -192,7 +192,7 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	chat := strconv.FormatInt(m.Chat.ID, 10)
 	switch fields[0] {
 	case "/start", "/help":
-		return t.send(ctx, "Alina · operatore personale\nScrivi una richiesta.\n/status · lavori\n/cancel ID · interrompi\n/new · nuova sessione\n/permissions · consensi\n/revoke ID · revoca", nil)
+		return t.send(ctx, "Alina · operatore personale\nScrivi una richiesta.\n/status · lavori\n/cancel ID · interrompi\n/resume ID · riprendi\n/intentions · intenzioni personali\n/new · nuova sessione\n/permissions · consensi\n/revoke ID · revoca", nil)
 	case "/new":
 		t.mu.Lock()
 		t.state.Sessions[chat] = "tg-" + randomID()
@@ -204,6 +204,28 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		return t.send(ctx, "Nuova sessione avviata.", nil)
 	case "/status":
 		return t.send(ctx, formatJobs(t.Engine.Jobs(owner)), nil)
+	case "/resume":
+		if len(fields) != 2 {
+			return t.send(ctx, "Uso: /resume ID", nil)
+		}
+		j, err := t.Engine.Resume(fields[1], owner)
+		if err != nil {
+			return t.send(ctx, err.Error(), nil)
+		}
+		t.mu.Lock()
+		t.state.Sessions[chat] = j.Session
+		err = t.saveLocked()
+		t.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		return t.send(ctx, "Ripresa avviata: "+j.ID, nil)
+	case "/intentions":
+		intentions, err := t.Engine.Memory.Intentions(ctx, false)
+		if err != nil {
+			return err
+		}
+		return t.send(ctx, jsonText(intentions), nil)
 	case "/cancel":
 		if len(fields) != 2 {
 			return t.send(ctx, "Uso: /cancel ID", nil)

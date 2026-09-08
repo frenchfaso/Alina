@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,8 +30,17 @@ func stateCLI(ctx context.Context, dir string, args []string, in *bufio.Reader, 
 			return errors.New("usage: alina memory read PART | search QUERY | reindex")
 		}
 		query := strings.Join(args[2:], " ")
+		offset := ""
+		if args[1] == "read" && len(args) == 4 {
+			n, err := strconv.Atoi(args[3])
+			if err != nil || n < 0 {
+				return errors.New("offset must be non-negative")
+			}
+			query = args[2]
+			offset = "&offset=" + args[3]
+		}
 		var r any
-		if err := localRequest(ctx, dir, "GET", "/v1/memory/"+args[1]+"?q="+url.QueryEscape(query), nil, &r); err != nil {
+		if err := localRequest(ctx, dir, "GET", "/v1/memory/"+args[1]+"?q="+url.QueryEscape(query)+offset, nil, &r); err != nil {
 			return err
 		}
 		if text, ok := r.(string); ok {
@@ -48,9 +58,15 @@ func stateCLI(ctx context.Context, dir string, args []string, in *bufio.Reader, 
 		fmt.Fprintln(out, formatTasks(tasks))
 		return nil
 	}
-	if args[1] == "add" && len(args) == 5 {
+	if (args[1] == "add" || args[1] == "once") && len(args) == 5 {
 		var task ScheduledTask
-		if err := localRequest(ctx, dir, "POST", "/v1/tasks", map[string]any{"name": args[2], "cron": args[3], "prompt": args[4], "catch_up": true}, &task); err != nil {
+		request := map[string]any{"name": args[2], "prompt": args[4], "catch_up": true}
+		if args[1] == "once" {
+			request["at"] = args[3]
+		} else {
+			request["cron"] = args[3]
+		}
+		if err := localRequest(ctx, dir, "POST", "/v1/tasks", request, &task); err != nil {
 			return err
 		}
 		fmt.Fprintln(out, formatTasks([]ScheduledTask{task}))
@@ -65,13 +81,19 @@ func stateHandlers(mux *http.ServeMux, e *Engine, reply func(http.ResponseWriter
 	mux.HandleFunc("GET /v1/tasks", func(w http.ResponseWriter, r *http.Request) { reply(w, e.Scheduler.List()) })
 	mux.HandleFunc("POST /v1/tasks", func(w http.ResponseWriter, r *http.Request) {
 		var a struct {
-			Name, Cron, Prompt string
-			CatchUp            bool `json:"catch_up"`
+			Name, Cron, Prompt, At string
+			CatchUp                bool `json:"catch_up"`
 		}
 		if !decode(w, r, &a) {
 			return
 		}
-		t, err := e.Scheduler.Add(a.Name, a.Cron, a.Prompt, "local", a.CatchUp)
+		var t ScheduledTask
+		var err error
+		if a.At != "" {
+			t, err = e.Scheduler.AddOnce(a.Name, a.At, a.Prompt, "local", "user", "")
+		} else {
+			t, err = e.Scheduler.Add(a.Name, a.Cron, a.Prompt, "local", a.CatchUp)
+		}
 		if err != nil {
 			http.Error(w, err.Error(), 400)
 			return
@@ -114,7 +136,15 @@ func stateHandlers(mux *http.ServeMux, e *Engine, reply func(http.ResponseWriter
 		var err error
 		switch r.PathValue("action") {
 		case "read":
-			out, err = e.Memory.Read(r.Context(), r.URL.Query().Get("q"), time.Now())
+			offset := 0
+			if raw := r.URL.Query().Get("offset"); raw != "" {
+				offset, err = strconv.Atoi(raw)
+				if err != nil || offset < 0 {
+					http.Error(w, "invalid offset", 400)
+					return
+				}
+			}
+			out, err = e.Memory.ReadPage(r.Context(), r.URL.Query().Get("q"), offset, time.Now())
 		case "search":
 			out, err = e.Memory.Recall(r.Context(), r.URL.Query().Get("q"))
 		default:

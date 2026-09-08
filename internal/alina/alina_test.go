@@ -511,7 +511,7 @@ func TestTelegramOwnerAndDuplicateUpdates(t *testing.T) {
 }
 func TestSetupPersistenceAndEOF(t *testing.T) {
 	d := t.TempDir()
-	input := "1\n\n" + d + "\nn\nn\nnone\nn\nn\nn\n\nn\nUTC\n\nn\ns\n"
+	input := "1\n\n" + d + "\nn\nn\nnone\nn\nn\nn\n\nn\nUTC\n\nn\ndeclared\nn\ns\n"
 	var out bytes.Buffer
 	if e := Setup(context.Background(), d, bufio.NewReader(strings.NewReader(input)), &out); e != nil {
 		t.Fatal(e, out.String())

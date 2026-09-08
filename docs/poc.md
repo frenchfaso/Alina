@@ -10,7 +10,7 @@ go build -trimpath -o alina .
 ```
 
 `setup` configures the default provider/model, working directory, all search
-providers, and Telegram. It does not install system packages or enable services.
+providers, Telegram, network policy and optional personal exploration budgets. It does not install system packages or enable services.
 Secrets are hidden in interactive terminals and saved with file mode `0600`.
 Files are private plaintext, not encrypted. Configuration updates are atomic.
 Run setup/login with the service stopped, then restart the service.
@@ -66,6 +66,10 @@ The terminal client talks HTTP/JSON over a private Unix socket. For example:
 curl --unix-socket "$HOME/.config/alina/alina.sock" http://alina/v1/status
 ```
 
+`alina resume JOB_ID` resumes interrupted/failed work in its original session,
+with an explicit instruction to check current state before repeating effects.
+`alina intentions` lists Alina's personal questions and projects.
+
 `chat` supports `/new`, `/status`, `/permissions`, `/revoke ID`, and `/quit`.
 Ctrl-C cancels the current job and exits the terminal client. A detached job
 continues without a client. Piped requests that need approval leave the job
@@ -79,7 +83,7 @@ but sends no messages. Manual numeric owner ID entry is also available. Use a
 dedicated bot without another poller or webhook. Only messages
 and buttons from that owner in a private chat are accepted. Groups and other
 users are ignored. Commands: `/status`, `/cancel ID`, `/new`, `/permissions`,
-`/revoke ID`. Attachments are deliberately not fetched in this POC.
+`/revoke ID`, `/resume ID`, `/intentions`. Attachments are deliberately not fetched in this POC.
 
 ## Approvals
 
@@ -106,10 +110,17 @@ operation's outcome unknown.
 
 ## Execution limits
 
-- Ordinary local shell operations run without confirmation. Known package
-  manager actions and shell network commands request consent; the model can
-  explicitly request network access too. Approval permits that shell invocation
-  to use the network, including redirects and subprocesses.
+- **declared** network policy asks for declared or recognized arbitrary file
+  downloads and package changes. Plain network use, such as querying an endpoint,
+  can proceed with `network=true`. The model must declare `download=true` or
+  `install=true` for indirect operations too. This is a trusted-agent contract:
+  shell text classification does not enforce the difference between a query and
+  a download. New interactive setups suggest this policy.
+- **strict** policy asks for any network access from the shell and uses the OS
+  network filter below. Existing configurations retain strict policy until changed
+  in setup. The three approval lifetimes still apply to exact commands/directories.
+- Local `npm run`/`go run` are no longer classified as installation solely because
+  of `run`; commands that actually need to fetch dependencies must declare it.
 - On **Linux/Android ARM64 and AMD64**, unapproved shell processes receive an
   inherited seccomp filter denying socket creation/connections (including Unix
   sockets), ptrace, cross-process memory writes and io_uring creation. Existing
@@ -117,7 +128,7 @@ operation's outcome unknown.
   stop execution. This also blocks network calls made inside scripts.
 - On **macOS**, the POC uses the system `sandbox-exec` network denial profile.
   This deprecated OS facility is a portability risk. On systems without a
-  supported filter, including the current **BSD** implementation, shell execution
+  supported filter, including the current **BSD** implementation, strict-policy shell execution
   requires approval instead of silently running unrestricted.
 - **This is a trusted-owner POC, not a complete sandbox.** The shell shares the
   service's OS user and can modify that user's files. Offline installation,
@@ -131,11 +142,24 @@ operation's outcome unknown.
   by default. Process groups are killed on cancellation/timeout and after their
   foreground command exits. Deliberately daemonized descendants are outside the
   POC's process-group guarantees.
-- One agent turn runs at a time; up to 16 requests may be active/queued. Commands
-  in different jobs do not share a persistent shell. Jobs and sessions use atomic
-  JSON files. Context is bounded at 200 stored messages / 512 KiB before a new
-  turn; automatic session compaction is not implemented. Daily memory
-  consolidation is a separate process, described below.
+- Up to 16 jobs can be active. Each session processes messages in order;
+  independent sessions can progress while another waits for approval or a shell
+  process. One model request runs at a time, with foreground requests ahead of
+  waiting dream/initiative calls. An in-flight model request is not preempted.
+  Use a separate session (`ask -session NAME`, or `/new`) for an independent request
+  while the current conversation is waiting for consent.
+- Jobs are persisted in SQLite; status loads only active and 50 recent finished
+  jobs. Old `jobs/*.json` are imported without overwriting existing IDs and retained
+  as migration backups. Specific older jobs remain available by ID. Do not run
+  a 0.1 binary against 0.2 state: it does not understand initiative budgets or
+  the new job store. A rollback requires a matching backup of the state. Status
+  `completed` means the turn finished; it is not independent proof of task success.
+- Session history is compacted at model-call boundaries when it exceeds 100
+  messages or 128 KiB. A checkpoint preserves the objective, constraints, verified
+  outcomes, uncertainty and next action. Complete earlier transcripts stay under
+  `sessions/SESSION/` and can be inspected through the shell. Failed checkpoints
+  leave the original session intact. Tool exchanges are kept together. Session
+  JSON writes are bounded by compaction; archives have no automatic expiry yet.
 - Model results are displayed when a turn completes; the client polls activity
   and approval state. The Responses adapter parses SSE, but token-by-token chat
   display is not implemented. Telegram response delivery is best-effort retry;
@@ -173,17 +197,33 @@ not infer it from IP or acquire GPS data.
   requests/results and explicit notes. No hidden model reasoning is recorded.
 - `memory/week.md`: one Markdown view of the preceding seven calendar dates,
   containing important daily summaries. Unprocessed days are explicitly marked.
-- `memory/memory.sqlite`: journal for reliable recovery, consolidated days,
-  long-term nuclei, source metadata, embeddings and soul revision history.
+- `memory/memory.sqlite`: journal, consolidated days, typed memories and
+  corrections, cited evidence, embeddings, soul versions, intentions, daily
+  exploration usage and job history.
 - `soul.md`: Alina's short personal orientation, up to 180 words / 1600 bytes.
+  An invalid/missing soul falls back to the last valid orientation (or the initial
+  one); the original file is left intact and the model receives a diagnostic.
   You can edit it while the service is stopped. Dream saves previous and proposed
   versions plus its reason in `soul_versions` before replacing the file.
 
 The Markdown memory files are generated views; editing them does not edit the
-database. Use the agent's `memory` note action to add information. Recent memory
-is supplied as historical data, separately from the minimal system instructions,
-host metadata and soul. It receives at most 12 KB for the week and 16 KB for the
-current day; other records can be requested with `memory`.
+source records. Diary writes append to SQLite immediately. The daemon refreshes
+changed Markdown views every 15 seconds and at shutdown; rendering streams rows
+instead of loading an entire day in RAM. Normal recording does not rewrite both
+views for every tool event.
+
+Memory search covers the current journal, weekly summaries, archived nuclei and
+explicit notes. Read by date or by a returned memory/source ID; long reads return
+`text` and `next_offset` and can be continued with `offset`. Notes may be `fact`,
+`preference`, `lesson` or `hypothesis`. `supersedes` links an explicit correction
+and hides superseded records (and nuclei citing them) from search, while preserving
+the old evidence for inspection. Legacy summaries may still mention old beliefs;
+corrections are supplied separately and must take precedence.
+
+The prompt includes a bounded selection of explicit notes, matching memories and
+recent activity from other sessions. It does not insert the entire week/day or
+repeat the current session's full diary. Prompt and generated checkpoints remain
+fallible model context; source access is available when precision matters.
 
 Dream defaults to `0 3 * * *`, with a single catch-up after missed executions.
 It consolidates closed days in bounded chunks, validates source IDs, then archives
@@ -193,22 +233,27 @@ transaction. Existing days and chunks are reused after interruption. Invalid
 summaries leave their originals intact. A later soul/embedding failure does not
 roll back already completed consolidation or archive transactions.
 
-The same configured model handles consolidation and reflection, without tools.
-Dream can keep the soul unchanged and skips reflection without new recent
-activity. It is capped at 32 model calls and ten minutes per invocation; work
-beyond that budget is retained for another invocation. An ordinary day generally
-needs one consolidation call and one reflection call. Model judgment, including
-the truth or usefulness of a summary, is not proven by schema validation.
+The same configured model handles consolidation and reflection. Consolidation has
+no tools; reflection can search/read memory, record lessons/corrections/intentions
+and schedule a personal wake-up when autonomy is enabled. It cannot run shell
+experiments directly: those run as separately budgeted initiatives. Reflection
+has at most six model calls within dream's total 32 calls / ten minutes. It may
+leave the soul unchanged. Idle reflection runs only with recent experience or
+active intentions under enabled autonomy, and at most once successfully per date.
+Original text for sources cited by individual nuclei is retained for verification;
+other archived sources expose metadata, with raw session transcripts available
+separately. Merely validating source IDs does not establish the truth of a lesson.
 
 Embeddings are optional and use an explicitly configured OpenAI-compatible
-endpoint (HTTPS, or HTTP on loopback). Only nuclei and search queries are sent to
+endpoint (HTTPS, or HTTP on loopback). Only nuclei and search queries (including queries used to select prompt context) are sent to
 that endpoint. OpenAI API embeddings have separate billing from ChatGPT; a local
 server can be configured instead. Vectors live in SQLite and Go computes exact
-cosine similarity with a small text relevance contribution. This avoids a native
+cosine similarity with a normalized text relevance contribution. This avoids a native
 vector extension for the POC, but search is linear in archive size. Different
 endpoint/model identities are never compared; reindex after changing them.
 Dimension mismatches are ignored. Without embeddings or after provider failure,
-results clearly report text search. Dream indexes up to 100 pending nuclei.
+results clearly report text search. Recent journal and explicit notes currently
+use text matching; semantic vectors apply to archived nuclei. Dream indexes up to 100 pending nuclei.
 
 ```sh
 alina dream
@@ -216,6 +261,7 @@ alina memory read today
 alina memory read week
 alina memory read soul
 alina memory read 2026-09-01
+alina memory read 2026-09-01 16000  # or next_offset from the previous page
 alina memory search "What did we decide about backups?"
 alina memory reindex
 ```
@@ -225,8 +271,7 @@ are redacted in memory, but this cannot recognize every possible secret. Ordinar
 job/session logs are separate and have no automatic retention policy yet; memory
 consolidation is not a complete data-erasure operation. Source metadata points to
 the original session/job, while the archive intentionally omits old raw journal
-content. Corrections are stored as new dated evidence, not automatic destructive
-rewrites of old nuclei.
+content. Corrections preserve old records and explicitly link their replacement.
 
 ## Portable recurring tasks
 
@@ -244,13 +289,45 @@ alina tasks resume TASK_ID
 alina tasks remove TASK_ID
 ```
 
-The agent can manage these through the `schedule` tool when requested. Catch-up
+The agent manages user tasks through `schedule`. Use `alina tasks once NAME AT
+PROMPT` (AT in RFC3339) for a single wake-up. A submitted one-shot is disabled;
+its occurrence ID prevents replay after a crash. Personal wake-ups additionally
+require an active intention ID and the enabled autonomy configuration. Catch-up
 coalesces missed occurrences to one execution; it never replays every missed
 tick. Executions of the same task do not overlap. The terminal command defaults
 to catch-up; the tool can disable it. Scheduled Telegram tasks inherit the chat
 owner and deliver results/approval requests there. System dream jobs are visible
 through `alina status`; they do not send routine Telegram notifications.
 
-All work shares one FIFO worker, so a running dream or pending approval can delay
-other requests. Use `alina cancel` if needed. Android suspension still suspends
-the daemon: the scheduler is portable, not an Android exact-alarm service.
+Android suspension still suspends the daemon: the scheduler is portable, not an
+Android exact-alarm service. The next wake-up coalesces a missed occurrence.
+
+## Personal workspace and initiative
+
+`workspace/notes`, `workspace/experiments` and `workspace/procedures` are Alina's
+persistent working area. She can create scripts and short instructions with the
+installed tools; `procedures/index.md` records where a capability lives, when it
+was actually verified and its limits. No plugin runtime or new dependency is
+required. Administrative credentials, grants and configuration remain separate.
+
+The `memory` tool's `intentions` action lists personal projects; `intend` creates/updates one
+with title, reason, next step, stopping condition and status `active/done/dropped`.
+There are at most eight active intentions. They are exposed in the prompt and
+through `alina intentions` / Telegram `/intentions` and persist across restarts.
+They do not represent user requests or confer permissions.
+
+Setup can authorize a scope of personal exploration once. It defaults to disabled;
+when enabled, defaults are 12 model calls per calendar day and five minutes per
+run, with optional web search. Usage is reserved in SQLite before each inference,
+including checkpoint calls, so retries and restarts cannot reset the daily budget.
+An unsuccessful request still uses that reservation. This limits call count,
+not tokens or monetary cost. Dream has its own separate budget described above.
+
+Personal exploration uses one-shot wake-ups with `origin=self` and `intention_id`.
+These jobs run quietly as owner `alina`, with ordinary results visible in status;
+they do not send routine Telegram notifications. They require shell working
+directories inside the personal workspace and reject declared network/download/
+installation operations; configured web search is available separately. Shell
+scope remains a cooperative contract under the same OS user, not filesystem
+isolation. A wake-up checks that its intention is still active before submitting work.
+If a budget expires, progress and the intention remain; resumption is explicit.

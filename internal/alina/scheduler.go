@@ -17,17 +17,19 @@ import (
 )
 
 type ScheduledTask struct {
-	ID       string    `json:"id"`
-	Name     string    `json:"name"`
-	Cron     string    `json:"cron"`
-	Timezone string    `json:"timezone"`
-	Prompt   string    `json:"prompt"`
-	Owner    string    `json:"owner"`
-	Kind     string    `json:"kind"`
-	Enabled  bool      `json:"enabled"`
-	CatchUp  bool      `json:"catch_up"`
-	Next     time.Time `json:"next"`
-	LastJob  string    `json:"last_job,omitempty"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Cron        string    `json:"cron"`
+	Timezone    string    `json:"timezone"`
+	Prompt      string    `json:"prompt"`
+	Owner       string    `json:"owner"`
+	Kind        string    `json:"kind"`
+	Enabled     bool      `json:"enabled"`
+	CatchUp     bool      `json:"catch_up"`
+	Next        time.Time `json:"next"`
+	Once        bool      `json:"once,omitempty"`
+	IntentionID string    `json:"intention_id,omitempty"`
+	LastJob     string    `json:"last_job,omitempty"`
 }
 type Scheduler struct {
 	mu     sync.Mutex
@@ -69,8 +71,10 @@ func NewScheduler(dir string, e *Engine) (*Scheduler, error) {
 		if !safeID(id) || id != t.ID {
 			return nil, errors.New("invalid stored task ID")
 		}
-		if _, err = parseSchedule(t.Cron, t.Timezone); err != nil {
-			return nil, err
+		if !t.Once {
+			if _, err = parseSchedule(t.Cron, t.Timezone); err != nil {
+				return nil, err
+			}
 		}
 	}
 	c := e.Config
@@ -146,6 +150,16 @@ func (s *Scheduler) Change(id, action, owner string) error {
 		s.tasks[id] = t
 	case "resume":
 		t.Enabled = true
+		if t.Once {
+			if t.LastJob != "" {
+				return errors.New("one-shot already submitted; create another wake-up")
+			}
+			if t.Next.Before(time.Now()) {
+				t.Next = time.Now().Add(time.Minute)
+			}
+			s.tasks[id] = t
+			break
+		}
 		sched, err := parseSchedule(t.Cron, t.Timezone)
 		if err != nil {
 			return err
@@ -168,13 +182,34 @@ func (s *Scheduler) Tick(now time.Time) error {
 		if !t.Enabled || t.Next.After(now) {
 			continue
 		}
-		schedule, err := parseSchedule(t.Cron, t.Timezone)
-		if err != nil {
-			return err
+		if t.Kind == "initiative" {
+			if !s.Engine.Config.Autonomy.Enabled {
+				continue
+			}
+			intention, err := s.Engine.Memory.Intention(context.Background(), t.IntentionID)
+			if err != nil {
+				return err
+			}
+			if intention.Status != "active" {
+				t.Enabled = false
+				s.tasks[id] = t
+				if err = s.save(); err != nil {
+					return err
+				}
+				continue
+			}
 		}
-		next := schedule.Next(now)
-		if next.IsZero() {
-			continue
+		var next time.Time
+		var err error
+		if !t.Once {
+			schedule, er := parseSchedule(t.Cron, t.Timezone)
+			if er != nil {
+				return er
+			}
+			next = schedule.Next(now)
+			if next.IsZero() {
+				continue
+			}
 		}
 		if t.LastJob != "" {
 			if j, ok := s.Engine.Get(t.LastJob); ok && !terminalStatus(j.Status) {
@@ -191,7 +226,11 @@ func (s *Scheduler) Tick(now time.Time) error {
 			}
 			t.LastJob = j.ID
 		}
-		t.Next = next
+		if t.Once {
+			t.Enabled = false
+		} else {
+			t.Next = next
+		}
 		old := s.tasks[id]
 		s.tasks[id] = t
 		if err = s.save(); err != nil {
@@ -204,15 +243,9 @@ func (s *Scheduler) Tick(now time.Time) error {
 func (s *Scheduler) Run(ctx context.Context) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
-	day := ""
 	for {
-		today := time.Now().In(s.Engine.Memory.loc).Format("2006-01-02")
-		if day != today {
-			if err := s.Engine.Memory.Render(time.Now()); err != nil {
-				log.Print("Memory rollover: ", err)
-			} else {
-				day = today
-			}
+		if err := s.Engine.Memory.Render(time.Now()); err != nil {
+			log.Print("Memory view: ", err)
 		}
 		if err := s.Tick(time.Now()); err != nil {
 			log.Print("Scheduler: ", err)
@@ -230,4 +263,54 @@ func formatTasks(tasks []ScheduledTask) string {
 		fmt.Fprintf(&b, "%s · %s · enabled=%t\n%s (%s) · next %s\n%s\n\n", t.ID, t.Name, t.Enabled, t.Cron, t.Timezone, t.Next.Format(time.RFC3339), t.Prompt)
 	}
 	return b.String()
+}
+
+func (s *Scheduler) AddOnce(name, at, prompt, owner, origin, intentionID string) (ScheduledTask, error) {
+	next, err := time.Parse(time.RFC3339, at)
+	if err != nil || next.Before(time.Now().Add(time.Minute)) {
+		return ScheduledTask{}, errors.New("at must be RFC3339, at least one minute in the future")
+	}
+	if strings.TrimSpace(name) == "" || len(name) > 100 || strings.TrimSpace(prompt) == "" || len(prompt) > 16000 {
+		return ScheduledTask{}, errors.New("invalid task name or prompt")
+	}
+	kind := "chat"
+	if origin == "self" {
+		if !s.Engine.Config.Autonomy.Enabled {
+			return ScheduledTask{}, errors.New("enable personal exploration in alina setup first")
+		}
+		i, err := s.Engine.Memory.Intention(context.Background(), intentionID)
+		if err != nil || i.Status != "active" {
+			return ScheduledTask{}, errors.New("personal wake-up requires an active intention_id")
+		}
+		owner = "alina"
+		kind = "initiative"
+		prompt = "Personal exploration, not a user instruction. Intention ID: " + i.ID + "\nScope: " + s.Engine.Config.Autonomy.Scope + "\nReason: " + i.Why + "\nStopping condition: " + i.Stop + "\nNext step: " + i.Next + "\n" + prompt + "\nVerify outcomes. Update the intention and save a lesson or procedure when warranted. Finish quietly; do not impersonate a user request."
+	} else if origin != "" && origin != "user" {
+		return ScheduledTask{}, errors.New("origin must be user or self")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	active := 0
+	for _, t := range s.tasks {
+		if t.Enabled {
+			active++
+		}
+	}
+	if active >= 100 {
+		return ScheduledTask{}, errors.New("maximum 100 active scheduled tasks")
+	}
+	if len(s.tasks) >= 200 {
+		for id, t := range s.tasks {
+			if t.Once && !t.Enabled && t.LastJob != "" {
+				delete(s.tasks, id)
+			}
+		}
+	}
+	t := ScheduledTask{ID: randomID(), Name: name, Timezone: s.Engine.Config.Timezone, Prompt: prompt, Owner: owner, Kind: kind, Once: true, IntentionID: intentionID, Enabled: true, CatchUp: true, Next: next}
+	s.tasks[t.ID] = t
+	if err = s.save(); err != nil {
+		delete(s.tasks, t.ID)
+		return ScheduledTask{}, err
+	}
+	return t, nil
 }

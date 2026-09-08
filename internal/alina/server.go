@@ -127,6 +127,22 @@ func handler(e *Engine) http.Handler {
 		}
 		reply(w, j)
 	})
+	mux.HandleFunc("POST /v1/jobs/{id}/resume", func(w http.ResponseWriter, r *http.Request) {
+		j, err := e.Resume(r.PathValue("id"), "")
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		reply(w, j)
+	})
+	mux.HandleFunc("GET /v1/intentions", func(w http.ResponseWriter, r *http.Request) {
+		i, err := e.Memory.Intentions(r.Context(), false)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		reply(w, i)
+	})
 	mux.HandleFunc("POST /v1/jobs/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
 		if err := e.Cancel(r.PathValue("id"), ""); err != nil {
 			http.Error(w, err.Error(), 400)

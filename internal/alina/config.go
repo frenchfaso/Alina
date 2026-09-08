@@ -13,7 +13,7 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.1.0-poc"
+const Version = "0.2.0-poc"
 
 type Config struct {
 	Version        int            `json:"version"`
@@ -28,7 +28,16 @@ type Config struct {
 	CommandTimeout int            `json:"command_timeout_seconds"`
 	Timezone       string         `json:"timezone"`
 	Location       string         `json:"location,omitempty"`
+	NetworkPolicy  string         `json:"network_policy"`
+	Autonomy       AutonomyConfig `json:"autonomy"`
 	Memory         MemoryConfig   `json:"memory"`
+}
+type AutonomyConfig struct {
+	Enabled  bool   `json:"enabled"`
+	Scope    string `json:"scope"`
+	MaxCalls int    `json:"max_calls_per_day"`
+	Minutes  int    `json:"minutes_per_run"`
+	Search   bool   `json:"web_search"`
 }
 type MemoryConfig struct {
 	Enabled        bool   `json:"enabled"`
@@ -64,7 +73,7 @@ func Home() string {
 }
 func DefaultConfig() Config {
 	d, _ := os.UserHomeDir()
-	return Config{Version: 1, Provider: "chatgpt", Model: "gpt-5.4", WorkDir: d, MaxSteps: 20, CommandTimeout: 120, Timezone: "Local", Memory: MemoryConfig{Enabled: true, Dream: true, DreamCron: "0 3 * * *", CatchUp: true}, OpenCodeAPI: "chat", Search: SearchConfig{Default: "openai", OpenAIModel: "gpt-5.4"}}
+	return Config{Version: 1, NetworkPolicy: "strict", Autonomy: AutonomyConfig{MaxCalls: 12, Minutes: 5, Scope: "Explore installed tools and develop useful procedures inside your personal workspace."}, Provider: "chatgpt", Model: "gpt-5.4", WorkDir: d, MaxSteps: 20, CommandTimeout: 120, Timezone: "Local", Memory: MemoryConfig{Enabled: true, Dream: true, DreamCron: "0 3 * * *", CatchUp: true}, OpenCodeAPI: "chat", Search: SearchConfig{Default: "openai", OpenAIModel: "gpt-5.4"}}
 }
 func LoadConfig(dir string) (Config, error) {
 	c := DefaultConfig()
@@ -79,6 +88,15 @@ func LoadConfig(dir string) (Config, error) {
 	return c, c.Validate()
 }
 func (c Config) Validate() error {
+	if c.NetworkPolicy != "strict" && c.NetworkPolicy != "declared" {
+		return errors.New("network_policy must be strict or declared")
+	}
+	if c.Autonomy.MaxCalls < 1 || c.Autonomy.MaxCalls > 100 || c.Autonomy.Minutes < 1 || c.Autonomy.Minutes > 30 || len(c.Autonomy.Scope) > 2000 || c.Autonomy.Enabled && strings.TrimSpace(c.Autonomy.Scope) == "" {
+		return errors.New("invalid autonomy scope or budget")
+	}
+	if c.Autonomy.Enabled && !c.Memory.Enabled {
+		return errors.New("personal exploration requires memory")
+	}
 	if c.Version != 1 {
 		return errors.New("unsupported config version")
 	}

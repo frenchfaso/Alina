@@ -1,9 +1,45 @@
 # POC verification — 2026-09-08
 
+## Continuity and personal exploration — 0.2
+
+The 0.2 update keeps Go, the same four tools and the same direct dependencies.
+It adds per-session ordering with independent job progress, foreground model
+priority, durable session checkpoints and explicit resume, typed/correctable
+search across recent and archived memory, source pagination, a personal
+workspace, persistent intentions and budgeted one-shot exploration. Dream can
+consult evidence before recording lessons or revising the soul.
+
+Validation covers approval waits without blocking independent sessions, ordered
+follow-ups, context compaction including a large tool exchange, preserved
+transcripts after checkpoint failure, legacy job migration and unknown outcomes
+on resume, complete Unicode paging, corrections, soul fallback, one-shot
+deduplication, persisted daily budgets, reflection retrieving archived evidence,
+and explicit installation declarations under strict policy.
+
+The full macOS race suite contains **34 top-level tests**. `go vet`, formatting,
+diff checks and Android/Linux/BSD cross-builds pass. Native Android tests and
+a disposable binary smoke exercise setup with autonomy configuration, workspace
+creation, empty dream, one-shot lifecycle, recent search/source reads, invalid
+soul fallback, job persistence and resume across daemon restarts.
+
+No real model account was used: the smoke expects a missing-login error, and
+model/reflection behavior is tested with fixtures. These tests establish runtime
+behavior, not the quality of a real model's initiative or learning. The initial
+0.2 smoke measured 15,876 KiB RSS; this remains a small-workload observation.
+
+The updated binary remains at `~/alina-poc/bin/alina`; personal exploration is
+configured through setup and is disabled until enabled. Old JSON jobs are
+retained as migration backups; ongoing job persistence now uses SQLite. No
+package installation, service activation or permanent account configuration was
+part of this update.
+
+## Original 0.1 baseline
+
+
 Repository: public `frenchfaso/Alina`, MIT. Built with Go 1.27.1; minimum Go
 version in the module is 1.26.0.
 
-## Executed successfully
+### Executed successfully
 
 - macOS ARM64: `go test -race ./...`, `go vet ./...`, formatting and diff checks.
 - Galaxy A15 through Tailscale, native Android ARM64 / Termux: all 22 top-level
@@ -29,7 +65,7 @@ for the daemon, approximately 16.2 MiB. The stripped Android binary is about
 14 MiB. These are small-workload measurements, not steady-state memory bounds
 or performance benchmarks for large histories/real inference.
 
-## Installed on the phone
+### Installed on the phone
 
 ```sh
 ~/alina-poc/bin/alina setup
