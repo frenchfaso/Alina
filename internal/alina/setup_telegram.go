@@ -123,6 +123,7 @@ func pairTelegram(ctx context.Context, tg *Telegram, code string, people ...[]Us
 			m := u.Message
 			if paired == 0 && m != nil && m.From.ID > 0 && m.From.ID == m.Chat.ID && m.Chat.Type == "private" && m.Text == "/start "+code {
 				paired = m.From.ID
+				known[paired] = true
 				continue
 			}
 			if m != nil && known[m.From.ID] || u.Callback != nil && known[u.Callback.From.ID] {

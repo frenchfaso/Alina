@@ -102,6 +102,9 @@ func newEngine(dir, adminDir string, c Config, m Model, s *Search, global *Engin
 		return nil, e
 	}
 	en.Memory.Events = en.Events
+	if global != nil {
+		en.Memory.soulOwner = global.Memory
+	}
 	if e = en.loadJobs(); e != nil {
 		en.Memory.DB.Close()
 		cancel()

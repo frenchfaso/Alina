@@ -1,5 +1,32 @@
 # POC verification — 2026-09-09
 
+## General review and recovery fixes — 0.10.1
+
+All **143 tests** pass natively on Galaxy A15 Termux, including the public HTTPS
+smoke (zero failures or skips). The full macOS ARM64 race suite, Go vet,
+formatting and diff checks pass. CGO-free builds pass for Android/arm64,
+Linux/arm64, macOS/arm64 and FreeBSD/OpenBSD/NetBSD amd64.
+
+Five new regression tests reproduced the baseline failures before the fixes:
+local identity changing with the default user, divergent/lost soul recovery,
+discarded messages immediately after pairing, a permanently rejected command
+reply blocking other Telegram input, and diagnostic repair following a directory
+symlink. See the [review and corrections](review-0.10.1.md).
+
+Disposable legacy and multi-user binary smokes pass on macOS and the Galaxy.
+They exercise CLI/configuration, daemon lifecycle, private logs, local API,
+memory, scoped tasks, shared family recall, one soul/dream, membership changes,
+restart and diagnostics. Galaxy RSS was **25,940 KiB** for the four-person
+workload, and 22,140 KiB for the legacy smoke; these are small-workload samples.
+
+No live model account or actual Telegram delivery was used. The default Galaxy
+state directory had no configuration or ChatGPT login. Live integration and
+behavioral tests require the first setup or a supplied configured instance path.
+Version 0.10.1 is installed at `~/alina-poc/bin/alina`; the prior binary is
+`~/alina-poc/bin/alina-v010-dc4f7ae4`. No daemon was running or started, and account
+configuration and system services were unchanged. Android SHA-256:
+`cb40bfe4428de9d96cfa05adc6c3051666d8c2e7f5fa246a574354793ab7ba4d`.
+
 ## Native people/families and one global mind — 0.10
 
 All **138 tests** pass natively on Galaxy A15 Termux, including the opt-in public

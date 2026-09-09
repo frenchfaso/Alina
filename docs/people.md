@@ -10,7 +10,12 @@ With the daemon stopped, run `alina setup telegram`. Connect a dedicated bot,
 give the first person a name and an optional family ID, then add other people
 through single-use pairing links. Matching family IDs share memory. A blank
 family means personal memory. Running the command again offers add/edit/remove.
-The first person is also the default identity for local chat.
+The first person is also the default identity for local chat. New local jobs and
+tasks capture that person's stable ID; changing `local_user` does not reassign
+them. Old records with owner `local` have no recoverable person binding and stay
+unattributed. In native-family mode, their schedules are disabled when due;
+recreate any still-needed task under the intended user. Legacy single-user mode
+continues to use `local` normally.
 
 All configured people are trusted device operators. Families separate memory,
 not Unix accounts. The wizard says this explicitly. It never adds a person from

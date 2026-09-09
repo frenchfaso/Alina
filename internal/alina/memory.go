@@ -29,6 +29,7 @@ type Memory struct {
 	DB            *sql.DB
 	Dir           string
 	SoulDir       string
+	soulOwner     *Memory // All scopes use the global mind's cache and lock.
 	Config        Config
 	loc           *time.Location
 	mu            sync.Mutex // Markdown projections and soul revisions.
@@ -69,7 +70,7 @@ func OpenMemory(dir string, c Config, soulDirs ...string) (*Memory, error) {
 	if len(soulDirs) > 0 {
 		soulDir = soulDirs[0]
 	}
-	m := &Memory{SoulDir: soulDir, DB: db, Dir: dir, Config: c, loc: loc, goodSoul: initialSoul}
+	m := &Memory{SoulDir: soulDir, DB: db, Dir: dir, Config: c, loc: loc}
 	_, err = db.Exec(`PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, owner TEXT, created TEXT, status TEXT, payload TEXT);
 CREATE TABLE IF NOT EXISTS steering (id TEXT PRIMARY KEY, job TEXT, payload TEXT, applied INTEGER NOT NULL DEFAULT 0);
@@ -129,7 +130,11 @@ CREATE TABLE IF NOT EXISTS soul_versions (id TEXT PRIMARY KEY, stamp TEXT, previ
 		return nil, err
 	}
 	if _, err = os.Stat(filepath.Join(m.SoulDir, "soul.md")); os.IsNotExist(err) {
-		err = writeText(filepath.Join(m.SoulDir, "soul.md"), initialSoul)
+		seed := initialSoul
+		if last, er := readSmallFile(filepath.Join(m.SoulDir, "soul.last.md"), 1600); er == nil && validSoul(last) {
+			seed = last
+		}
+		err = writeText(filepath.Join(m.SoulDir, "soul.md"), seed)
 	}
 	if err == nil {
 		err = m.translateSeedSoul()
@@ -215,6 +220,9 @@ func validSoul(s string) bool {
 	return strings.TrimSpace(s) != "" && len(s) <= 1600 && len(strings.Fields(s)) <= 180
 }
 func (m *Memory) Soul() (string, string) {
+	if m.soulOwner != nil {
+		return m.soulOwner.Soul()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	soul, err := readSmallFile(filepath.Join(m.SoulDir, "soul.md"), 1600)
@@ -227,8 +235,11 @@ func (m *Memory) Soul() (string, string) {
 		m.goodSoul = soul
 		return soul, ""
 	}
-	if last, er := readSmallFile(filepath.Join(m.SoulDir, "soul.last.md"), 1600); er == nil && validSoul(last) {
-		m.goodSoul = last
+	if m.goodSoul == "" {
+		m.goodSoul = initialSoul
+		if last, er := readSmallFile(filepath.Join(m.SoulDir, "soul.last.md"), 1600); er == nil && validSoul(last) {
+			m.goodSoul = last
+		}
 	}
 	return m.goodSoul, "soul.md unavailable or outside 180 words / 1600 bytes; using last valid orientation"
 }

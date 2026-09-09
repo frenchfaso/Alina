@@ -141,6 +141,12 @@ func diagnose(ctx context.Context, dir string, live, fix bool, out io.Writer, cl
 	}
 	for _, name := range files {
 		path := filepath.Join(dir, name)
+		if err := statePathParents(dir, path); err != nil {
+			if !os.IsNotExist(err) {
+				add("file:"+name, "error", "State directories must be real directories; repairs do not follow symlinks.", errorInfo(err))
+			}
+			continue
+		}
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
 			continue
@@ -178,6 +184,10 @@ func diagnose(ctx context.Context, dir string, live, fix bool, out io.Writer, cl
 			label += "/" + filepath.ToSlash(rel)
 		}
 		path := filepath.Join(stateDir, "memory", "memory.sqlite")
+		if err := statePathParents(dir, path); err != nil && !os.IsNotExist(err) {
+			add(label, "error", "Inspect the memory directory; diagnostics do not follow directory symlinks.", errorInfo(err))
+			continue
+		}
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			add(label, "warn", "alina serve initializes local state.", nil)
 		} else if err != nil {
@@ -281,6 +291,24 @@ func diagnose(ctx context.Context, dir string, live, fix bool, out io.Writer, cl
 
 // Known state roots only; diagnostics never walk user workspaces or follow a
 // directory symlink into another location.
+func statePathParents(dir, path string) error {
+	for parent := filepath.Dir(path); ; parent = filepath.Dir(parent) {
+		if !within(dir, parent) {
+			return errors.New("state path is outside the instance")
+		}
+		info, err := os.Lstat(parent)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return errors.New("state parent is not a real directory")
+		}
+		if filepath.Clean(parent) == filepath.Clean(dir) {
+			return nil
+		}
+	}
+}
+
 func stateDirectories(dir string) ([]string, error) {
 	out := []string{dir}
 	for _, parent := range []string{"mind", "scopes"} {

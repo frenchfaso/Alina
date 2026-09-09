@@ -86,6 +86,9 @@ func reflectionSpecs() []ToolSpec {
 }
 
 func (m *Memory) reviseSoul(ctx context.Context, now time.Time, previous, next, reason string) error {
+	if m.soulOwner != nil {
+		return errors.New("only global reflection can revise the soul")
+	}
 	if !validSoul(next) || strings.TrimSpace(reason) == "" || len(reason) > 1000 {
 		return errors.New("soul requires at most 180 words / 1600 bytes and a short reason")
 	}
@@ -106,7 +109,16 @@ func (m *Memory) reviseSoul(ctx context.Context, now time.Time, previous, next, 
 	if _, err = m.DB.ExecContext(ctx, "INSERT INTO soul_versions VALUES(?,?,?,?,?)", randomID(), now.UTC().Format(time.RFC3339Nano), previous, next, m.redact(reason)); err != nil {
 		return err
 	}
-	return writeText(path, next)
+	if err = writeText(path, next); err != nil {
+		return err
+	}
+	// The revision has committed. Remember it immediately, including before
+	// another prompt reads the file; backup failure does not undo that change.
+	m.goodSoul = next
+	if err = writeText(filepath.Join(m.SoulDir, "soul.last.md"), next); err != nil {
+		m.Events.emit("soul.checkpoint_failed", err)
+	}
+	return nil
 }
 
 func (e *Engine) reflectionTool(j *runningJob, c ToolCall) (string, error) {

@@ -119,6 +119,9 @@ func Serve(ctx context.Context, dir string, c Config) (result error) {
 }
 func handler(e *Engine, owners ...string) http.Handler {
 	owner := "local"
+	if person := e.Config.localUser(); person.ID != "" {
+		owner = "local:" + person.ID
+	}
 	if len(owners) > 0 {
 		owner = owners[0]
 	}

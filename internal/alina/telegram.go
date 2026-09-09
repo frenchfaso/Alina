@@ -207,7 +207,7 @@ func (t *Telegram) Run(ctx context.Context) {
 		}
 		t.mu.Unlock()
 		if saved != nil {
-			if err := t.process(ctx, *saved); err != nil {
+			if err := t.processUpdate(ctx, *saved); err != nil {
 				t.Engine.Events.emit("telegram.update_failed", err)
 				select {
 				case <-ctx.Done():
@@ -244,7 +244,7 @@ func (t *Telegram) Run(ctx context.Context) {
 			continue
 		}
 		for _, u := range updates {
-			if e = t.process(ctx, u); e != nil {
+			if e = t.processUpdate(ctx, u); e != nil {
 				t.Engine.Events.emit("telegram.update_failed", e)
 				select {
 				case <-ctx.Done():
@@ -264,6 +264,19 @@ func (t *Telegram) Run(ctx context.Context) {
 		}
 	}
 }
+
+// Permanent reply errors must not trap the shared incoming update stream.
+// Completed jobs still have their independent durable delivery receipts.
+func (t *Telegram) processUpdate(ctx context.Context, u tgUpdate) error {
+	err := t.process(ctx, u)
+	var apiErr *telegramAPIError
+	if errors.As(err, &apiErr) && (apiErr.code == 400 || apiErr.code == 403) {
+		t.Engine.Events.emit("telegram.update_reply_rejected", err)
+		return nil
+	}
+	return err
+}
+
 func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	var id int64
 	if u.Callback != nil {

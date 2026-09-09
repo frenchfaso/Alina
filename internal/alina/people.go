@@ -58,10 +58,8 @@ func (c Config) person(owner string) (User, bool) {
 		}
 		return User{}, false
 	}
-	if owner == "local" {
-		u := c.localUser()
-		return u, u.ID != ""
-	}
+	// Legacy "local" records did not identify a person. Do not attribute them
+	// to whichever user is the default today; new native requests carry an ID.
 	for _, u := range c.Users {
 		if owner == telegramOwner(c.Telegram, u.TelegramID) {
 			return u, true
