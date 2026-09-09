@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -352,19 +353,27 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		}
 	} else {
 		done := false
+		items := map[int]json.RawMessage{}
 		e = readSSE(r.Body, func(data []byte) error {
 			if string(data) == "[DONE]" {
 				return nil
 			}
 			var ev struct {
-				Type     string       `json:"type"`
-				Delta    string       `json:"delta"`
-				Response responseBody `json:"response"`
+				Type        string          `json:"type"`
+				Delta       string          `json:"delta"`
+				Response    responseBody    `json:"response"`
+				OutputIndex int             `json:"output_index"`
+				Item        json.RawMessage `json:"item"`
 			}
 			if e := json.Unmarshal(data, &ev); e != nil {
 				return e
 			}
 			switch ev.Type {
+			case "response.output_item.done":
+				if ev.OutputIndex < 0 || len(ev.Item) == 0 || string(ev.Item) == "null" {
+					return errors.New("invalid completed output item")
+				}
+				items[ev.OutputIndex] = ev.Item
 			case "response.output_text.delta":
 				if delta != nil {
 					delta(ev.Delta)
@@ -383,6 +392,19 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		}
 		if !done {
 			return Message{}, errors.New("model stream ended before completion")
+		}
+		// The ChatGPT backend may omit output from the terminal envelope.
+		// Keep complete items (including tool calls and encrypted reasoning),
+		// but never turn a disconnected or failed stream into a successful turn.
+		if len(result.Output) == 0 {
+			indices := make([]int, 0, len(items))
+			for index := range items {
+				indices = append(indices, index)
+			}
+			sort.Ints(indices)
+			for _, index := range indices {
+				result.Output = append(result.Output, items[index])
+			}
 		}
 	}
 	if result.Error != nil || result.Status == "failed" || result.Status == "incomplete" {
