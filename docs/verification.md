@@ -4,21 +4,20 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
-## Validation status at 0.14.3
+## Validation status at 0.14.4
 
-- The latest full macOS race suite was run for 0.14.2. The 0.14.3 camera fix
-  received focused macOS and native Galaxy A15 tests, plus Android/Linux builds
-  and vet checks described below. This does not claim a fresh full-suite run
-  for 0.14.3. BSD has cross-build coverage, not native runtime validation.
+- The latest full macOS race suite and vet checks passed for 0.14.4. Earlier
+  native Galaxy tests and platform build checks are recorded per release below.
+  BSD has cross-build coverage, not native runtime validation.
 - Real ChatGPT login, Astra inference and OpenAI hosted search passed during
   the [0.11 setup check](#telegram-essentials-and-setup-recovery--0110).
   Telegram conversation use has been reported by the user; the 0.14.2 checks
   additionally verified bot access and authenticated model-catalog loading.
   Automated delivery tests use fixtures. Actual typing visibility and model
   button rendering are not established by those tests.
-- The latest recorded Galaxy deployment is 0.14.3, with only the current
+- The latest recorded Galaxy deployment is 0.14.4, with only the current
   executable retained. Camera metadata and a temporary JPEG were verified
-  through the corrected shell environment/filter. The image was not sent.
+  in 0.14.3 through the corrected shell environment/filter. The image was not sent.
 - Live OpenCode Go, Tavily, Brave and remote embeddings remain unverified in
   this record. Tests do not establish long-term memory quality, reflection
   quality, battery impact or peak resource use under sustained load.
@@ -27,6 +26,30 @@ For another installation, `alina setup` checks its configured accounts.
 `alina doctor --live` repeats integration checks with the daemon stopped and
 uses normal provider usage; it never sends Telegram messages. A private user
 message to the bot checks the complete reply path. See [operations](operations.md).
+
+## Telegram reaction feedback — 0.14.4 (2026-09-10)
+
+The full macOS race suite and Go vet pass; the Android/arm64 build also passes.
+Five new regression tests cover
+received reaction additions/removals and duplicate delivery, attributed family
+recall and dream visibility, identity/bot/scope boundaries, preserving reactions
+during pairing, unchanged pending approvals, and outgoing document references.
+All Telegram requests use fixtures; no real messages or reactions were sent.
+
+Reactions are recorded without starting or steering jobs or sending a reply.
+They reuse the archive and existing context builder, with no new dependency or
+model loop. The Bot API must deliver `message_reaction` updates for this to work;
+actual event delivery in the users' private chats still needs live verification.
+Old messages without a stored reference cannot be reconstructed through this API.
+Eight selected tests also passed natively on Galaxy A15 Termux: the five new
+reaction regressions plus pairing preservation, formatting fallback and file
+delivery/retry. With no active jobs across configured scopes, 0.14.4 was installed
+and started successfully. Offline doctor passed and the saved configuration hash
+was unchanged. A read-only Telegram check confirmed API access, no webhook and
+an active `message_reaction` subscription. No real Telegram message was sent.
+Temporary test and rollback files were removed; only the current binary remains.
+Installed Android SHA-256:
+`8a69efe5da09f56274f11ea2528d37b9b7493eb0b9f9414afc2a930bf92db2e8`.
 
 ## Termux device API access — 0.14.3 (2026-09-09)
 

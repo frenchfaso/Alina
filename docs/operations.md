@@ -192,6 +192,16 @@ as soon as an update arrives. These waits do not invoke the language model.
 
 Telegram user chats show typing only while active, format Markdown, and include same-chat quoted text as context. The send_file tool queues workspace documents (four per reply, 20 MiB each) for the current Telegram user; files are delivered after successful completion. Outbox snapshots remain available in the workspace.
 
+Polling and pairing explicitly subscribe to `message_reaction`. Reaction changes
+are silent archive events, deduplicated by update ID, with no extra model call.
+Message references store at most 8000 bytes of text (plus a truncation marker)
+per message in the recipient's SQLite state, keyed by bot binding, chat and
+message ID. Files retain their name/path metadata. References survive restart;
+pairing preserves pending reactions and their original memory scope. Unknown
+references and reactions from a previous family/bot are ignored. A reference
+write failure logs `telegram.message_reference_failed` without resending an
+already accepted message. Existing crash/delivery ambiguity still applies.
+
 ## Background service
 
 `alina serve` starts an independent daemon and returns JSON only once the local

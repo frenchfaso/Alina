@@ -145,7 +145,8 @@ func (t *Telegram) sendDocument(ctx context.Context, id int64, e *Engine, a Atta
 	}
 	var envelope struct {
 		OK        bool
-		ErrorCode int `json:"error_code"`
+		ErrorCode int             `json:"error_code"`
+		Result    json.RawMessage `json:"result"`
 	}
 	if err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&envelope); err != nil {
 		return errors.New("invalid Telegram upload response")
@@ -153,6 +154,7 @@ func (t *Telegram) sendDocument(ctx context.Context, id int64, e *Engine, a Atta
 	if !envelope.OK {
 		return &telegramAPIError{code: envelope.ErrorCode}
 	}
+	t.rememberSentMessage(ctx, id, envelope.Result, "Sent file: "+jsonText(a))
 	return nil
 }
 
@@ -165,15 +167,17 @@ func (t *Telegram) sendChunks(ctx context.Context, id int64, chunks []tgText, ke
 		if keyboard != nil && i == len(chunks)-1 {
 			body["reply_markup"] = keyboard
 		}
-		err := t.api(ctx, "sendMessage", body, nil)
+		var sent json.RawMessage
+		err := t.api(ctx, "sendMessage", body, &sent)
 		var rejected *telegramAPIError
 		if len(c.Entities) > 0 && errors.As(err, &rejected) && rejected.code == 400 {
 			delete(body, "entities")
-			err = t.api(ctx, "sendMessage", body, nil)
+			err = t.api(ctx, "sendMessage", body, &sent)
 		}
 		if err != nil {
 			return err
 		}
+		t.rememberSentMessage(ctx, id, sent, c.Text)
 	}
 	return nil
 }

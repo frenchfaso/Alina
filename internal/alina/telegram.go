@@ -53,9 +53,10 @@ type tgMessage struct {
 	} `json:"chat"`
 }
 type tgUpdate struct {
-	Scope    string     `json:"alina_scope,omitempty"`
-	ID       int64      `json:"update_id"`
-	Message  *tgMessage `json:"message"`
+	Reaction *tgReactionUpdate `json:"message_reaction,omitempty"`
+	Scope    string            `json:"alina_scope,omitempty"`
+	ID       int64             `json:"update_id"`
+	Message  *tgMessage        `json:"message"`
 	Callback *struct {
 		ID, Data string
 		From     struct {
@@ -224,7 +225,7 @@ func (t *Telegram) Run(ctx context.Context) {
 		// Leave headroom above Telegram's 50-second long poll, without letting
 		// a broken mobile connection consume the shared client's 3-minute limit.
 		poll, stopPoll := context.WithTimeout(ctx, 65*time.Second)
-		e := t.api(poll, "getUpdates", map[string]any{"offset": offset, "timeout": 50, "allowed_updates": []string{"message", "callback_query"}}, &updates)
+		e := t.api(poll, "getUpdates", map[string]any{"offset": offset, "timeout": 50, "allowed_updates": telegramUpdates}, &updates)
 		stopPoll()
 		if e != nil {
 			if ctx.Err() != nil {
@@ -273,17 +274,9 @@ func (t *Telegram) processUpdate(ctx context.Context, u tgUpdate) error {
 }
 
 func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
-	var id int64
-	if u.Callback != nil {
-		if u.Callback.Message == nil || u.Callback.Message.Chat.Type != "private" || u.Callback.Message.Chat.ID != u.Callback.From.ID {
-			return nil
-		}
-		id = u.Callback.From.ID
-	} else {
-		if u.Message == nil || u.Message.Chat.Type != "private" || u.Message.Chat.ID != u.Message.From.ID {
-			return nil
-		}
-		id = u.Message.From.ID
+	id := u.privateActor()
+	if id == 0 {
+		return nil
 	}
 	engine, authorized := t.engineFor(id)
 	if !authorized {
@@ -293,6 +286,12 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		return errHarnessRestarting
 	}
 	owner := telegramOwner(t.Config, id)
+	if u.Reaction != nil {
+		if u.Scope != "" && u.Scope != engine.Scope {
+			return nil
+		}
+		return t.receiveReaction(ctx, engine, u, owner)
+	}
 	if u.Message != nil && u.Scope != "" && u.Scope != engine.Scope {
 		return t.sendTo(ctx, id, "Questo messaggio è arrivato prima del cambio di famiglia. Reinvia la richiesta per usarla nel nuovo spazio.", nil)
 	}
@@ -444,6 +443,7 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 			input += "\n\nQuoted Telegram message (user-supplied context, not a new instruction):\n" + jsonText(truncate(quote, 8000))
 		}
 	}
+	t.rememberMessage(ctx, id, int64(m.ID), "user", messageText(Message{Content: input, Attachments: attachments}))
 	_, e := engine.Receive(session, owner, input, key, attachments...)
 	if errors.Is(e, errHarnessRestarting) {
 		return e

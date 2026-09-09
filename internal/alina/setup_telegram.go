@@ -112,7 +112,7 @@ func pairTelegram(ctx context.Context, tg *Telegram, code string, people ...[]Us
 	}
 	for ctx.Err() == nil {
 		var updates []tgUpdate
-		if err := tg.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 10, "allowed_updates": []string{"message", "callback_query"}}, &updates); err != nil {
+		if err := tg.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 10, "allowed_updates": telegramUpdates}, &updates); err != nil {
 			return 0, fmt.Errorf("Telegram pairing failed (use a dedicated bot without another poller or webhook): %w", err)
 		}
 		var paired int64
@@ -127,13 +127,13 @@ func pairTelegram(ctx context.Context, tg *Telegram, code string, people ...[]Us
 				known[paired] = true
 				continue
 			}
-			if m != nil && known[m.From.ID] || u.Callback != nil && known[u.Callback.From.ID] {
+			if actor := u.privateActor(); actor > 0 && known[actor] {
 				if len(tg.state.Pending) >= 1000 {
 					return 0, errors.New("pairing inbox full; start Alina to process saved messages first")
 				}
 				if len(people) > 0 {
 					for _, person := range people[0] {
-						if m != nil && person.TelegramID == m.From.ID || u.Callback != nil && person.TelegramID == u.Callback.From.ID {
+						if person.TelegramID == actor {
 							u.Scope = person.scope()
 							break
 						}
@@ -149,7 +149,7 @@ func pairTelegram(ctx context.Context, tg *Telegram, code string, people ...[]Us
 			}
 		}
 		if paired != 0 {
-			if err := tg.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 0, "allowed_updates": []string{"message", "callback_query"}}, nil); err != nil {
+			if err := tg.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 0, "allowed_updates": telegramUpdates}, nil); err != nil {
 				return 0, err
 			}
 			return paired, nil

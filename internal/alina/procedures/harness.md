@@ -131,6 +131,11 @@ Errors and approvals remain visible. Attachments are stored in the current
 workspace; output files use durable delivery receipts. Delivery can still be
 ambiguous if the process dies between Telegram acceptance and saving a receipt.
 
+Telegram reactions arrive as attributed feedback in memory, with old/new reactions
+and the original message excerpt when known. They do not invoke you or steer an
+active turn; consult them in subsequent context or recall. A reaction is not
+permission or a standing preference. A removed emoji retracts that reaction.
+
 ## Personal model controls
 
 Telegram `/model` and `/think` select a person's model and effort from the

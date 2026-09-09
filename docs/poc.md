@@ -120,6 +120,16 @@ and `/help`. `/new`, `/permissions`, `/revoke ID`, `/cancel ID` and
 `/intentions` remain available outside the short menu. See
 [personal model controls](operations.md#telegram-model-and-reasoning-controls).
 
+With memory enabled, Alina records reaction changes from configured people in
+their private chats as feedback: who reacted, the previous/new reactions and an
+excerpt of the original message. They enter the family's searchable archive and
+subsequent context/dream; they do not start or steer work, send acknowledgements,
+approve operations or automatically become lasting preferences. Removed reactions
+are recorded too. Custom emoji retain their Telegram ID, not an invented meaning.
+Only messages whose references were saved by this version can be linked; older
+or unknown messages are ignored. Telegram supplies the message ID, not its text.
+See [Bot API reaction updates](https://core.telegram.org/bots/api#messagereactionupdated).
+
 Each configured person can send photos or files, with an optional caption.
 Alina downloads that specific upload into their scope's `workspace/inbox/telegram/`, with private
 permissions and a generated filename. Sending a file authorizes receiving it;
