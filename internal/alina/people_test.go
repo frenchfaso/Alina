@@ -199,7 +199,7 @@ func TestTelegramMultiplePeopleRouteRepliesAndAttribution(t *testing.T) {
 	}
 	mu.Lock()
 	for _, u := range e.Config.Users {
-		if len(sent[u.TelegramID]) != 2 || !strings.Contains(sent[u.TelegramID][1], "completed") {
+		if len(sent[u.TelegramID]) != 1 || sent[u.TelegramID][0] != "done" {
 			t.Error("wrong reply destination", u, sent)
 		}
 	}

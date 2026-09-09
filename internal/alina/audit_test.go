@@ -414,7 +414,7 @@ func TestTelegramDeliversBacklogBeyondRecentHistory(t *testing.T) {
 	})}
 	tg := NewTelegram(e.Dir, TelegramConfig{Token: "fixture", OwnerID: 42}, e, client)
 	for i := 0; i < 61; i++ {
-		j := &runningJob{Job: Job{ID: fmt.Sprintf("backlog-%02d", i), Owner: tg.owner(), Session: "local", Status: "completed", Created: time.Now().Add(time.Duration(i) * time.Second), Output: "done"}}
+		j := &runningJob{Job: Job{ID: fmt.Sprintf("backlog-%02d", i), Owner: tg.owner(), Session: "local", Status: "completed", Created: time.Now().Add(time.Duration(i) * time.Second), Output: fmt.Sprintf("backlog-%02d", i)}}
 		if err := e.persist(j); err != nil {
 			t.Fatal(err)
 		}

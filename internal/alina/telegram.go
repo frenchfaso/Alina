@@ -435,14 +435,11 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 			input = "The user sent an attachment without a caption. Inspect it and respond in the user's language; ask what they would like to do if the intended task is unclear."
 		}
 	}
-	j, e := engine.Receive(session, owner, input, key, attachments...)
+	_, e := engine.Receive(session, owner, input, key, attachments...)
 	if e != nil {
 		return t.sendTo(ctx, id, "Impossibile avviare: "+e.Error(), nil)
 	}
-	if j.ID != key {
-		return t.sendTo(ctx, id, "Messaggio aggiunto al lavoro · "+j.ID, nil)
-	}
-	return t.sendTo(ctx, id, "Avviato · "+j.ID, nil)
+	return nil
 }
 func (t *Telegram) notify(ctx context.Context) {
 	backoff := time.Duration(0)
@@ -504,7 +501,10 @@ func (t *Telegram) deliverPending(ctx context.Context) (bool, error) {
 		}
 		if terminalStatus(j.Status) {
 			stamp = j.Status
-			text = j.ID + " · " + j.Status + "\n" + j.Output
+			text = j.Output
+			if j.Status != "completed" {
+				text = j.ID + " · " + j.Status + "\n" + text
+			}
 			if j.Error != "" {
 				text += "\n" + j.Error
 			}
@@ -515,10 +515,12 @@ func (t *Telegram) deliverPending(ctx context.Context) (bool, error) {
 		if stamp == "" {
 			continue
 		}
-		if er := t.sendTo(ctx, chatID, text, keyboard); er != nil {
-			t.Engine.Events.emit("telegram.delivery_failed", er, "job_id", j.ID)
-			failed[chatID], deliveryErr = true, er
-			continue
+		if strings.TrimSpace(text) != "" {
+			if er := t.sendTo(ctx, chatID, text, keyboard); er != nil {
+				t.Engine.Events.emit("telegram.delivery_failed", er, "job_id", j.ID)
+				failed[chatID], deliveryErr = true, er
+				continue
+			}
 		}
 		_, er := engine.Memory.DB.ExecContext(ctx, `INSERT INTO memory_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, "telegram-delivered:"+j.ID, stamp)
 		if er != nil {
