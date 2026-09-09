@@ -1,40 +1,55 @@
 # Alina
 
-A small personal device operator in Go. Android/Termux first; Linux, macOS
-and BSD targets. **Start simple, stay simple. Less is more.**
+**Give an agent somewhere to grow.**
 
-Talk through Telegram or a plain terminal chat. Alina uses installed commands,
-a few native tools, integrated web search and web reading. Quick setup asks
-consent for arbitrary downloads and package installation; stricter network
-approval is available.
+Alina lives on your device and makes it her workspace. Talk to her through
+Telegram or a terminal. She works with files, uses installed tools, searches
+the web, and carries useful context from one conversation to the next.
+
+The idea is to give an agent continuity, some freedom to explore, and a small
+enough harness to leave room for her own way of being useful.
+
+- **Remember what matters.** Notes fade from attention over time and return to
+  focus when recalled. A separate archive preserves what happened, so the past
+  remains searchable even as the working context moves on.
+- **Leave time to dream.** At night, Alina can revisit experiences and open
+  questions, and revise a short `soul.md`: her evolving sense of how to approach
+  things.
+- **Make room for curiosity.** With autonomy enabled, she can keep intentions,
+  schedule her own next steps, explore, and save useful procedures. You choose
+  the scope and budget. A new message can steer her work; `/stop` can halt it.
+- **Keep one Alina.** People in the same family can share remembered context.
+  Personal and family memory have their own scopes, while one shared soul
+  develops through reflection on those different experiences.
+
+Conversation, scheduled work, exploration and dream all use the same agent loop.
+A Go daemon, a few native tools, SQLite and readable Markdown give that loop
+somewhere to work. The device supplies the rest.
+
+**Start simple, stay simple. Less is more.**
+
+Android/Termux first, with Linux, macOS and BSD targets. Build with Go 1.26+:
 
 ```sh
+git clone https://github.com/frenchfaso/Alina.git
+cd Alina
 go build -trimpath -o alina .
 ./alina setup
-./alina serve        # starts in the background, or reports the existing daemon
-./alina chat
-# ./alina serve stop
+./alina serve       # run in the background
+./alina chat        # or talk through Telegram
 ```
 
-Providers: a dedicated ChatGPT subscription login or OpenCode Go. Telegram
-supports multiple trusted people, native families, photos and files. Its small
-command menu includes `/model`, `/think`, `/status`, `/stop` and `/help`;
-ChatGPT model/reasoning choices come from the provider catalog and are personal.
-Families share memories; a single global soul and nightly dream shape Alina's orientation.
-A SQLite event archive and attention-based notes preserve continuity; working
-context compacts automatically under pressure, independently of dream.
+Guided setup connects your model and Telegram. Supports ChatGPT subscriptions,
+OpenCode Go, web search, photos and files. Quick setup asks consent for arbitrary
+downloads and package installation. The harness runs locally; model requests
+go to your configured provider.
 
-Alina can read its bundled Markdown manual, inspect its live configuration and
-logs, and apply user-requested settings through a controlled self-restart with
-startup rollback. No plugin runtime, mandatory external converter, permanent
-supervisor or boot autostart is required. This remains an experimental POC.
+An experimental POC for trusted people and devices. Configured users share one
+OS account. [MIT licensed](LICENSE).
 
-State uses the OS user config directory (`~/.config/alina` on Termux/Linux;
-`~/Library/Application Support/alina` on macOS), or `ALINA_HOME`. Setup and local
-configuration writes require the daemon stopped. Configured people share a
-trusted OS account; family memory separation is not an OS security boundary.
+[Setup and limits](docs/poc.md) · [How Alina works](internal/alina/procedures/harness.md)
+· [Operations](docs/operations.md) · [Verification](docs/verification.md)
 
-See [usage and limits](docs/poc.md), [operations and debugging](docs/operations.md),
-[the harness manual](internal/alina/procedures/harness.md),
-[verification](docs/verification.md) and [memory research](docs/research-memory.md).
-MIT licensed: [LICENSE](LICENSE).
+Inspired by [Hermes](https://github.com/NousResearch/hermes-agent),
+[OpenClaw](https://github.com/openclaw/openclaw) and
+[pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent).
