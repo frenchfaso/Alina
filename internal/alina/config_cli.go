@@ -132,7 +132,7 @@ func configCLI(ctx context.Context, dir string, args []string, in io.Reader, out
 		return err
 	}
 	previous, _ := LoadConfig(dir)
-	if c.Telegram.Token != previous.Telegram.Token || c.Telegram.OwnerID != previous.Telegram.OwnerID {
+	if c.Telegram.Token != previous.Telegram.Token || len(c.Users) == 0 && c.Telegram.OwnerID != previous.Telegram.OwnerID {
 		c.Telegram.Binding = randomID()
 	}
 	if err = SaveConfig(dir, c); err != nil {

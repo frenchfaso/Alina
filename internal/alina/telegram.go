@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 type telegramState struct {
 	Binding   string            `json:"binding,omitempty"`
+	Pending   []tgUpdate        `json:"pending,omitempty"`
 	Offset    int64             `json:"offset"`
 	Sessions  map[string]string `json:"sessions"`
 	Delivered map[string]string `json:"delivered,omitempty"` // Legacy receipts, migrated to SQLite.
@@ -50,6 +52,7 @@ type tgMessage struct {
 	} `json:"chat"`
 }
 type tgUpdate struct {
+	Scope    string     `json:"alina_scope,omitempty"`
 	ID       int64      `json:"update_id"`
 	Message  *tgMessage `json:"message"`
 	Callback *struct {
@@ -90,12 +93,42 @@ func NewTelegram(dir string, c TelegramConfig, e *Engine, client *http.Client) *
 
 // A new pairing isolates delivery receipts and update IDs from an old bot.
 // Empty bindings retain compatibility with existing installations.
-func (t *Telegram) owner() string {
-	owner := fmt.Sprintf("telegram:%d", t.Config.OwnerID)
-	if t.Config.Binding != "" {
-		owner += ":" + t.Config.Binding
+func telegramOwner(c TelegramConfig, id int64) string {
+	owner := fmt.Sprintf("telegram:%d", id)
+	if c.Binding != "" {
+		owner += ":" + c.Binding
 	}
 	return owner
+}
+func (t *Telegram) owner() string { return telegramOwner(t.Config, t.Config.OwnerID) }
+
+func (t *Telegram) recipients() []User {
+	if t.Engine != nil && len(t.Engine.Config.Users) > 0 {
+		return t.Engine.Config.Users
+	}
+	return []User{{TelegramID: t.Config.OwnerID}}
+}
+func (t *Telegram) engineFor(id int64) (*Engine, bool) {
+	for _, u := range t.recipients() {
+		if u.TelegramID != id {
+			continue
+		}
+		if t.Engine != nil && len(t.Engine.scopes) > 0 {
+			e, ok := t.Engine.scopes[u.scope()]
+			return e, ok
+		}
+		return t.Engine, t.Engine != nil
+	}
+	return nil, false
+}
+func (t *Telegram) destination(owner string) (*Engine, int64, bool) {
+	for _, u := range t.recipients() {
+		if telegramOwner(t.Config, u.TelegramID) == owner {
+			e, ok := t.engineFor(u.TelegramID)
+			return e, u.TelegramID, ok
+		}
+	}
+	return nil, 0, false
 }
 func (t *Telegram) updateKey(id int64) string {
 	if t.Config.Binding == "" {
@@ -131,7 +164,7 @@ func (t *Telegram) api(ctx context.Context, method string, body, out any) error 
 	}
 	return nil
 }
-func (t *Telegram) send(ctx context.Context, text string, keyboard any) error {
+func (t *Telegram) sendTo(ctx context.Context, chatID int64, text string, keyboard any) error {
 	runes := []rune(text)
 	if len(runes) == 0 {
 		runes = []rune("(nessun testo)")
@@ -141,7 +174,7 @@ func (t *Telegram) send(ctx context.Context, text string, keyboard any) error {
 		if n > 3500 {
 			n = 3500
 		}
-		body := map[string]any{"chat_id": t.Config.OwnerID, "text": string(runes[:n]), "link_preview_options": map[string]bool{"is_disabled": true}}
+		body := map[string]any{"chat_id": chatID, "text": string(runes[:n]), "link_preview_options": map[string]bool{"is_disabled": true}}
 		if keyboard != nil && n == len(runes) {
 			body["reply_markup"] = keyboard
 		}
@@ -166,6 +199,33 @@ func (t *Telegram) Run(ctx context.Context) {
 	go func() { defer close(done); t.notify(ctx) }()
 	defer func() { cancel(); <-done }()
 	for ctx.Err() == nil {
+		t.mu.Lock()
+		var saved *tgUpdate
+		if len(t.state.Pending) > 0 {
+			copy := t.state.Pending[0]
+			saved = &copy
+		}
+		t.mu.Unlock()
+		if saved != nil {
+			if err := t.process(ctx, *saved); err != nil {
+				t.Engine.Events.emit("telegram.update_failed", err)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+				}
+				continue
+			}
+			t.mu.Lock()
+			t.state.Pending = t.state.Pending[1:]
+			err := t.saveLocked()
+			t.mu.Unlock()
+			if err != nil {
+				t.Engine.Events.emit("telegram.checkpoint_failed", err)
+				return
+			}
+			continue
+		}
 		t.mu.Lock()
 		offset := t.state.Offset
 		t.mu.Unlock()
@@ -205,21 +265,38 @@ func (t *Telegram) Run(ctx context.Context) {
 	}
 }
 func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
-	owner := t.owner()
+	var id int64
 	if u.Callback != nil {
-		c := u.Callback
-		if c.From.ID != t.Config.OwnerID || c.Message == nil || c.Message.Chat.Type != "private" || c.Message.Chat.ID != t.Config.OwnerID {
+		if u.Callback.Message == nil || u.Callback.Message.Chat.Type != "private" || u.Callback.Message.Chat.ID != u.Callback.From.ID {
 			return nil
 		}
+		id = u.Callback.From.ID
+	} else {
+		if u.Message == nil || u.Message.Chat.Type != "private" || u.Message.Chat.ID != u.Message.From.ID {
+			return nil
+		}
+		id = u.Message.From.ID
+	}
+	engine, authorized := t.engineFor(id)
+	if !authorized {
+		return nil
+	}
+	owner := telegramOwner(t.Config, id)
+	if u.Message != nil && u.Scope != "" && u.Scope != engine.Scope {
+		return t.sendTo(ctx, id, "Questo messaggio è arrivato prima del cambio di famiglia. Reinvia la richiesta per usarla nel nuovo spazio.", nil)
+	}
+	if u.Callback != nil {
+		c := u.Callback
+
 		parts := strings.Split(c.Data, ":")
 		answer := "Richiesta non valida"
 		if len(parts) == 3 && parts[0] == "a" {
 			answer = "Consenso scaduto o non più in attesa"
-			for _, job := range t.Engine.Jobs(owner) {
+			for _, job := range engine.Jobs(owner) {
 				if job.Approval == nil || job.Approval.ID != parts[1] {
 					continue
 				}
-				if err := t.Engine.Approve(job.ID, parts[1], parts[2], owner); err == nil {
+				if err := engine.Approve(job.ID, parts[1], parts[2], owner); err == nil {
 					answer = "Scelta registrata"
 				} else {
 					answer = err.Error()
@@ -232,18 +309,16 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		if errors.As(err, &apiErr) && apiErr.code == 400 {
 			// An expired callback cannot be acknowledged. Retrying this update
 			// indefinitely would block all subsequent owner messages.
-			t.Engine.Events.emit("telegram.callback_rejected", err)
+			engine.Events.emit("telegram.callback_rejected", err)
 			return nil
 		}
 		return err
 	}
 	m := u.Message
-	if m == nil || m.From.ID != t.Config.OwnerID || m.Chat.ID != t.Config.OwnerID || m.Chat.Type != "private" {
-		return nil
-	}
+
 	file := m.file()
 	if strings.TrimSpace(m.Text) == "" && file == nil {
-		return t.send(ctx, "Invia testo, una foto o un file (massimo 20 MiB).", nil)
+		return t.sendTo(ctx, id, "Invia testo, una foto o un file (massimo 20 MiB).", nil)
 	}
 	fields := strings.Fields(m.Text)
 	if len(fields) == 0 {
@@ -252,7 +327,7 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	chat := strconv.FormatInt(m.Chat.ID, 10)
 	switch fields[0] {
 	case "/start", "/help":
-		return t.send(ctx, "Alina · operatore personale\nScrivi una richiesta. Durante un lavoro, nuovi messaggi e allegati lo aggiornano al prossimo punto sicuro.\n/status · lavori\n/cancel ID · interrompi subito\n/resume ID · riprendi\n/intentions · intenzioni personali\n/new · nuova conversazione\n/permissions · consensi\n/revoke ID · revoca", nil)
+		return t.sendTo(ctx, id, "Alina · operatore personale\nScrivi una richiesta. Durante un lavoro, nuovi messaggi e allegati lo aggiornano al prossimo punto sicuro.\n/status · lavori\n/cancel ID · interrompi subito\n/resume ID · riprendi\n/intentions · intenzioni personali\n/new · nuova conversazione\n/permissions · consensi\n/revoke ID · revoca", nil)
 	case "/new":
 		t.mu.Lock()
 		t.state.Sessions[chat] = "tg-" + t.updateKey(u.ID)
@@ -261,16 +336,16 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		if er != nil {
 			return er
 		}
-		return t.send(ctx, "Nuova sessione avviata.", nil)
+		return t.sendTo(ctx, id, "Nuova sessione avviata.", nil)
 	case "/status":
-		return t.send(ctx, formatJobs(t.Engine.Jobs(owner)), nil)
+		return t.sendTo(ctx, id, formatJobs(engine.Jobs(owner)), nil)
 	case "/resume":
 		if len(fields) != 2 {
-			return t.send(ctx, "Uso: /resume ID", nil)
+			return t.sendTo(ctx, id, "Uso: /resume ID", nil)
 		}
-		j, err := t.Engine.resumeKey(fields[1], owner, t.updateKey(u.ID))
+		j, err := engine.resumeKey(fields[1], owner, t.updateKey(u.ID))
 		if err != nil {
-			return t.send(ctx, err.Error(), nil)
+			return t.sendTo(ctx, id, err.Error(), nil)
 		}
 		t.mu.Lock()
 		t.state.Sessions[chat] = j.Session
@@ -279,32 +354,32 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		if err != nil {
 			return err
 		}
-		return t.send(ctx, "Ripresa avviata: "+j.ID, nil)
+		return t.sendTo(ctx, id, "Ripresa avviata: "+j.ID, nil)
 	case "/intentions":
-		intentions, err := t.Engine.Memory.Intentions(ctx, false)
+		intentions, err := engine.Memory.Intentions(ctx, false)
 		if err != nil {
 			return err
 		}
-		return t.send(ctx, jsonText(intentions), nil)
+		return t.sendTo(ctx, id, jsonText(intentions), nil)
 	case "/cancel":
 		if len(fields) != 2 {
-			return t.send(ctx, "Uso: /cancel ID", nil)
+			return t.sendTo(ctx, id, "Uso: /cancel ID", nil)
 		}
-		e := t.Engine.Cancel(fields[1], owner)
+		e := engine.Cancel(fields[1], owner)
 		if e != nil {
-			return t.send(ctx, e.Error(), nil)
+			return t.sendTo(ctx, id, e.Error(), nil)
 		}
-		return t.send(ctx, "Interruzione richiesta.", nil)
+		return t.sendTo(ctx, id, "Interruzione richiesta.", nil)
 	case "/permissions":
-		return t.send(ctx, formatGrants(t.Engine.Permissions.List()), nil)
+		return t.sendTo(ctx, id, formatGrants(engine.Permissions.List()), nil)
 	case "/revoke":
 		if len(fields) != 2 {
-			return t.send(ctx, "Uso: /revoke ID", nil)
+			return t.sendTo(ctx, id, "Uso: /revoke ID", nil)
 		}
-		if e := t.Engine.Permissions.Revoke(fields[1]); e != nil {
-			return t.send(ctx, e.Error(), nil)
+		if e := engine.Permissions.Revoke(fields[1]); e != nil {
+			return t.sendTo(ctx, id, e.Error(), nil)
 		}
-		return t.send(ctx, "Consenso revocato.", nil)
+		return t.sendTo(ctx, id, "Consenso revocato.", nil)
 	}
 	t.mu.Lock()
 	session := t.state.Sessions[chat]
@@ -319,12 +394,12 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	// Stable update IDs prevent a crash before offset persistence from replaying
 	// a submitted command. Compact IDs also fit Telegram's callback_data limit.
 	key := t.updateKey(u.ID)
-	if received, err := t.Engine.steeringReceived(key, owner); err != nil {
+	if received, err := engine.steeringReceived(key, owner); err != nil {
 		return err
 	} else if received {
 		return nil
 	}
-	if old, ok := t.Engine.Get(key); ok {
+	if old, ok := engine.Get(key); ok {
 		if old.Owner != owner {
 			return fmt.Errorf("Telegram update owner mismatch")
 		}
@@ -333,11 +408,11 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	input := m.Text
 	var attachments []Attachment
 	if file != nil {
-		a, err := t.receiveFile(ctx, u.ID, *file)
+		a, err := t.receiveFile(ctx, u.ID, *file, engine)
 		if err != nil {
 			var rejected *attachmentRejected
 			if errors.As(err, &rejected) {
-				return t.send(ctx, rejected.Error(), nil)
+				return t.sendTo(ctx, id, rejected.Error(), nil)
 			}
 			return err
 		}
@@ -347,14 +422,14 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 			input = "The user sent an attachment without a caption. Inspect it and respond in the user's language; ask what they would like to do if the intended task is unclear."
 		}
 	}
-	j, e := t.Engine.Receive(session, owner, input, key, attachments...)
+	j, e := engine.Receive(session, owner, input, key, attachments...)
 	if e != nil {
-		return t.send(ctx, "Impossibile avviare: "+e.Error(), nil)
+		return t.sendTo(ctx, id, "Impossibile avviare: "+e.Error(), nil)
 	}
 	if j.ID != key {
-		return t.send(ctx, "Messaggio aggiunto al lavoro · "+j.ID, nil)
+		return t.sendTo(ctx, id, "Messaggio aggiunto al lavoro · "+j.ID, nil)
 	}
-	return t.send(ctx, "Avviato · "+j.ID, nil)
+	return t.sendTo(ctx, id, "Avviato · "+j.ID, nil)
 }
 func (t *Telegram) notify(ctx context.Context) {
 	backoff := time.Duration(0)
@@ -392,7 +467,13 @@ func (t *Telegram) deliverPending(ctx context.Context) (bool, error) {
 		t.Engine.Events.emit("telegram.delivery_query_failed", err)
 		return false, err
 	}
+	failed := map[int64]bool{}
+	var deliveryErr error
 	for _, j := range jobs {
+		engine, chatID, allowed := t.destination(j.Owner)
+		if !allowed || failed[chatID] {
+			continue
+		}
 		stamp := ""
 		text := ""
 		var keyboard any
@@ -421,27 +502,67 @@ func (t *Telegram) deliverPending(ctx context.Context) (bool, error) {
 		if stamp == "" {
 			continue
 		}
-		if er := t.send(ctx, text, keyboard); er != nil {
+		if er := t.sendTo(ctx, chatID, text, keyboard); er != nil {
 			t.Engine.Events.emit("telegram.delivery_failed", er, "job_id", j.ID)
-			return false, er
+			failed[chatID], deliveryErr = true, er
+			continue
 		}
-		_, er := t.Engine.Memory.DB.ExecContext(ctx, `INSERT INTO memory_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, "telegram-delivered:"+j.ID, stamp)
+		_, er := engine.Memory.DB.ExecContext(ctx, `INSERT INTO memory_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, "telegram-delivered:"+j.ID, stamp)
 		if er != nil {
 			t.Engine.Events.emit("telegram.delivery_checkpoint_failed", er, "job_id", j.ID)
 			return false, er
 		}
 	}
-	return len(jobs) > 0, nil
+	return len(jobs) > 0, deliveryErr
 }
 
 // Delivery scans persisted jobs, not the 50-item interactive history window.
 // Receipts use the existing SQLite state store; no additional queue or service.
 func (t *Telegram) pendingNotifications(ctx context.Context) ([]Job, error) {
-	rows, err := t.Engine.Memory.DB.QueryContext(ctx, `SELECT j.payload FROM jobs j
+	var queues [][]Job
+	for _, u := range t.recipients() {
+		engine, ok := t.engineFor(u.TelegramID)
+		if !ok {
+			continue
+		}
+		pending, err := pendingTelegramJobs(ctx, engine, telegramOwner(t.Config, u.TelegramID))
+		if err != nil {
+			return nil, err
+		}
+		queues = append(queues, pending)
+	}
+	// Give each person a place in the batch before taking a second reply.
+	// A blocked bot chat with an old backlog cannot starve everyone else.
+	var jobs []Job
+	for i := 0; len(jobs) < 50; i++ {
+		previous := len(jobs)
+		for _, queue := range queues {
+			if i < len(queue) && len(jobs) < 50 {
+				jobs = append(jobs, queue[i])
+			}
+		}
+		if len(jobs) == previous {
+			break
+		}
+	}
+	sort.Slice(jobs, func(i, j int) bool {
+		if (jobs[i].Status == "approval") != (jobs[j].Status == "approval") {
+			return jobs[i].Status == "approval"
+		}
+		if !jobs[i].Created.Equal(jobs[j].Created) {
+			return jobs[i].Created.Before(jobs[j].Created)
+		}
+		return jobs[i].ID < jobs[j].ID
+	})
+	return jobs, nil
+}
+
+func pendingTelegramJobs(ctx context.Context, engine *Engine, owner string) ([]Job, error) {
+	rows, err := engine.Memory.DB.QueryContext(ctx, `SELECT j.payload FROM jobs j
  LEFT JOIN memory_state d ON d.key='telegram-delivered:'||j.id
  WHERE j.owner=? AND j.status IN ('approval','completed','failed','cancelled','interrupted')
  AND COALESCE(d.value,'') != CASE WHEN j.status='approval' THEN json_extract(j.payload,'$.approval.id') ELSE j.status END
- ORDER BY (j.status='approval') DESC,j.created,j.id LIMIT 50`, t.owner())
+ ORDER BY (j.status='approval') DESC,j.created,j.id LIMIT 50`, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +588,19 @@ func (t *Telegram) importDeliveryReceipts(ctx context.Context) error {
 	if len(t.state.Delivered) == 0 {
 		return nil
 	}
-	tx, err := t.Engine.Memory.DB.BeginTx(ctx, nil)
+	var engine *Engine
+	for _, candidate := range t.Engine.engines() {
+		if candidate.Dir == t.Dir {
+			engine = candidate
+			break
+		}
+	}
+	if engine == nil {
+		// An inactive legacy family retains its receipts for a later return.
+		// It must not prevent notifications for currently configured people.
+		return nil
+	}
+	tx, err := engine.Memory.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}

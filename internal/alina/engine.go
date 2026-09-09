@@ -46,6 +46,10 @@ type runningJob struct {
 }
 type Engine struct {
 	Events      *EventLog
+	Scope       string
+	AdminDir    string
+	global      *Engine
+	scopes      map[string]*Engine
 	mu          sync.Mutex
 	Dir         string
 	Config      Config
@@ -53,10 +57,10 @@ type Engine struct {
 	Search      *Search
 	Permissions *Permissions
 	jobs        map[string]*runningJob
-	jobChanged  wakeSignal
-	gate        modelGate
+	jobChanged  *wakeSignal
+	gate        *modelGate
 	background  sync.Mutex
-	fileMu      sync.Mutex
+	fileMu      *sync.Mutex
 	sessionTail map[string]<-chan struct{}
 	inFlight    int // Includes cancelled turns still holding a place in the queue.
 	Memory      *Memory
@@ -66,20 +70,33 @@ type Engine struct {
 	wg          sync.WaitGroup
 }
 
-func NewEngine(dir string, c Config, m Model, s *Search, events ...*EventLog) (*Engine, error) {
+func newEngine(dir, adminDir string, c Config, m Model, s *Search, global *Engine, events ...*EventLog) (*Engine, error) {
 	p, e := NewPermissions(dir)
 	if e != nil {
 		return nil, e
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	en := &Engine{Dir: dir, Config: c, Model: m, Search: s, Permissions: p, jobs: map[string]*runningJob{}, sessionTail: map[string]<-chan struct{}{}, ctx: ctx, cancel: cancel}
+	en.AdminDir = adminDir
+	en.global = global
+	en.jobChanged, en.gate, en.fileMu = &wakeSignal{}, &modelGate{}, &sync.Mutex{}
+	if global == nil {
+		en.global = en
+	} else {
+		en.jobChanged, en.gate, en.fileMu = global.jobChanged, global.gate, global.fileMu
+	}
 	if len(events) > 0 {
 		en.Events = events[0]
 	}
 	if provider, ok := m.(*Provider); ok {
-		provider.Workspace = en.Workspace()
+		copy := *provider
+		copy.Workspace = en.Workspace()
+		if global == nil && dir != adminDir {
+			copy.Workspace = adminDir
+		}
+		en.Model = &copy
 	}
-	en.Memory, e = OpenMemory(dir, c)
+	en.Memory, e = OpenMemory(dir, c, adminDir)
 	if e != nil {
 		cancel()
 		return nil, e
@@ -104,10 +121,15 @@ func NewEngine(dir string, c Config, m Model, s *Search, events ...*EventLog) (*
 	return en, nil
 }
 func (e *Engine) Close() {
-	e.mu.Lock()
-	e.cancel()
-	e.mu.Unlock()
+	for _, engine := range e.engines() {
+		engine.mu.Lock()
+		engine.cancel()
+		engine.mu.Unlock()
+	}
 	e.wg.Wait()
+	for _, child := range e.scopes {
+		child.Close()
+	}
 	if e.Memory != nil {
 		e.Memory.Render(time.Now())
 		e.Memory.DB.Close()

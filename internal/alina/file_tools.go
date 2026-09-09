@@ -87,7 +87,7 @@ func (e *Engine) filePath(j *runningJob, path string, writing bool) (string, err
 	if err != nil {
 		return "", err
 	}
-	dir, err := canonicalFilePath(e.Dir)
+	dir, err := canonicalFilePath(e.AdminDir)
 	if err != nil {
 		return "", err
 	}

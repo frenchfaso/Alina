@@ -115,7 +115,7 @@ func TestQuickSetupFullOnboarding(t *testing.T) {
 	t.Setenv("TZ", "Europe/Rome")
 	dir := t.TempDir()
 	f := &setupFixture{t: t}
-	if err := f.run(dir, "\nfixture-bot-token\n", false); err != nil {
+	if err := f.run(dir, "\nfixture-bot-token\nAlex\nhome\nn\n", false); err != nil {
 		t.Fatal(err, f.out.String())
 	}
 	c, err := LoadConfig(dir)
@@ -165,6 +165,8 @@ func TestQuickSetupReusesAndPreservesConfiguration(t *testing.T) {
 	c := DefaultConfig()
 	c.WorkDir = dir
 	c.Telegram = TelegramConfig{Enabled: true, Token: "fixture-existing", OwnerID: 42, Binding: "existing"}
+	c.Users = []User{{ID: "owner", Name: "Alex", TelegramID: 42, Family: "home"}}
+	c.LocalUser = "owner"
 	c.Search.TavilyKey = "unused-secret"
 	c.Memory.EmbeddingURL, c.Memory.EmbeddingModel = "https://example.org/embeddings", "custom-model"
 	c.ReasoningEffort, c.Memory.DreamCron = "high", "30 4 * * *"
@@ -256,7 +258,7 @@ func TestSetupTelegramFocusedAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := &setupFixture{t: t, botFailures: 1}
-	if err := f.run(dir, "bad-bot\n2\nnew-bot\n", true); err != nil {
+	if err := f.run(dir, "bad-bot\n2\nnew-bot\nAlex\nhome\nn\n", true); err != nil {
 		t.Fatal(err, f.out.String())
 	}
 	after, err := LoadConfig(dir)
@@ -264,6 +266,7 @@ func TestSetupTelegramFocusedAndRetry(t *testing.T) {
 		t.Fatal("bot not updated", err)
 	}
 	c.Telegram = after.Telegram
+	c.Users, c.LocalUser = after.Users, after.LocalUser
 	if !reflect.DeepEqual(c, after) {
 		t.Fatal("focused setup changed other options")
 	}

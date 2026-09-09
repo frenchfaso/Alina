@@ -1,5 +1,39 @@
 # POC verification — 2026-09-09
 
+## Native people/families and one global mind — 0.10
+
+All **138 tests** pass natively on Galaxy A15 Termux, including the opt-in public
+HTTPS smoke (zero failures or skips). The full macOS ARM64 race suite, Go vet,
+formatting and diff checks pass. CGO-free builds pass for Android/arm64,
+Linux/arm64, macOS/arm64 and FreeBSD/OpenBSD/NetBSD amd64.
+
+Twelve new regressions cover shared family recall, separate personal/family
+archives, speaker attribution, native file/memory scope restrictions, one global
+soul/dream and reflection cursors, scoped local administration, membership
+changes and retained history, requester-owned Telegram approvals, a global
+initiative budget, setup inbox persistence/replay and configuration validation.
+They also cover inactive legacy receipts and a blocked bot recipient with a
+50-job backlog without starving another person's reply.
+
+Both legacy and multi-user disposable binary smoke tests pass on macOS and the
+Galaxy. The multi-user smoke exercises four people in three memory scopes,
+global empty dream, one physical soul file, scoped jobs/tasks/search, restart,
+family reassignment and diagnostics of inactive archives. Galaxy RSS was
+**25,484 KiB** for this small workload (legacy smoke: 21,376 KiB); this is not a
+peak bound or real-model performance measurement.
+
+Provider/OAuth/Telegram requests use fixtures; no live accounts or real Telegram
+messages were used. These tests establish routing and storage behavior, not the
+model's discretion or the quality of cross-family reflection. Shared shell/API
+access and soul discretion are the explicit soft boundaries in this design.
+See [people and one global mind](people.md).
+
+Version 0.10.0 is installed at `~/alina-poc/bin/alina`, with 0.9.2 retained as
+`~/alina-poc/bin/alina-v092-c59ccd54`. No daemon was running, and no accounts,
+packages or system services were changed. Pair actual people with
+`alina setup telegram` before starting the configured service. Android SHA-256:
+`dc4f7ae4de36549f297a9131a76897db0992cc71e67728cba04139069ae67268`.
+
 ## Idle scheduling and Telegram delivery — 0.9.2
 
 All **126 tests** pass natively on Galaxy A15 Termux, including the opt-in public

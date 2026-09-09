@@ -28,6 +28,7 @@ type Memory struct {
 	Events        *EventLog
 	DB            *sql.DB
 	Dir           string
+	SoulDir       string
 	Config        Config
 	loc           *time.Location
 	mu            sync.Mutex // Markdown projections and soul revisions.
@@ -43,7 +44,7 @@ type MemoryEntry struct {
 	Content string `json:"content"`
 }
 
-func OpenMemory(dir string, c Config) (*Memory, error) {
+func OpenMemory(dir string, c Config, soulDirs ...string) (*Memory, error) {
 	d := filepath.Join(dir, "memory")
 	if err := os.MkdirAll(d, 0700); err != nil {
 		return nil, err
@@ -64,7 +65,11 @@ func OpenMemory(dir string, c Config) (*Memory, error) {
 		db.Close()
 		return nil, err
 	}
-	m := &Memory{DB: db, Dir: dir, Config: c, loc: loc, goodSoul: initialSoul}
+	soulDir := dir
+	if len(soulDirs) > 0 {
+		soulDir = soulDirs[0]
+	}
+	m := &Memory{SoulDir: soulDir, DB: db, Dir: dir, Config: c, loc: loc, goodSoul: initialSoul}
 	_, err = db.Exec(`PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, owner TEXT, created TEXT, status TEXT, payload TEXT);
 CREATE TABLE IF NOT EXISTS steering (id TEXT PRIMARY KEY, job TEXT, payload TEXT, applied INTEGER NOT NULL DEFAULT 0);
@@ -123,8 +128,8 @@ CREATE TABLE IF NOT EXISTS soul_versions (id TEXT PRIMARY KEY, stamp TEXT, previ
 		db.Close()
 		return nil, err
 	}
-	if _, err = os.Stat(filepath.Join(dir, "soul.md")); os.IsNotExist(err) {
-		err = writeText(filepath.Join(dir, "soul.md"), initialSoul)
+	if _, err = os.Stat(filepath.Join(m.SoulDir, "soul.md")); os.IsNotExist(err) {
+		err = writeText(filepath.Join(m.SoulDir, "soul.md"), initialSoul)
 	}
 	if err == nil {
 		err = m.translateSeedSoul()
@@ -212,17 +217,17 @@ func validSoul(s string) bool {
 func (m *Memory) Soul() (string, string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	soul, err := readSmallFile(filepath.Join(m.Dir, "soul.md"), 1600)
+	soul, err := readSmallFile(filepath.Join(m.SoulDir, "soul.md"), 1600)
 	if err == nil && validSoul(soul) {
 		if soul != m.goodSoul {
-			if er := writeText(filepath.Join(m.Dir, "soul.last.md"), soul); er != nil {
+			if er := writeText(filepath.Join(m.SoulDir, "soul.last.md"), soul); er != nil {
 				m.Events.emit("soul.checkpoint_failed", er)
 			}
 		}
 		m.goodSoul = soul
 		return soul, ""
 	}
-	if last, er := readSmallFile(filepath.Join(m.Dir, "soul.last.md"), 1600); er == nil && validSoul(last) {
+	if last, er := readSmallFile(filepath.Join(m.SoulDir, "soul.last.md"), 1600); er == nil && validSoul(last) {
 		m.goodSoul = last
 	}
 	return m.goodSoul, "soul.md unavailable or outside 180 words / 1600 bytes; using last valid orientation"
@@ -243,13 +248,13 @@ func (m *Memory) RelevantContext(ctx context.Context, now time.Time, source stri
 }
 
 func (m *Memory) translateSeedSoul() error {
-	path := filepath.Join(m.Dir, "soul.md")
+	path := filepath.Join(m.SoulDir, "soul.md")
 	if b, err := os.ReadFile(path); err == nil && string(b) == legacyInitialSoul {
 		if err = m.reviseSoul(context.Background(), time.Now(), legacyInitialSoul, initialSoul, "Translate the original seed to English; preserve its meaning."); err != nil {
 			return err
 		}
 	}
-	path = filepath.Join(m.Dir, "soul.last.md")
+	path = filepath.Join(m.SoulDir, "soul.last.md")
 	if b, err := os.ReadFile(path); err == nil && string(b) == legacyInitialSoul {
 		return writeText(path, initialSoul)
 	}

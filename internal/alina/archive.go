@@ -125,6 +125,9 @@ func (m *Memory) recordMessage(ctx context.Context, now time.Time, j Job, msg *M
 		msg.ArchiveID = randomID()
 	}
 	role, text := messageContent(*msg)
+	if person, ok := m.Config.person(j.Owner); ok && msg.Role == "user" {
+		text = "Speaker: " + jsonText(map[string]string{"id": person.ID, "name": person.Name}) + "\n\n" + text
+	}
 	if j.Kind == "dream" {
 		role = "reflection:" + role
 	}

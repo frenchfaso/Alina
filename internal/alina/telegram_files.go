@@ -50,11 +50,15 @@ func (e *telegramAPIError) Error() string { return fmt.Sprintf("Telegram API err
 
 // The owner explicitly sending a file authorizes fetching that specific Telegram
 // upload. This path cannot fetch URLs supplied in captions or file names.
-func (t *Telegram) receiveFile(ctx context.Context, updateID int64, file tgFile) (Attachment, error) {
+func (t *Telegram) receiveFile(ctx context.Context, updateID int64, file tgFile, engines ...*Engine) (Attachment, error) {
 	if file.ID == "" || file.Size < 0 || file.Size > maxAttachmentBytes {
 		return Attachment{}, &attachmentRejected{"Attachment exceeds the 20 MiB download limit or has invalid metadata."}
 	}
-	workspace := t.Engine.Workspace()
+	engine := t.Engine
+	if len(engines) > 0 {
+		engine = engines[0]
+	}
+	workspace := engine.Workspace()
 	root, err := os.OpenRoot(workspace)
 	if err != nil {
 		return Attachment{}, err

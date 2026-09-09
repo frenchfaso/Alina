@@ -127,7 +127,19 @@ func diagnose(ctx context.Context, dir string, live, fix bool, out io.Writer, cl
 			add("search_auth", "error", "Set the selected search provider key with alina config apply.", nil)
 		}
 	}
-	for _, name := range []string{"config.json", "chatgpt.json", "telegram.json", "tasks.json", "grants.json", "logs/alina.jsonl", "logs/alina.jsonl.1", "logs/alina.jsonl.2"} {
+	stateDirs, err := stateDirectories(dir)
+	if err != nil {
+		add("memory_domains", "error", "Inspect mind and scopes directories; symlinks are not supported.", errorInfo(err))
+		stateDirs = []string{dir}
+	}
+	files := []string{"config.json", "chatgpt.json", "telegram.json", "people-state.json", "logs/alina.jsonl", "logs/alina.jsonl.1", "logs/alina.jsonl.2"}
+	for _, stateDir := range stateDirs {
+		for _, name := range []string{"tasks.json", "grants.json", "memory/memory.sqlite"} {
+			rel, _ := filepath.Rel(dir, filepath.Join(stateDir, name))
+			files = append(files, rel)
+		}
+	}
+	for _, name := range files {
 		path := filepath.Join(dir, name)
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
@@ -152,35 +164,42 @@ func diagnose(ctx context.Context, dir string, live, fix bool, out io.Writer, cl
 				add("permissions:"+name, "error", "alina doctor --fix", errorInfo(err))
 			}
 		}
-		if name == "telegram.json" || name == "tasks.json" || name == "grants.json" {
+		if base := filepath.Base(name); base == "telegram.json" || base == "tasks.json" || base == "grants.json" || base == "people-state.json" {
 			b, err := readSmallFile(path, 2<<20)
 			if err != nil || !json.Valid([]byte(b)) {
 				add("state:"+name, "error", "Inspect the file and restore a known-good backup; it will not be overwritten.", errorInfo(err))
 			}
 		}
 	}
-	path := filepath.Join(dir, "memory", "memory.sqlite")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		add("memory", "warn", "alina serve initializes local state.", nil)
-	} else if err != nil {
-		add("memory", "error", "Inspect the memory directory.", errorInfo(err))
-	} else {
-		checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
-		db, err := sql.Open("sqlite3", u.String())
-		if err == nil {
-			var result string
-			err = db.QueryRowContext(checkCtx, "PRAGMA quick_check").Scan(&result)
-			if err == nil && result != "ok" {
-				err = errors.New("database integrity check failed")
-			}
-			db.Close()
+	for _, stateDir := range stateDirs {
+		label := "memory"
+		if stateDir != dir {
+			rel, _ := filepath.Rel(dir, stateDir)
+			label += "/" + filepath.ToSlash(rel)
 		}
-		cancel()
-		if err != nil {
-			add("memory", "error", "Inspect the database and backups; automatic repair does not rewrite memory.", errorInfo(err))
+		path := filepath.Join(stateDir, "memory", "memory.sqlite")
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			add(label, "warn", "alina serve initializes local state.", nil)
+		} else if err != nil {
+			add(label, "error", "Inspect the memory directory.", errorInfo(err))
 		} else {
-			add("memory", "ok", "", nil)
+			checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
+			db, err := sql.Open("sqlite3", u.String())
+			if err == nil {
+				var result string
+				err = db.QueryRowContext(checkCtx, "PRAGMA quick_check").Scan(&result)
+				if err == nil && result != "ok" {
+					err = errors.New("database integrity check failed")
+				}
+				db.Close()
+			}
+			cancel()
+			if err != nil {
+				add(label, "error", "Inspect the database and backups; automatic repair does not rewrite memory.", errorInfo(err))
+			} else {
+				add(label, "ok", "", nil)
+			}
 		}
 	}
 	if soul, err := readSmallFile(filepath.Join(dir, "soul.md"), 1600); err != nil || !validSoul(soul) {
@@ -258,4 +277,38 @@ func diagnose(ctx context.Context, dir string, live, fix bool, out io.Writer, cl
 		return fmt.Errorf("diagnostics found errors; see checks in the JSON report")
 	}
 	return nil
+}
+
+// Known state roots only; diagnostics never walk user workspaces or follow a
+// directory symlink into another location.
+func stateDirectories(dir string) ([]string, error) {
+	out := []string{dir}
+	for _, parent := range []string{"mind", "scopes"} {
+		path := filepath.Join(dir, parent)
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !info.IsDir() {
+			return nil, errors.New("state root is not a directory")
+		}
+		if parent == "mind" {
+			out = append(out, path)
+			continue
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() || !safeID(entry.Name()) {
+				return nil, errors.New("invalid memory scope directory")
+			}
+			out = append(out, filepath.Join(path, entry.Name()))
+		}
+	}
+	return out, nil
 }

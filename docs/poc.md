@@ -108,19 +108,19 @@ continues without a client. Piped requests that need approval leave the job
 pending and print an `alina api` approval command; EOF never means approval.
 
 Telegram uses Bot API long polling. Setup explains `/newbot` in BotFather,
-verifies the token using `getMe`, then pairs the owner: open its generated link
+verifies the token using `getMe`, then pairs each person: open its generated link
 and press Start in a private chat. A fresh random code identifies that chat;
-other users and groups cannot claim ownership without it. Pairing reads updates
-but sends no messages. Updates through the pairing message are acknowledged;
-older commands are not executed on first startup. A new pairing isolates bot
-update IDs and delivery receipts from earlier pairings; archived history remains
-recallable. Use a dedicated bot without another poller or webhook. Only messages
-and buttons from that owner in a private chat are accepted. Groups and other
-users are ignored. Commands: `/status`, `/cancel ID`, `/new`, `/permissions`,
+other users and groups cannot claim membership without it. Pairing reads updates
+but sends no messages. Messages from already authorized people are preserved in
+a durable inbox. Changing the bot isolates its update IDs and delivery receipts;
+adding or editing people preserves that binding. Use a dedicated bot without
+another poller or webhook. Only messages and buttons from configured people in
+private chats are accepted. Groups and unconfigured users are ignored. See
+[native families and global introspection](people.md). Commands: `/status`, `/cancel ID`, `/new`, `/permissions`,
 `/revoke ID`, `/resume ID`, `/intentions`.
 
-The owner can send photos or files, with an optional caption describing the task.
-Alina downloads that specific upload into `workspace/inbox/telegram/`, with private
+Each configured person can send photos or files, with an optional caption.
+Alina downloads that specific upload into their scope's `workspace/inbox/telegram/`, with private
 permissions and a generated filename. Sending a file authorizes receiving it;
 URLs in captions and arbitrary remote downloads still follow the usual policy.
 The original name, detected MIME type, size, hash and local path accompany the
@@ -206,7 +206,8 @@ Both clients offer:
 
 Grants match the exact shell command text, absolute working directory, and
 network access flag. They do not grant a whole category such as all downloads.
-They are shared between the owner's local and Telegram interfaces. Changed
+They are shared between local and Telegram interfaces in the same memory scope;
+a pending Telegram approval belongs to its requester. Changed
 arguments or directories require a new grant. A reusable command containing
 variables or invoking a mutable script still has that command's dynamic
 meaning; grants do not freeze script contents. Pending requests expire after
@@ -252,11 +253,11 @@ operation's outcome unknown.
   by default. Process groups are killed on cancellation/timeout and after their
   foreground command exits. Deliberately daemonized descendants are outside the
   POC's process-group guarantees.
-- Up to 16 jobs can be active. Each session processes messages in order;
+- Up to 16 jobs per memory scope can be active. Each session processes messages in order;
   independent sessions can progress while another waits for approval or a shell
   process. One model request runs at a time, with foreground requests ahead of
   waiting dream/initiative calls. An in-flight model request is not preempted.
-  Use a separate session (`ask -session NAME`, or `/new`) for an independent request
+  Use a separate session (`POST /v1/jobs` with a chosen session, or `/new`) for an independent request
   while the current conversation is waiting for consent.
 - Jobs are persisted in SQLite; status loads only active and 50 recent finished
   jobs. Old `jobs/*.json` are imported without overwriting existing IDs and retained
@@ -315,12 +316,14 @@ Alina does not fork itself into the background or require root.
 
 ## Shared memory, attention and reflection — 0.3
 
-Alina has one archive across CLI, Telegram, scheduled work and reflection. Source,
+Within each native family/personal scope, Alina shares an archive across channels. Source,
 job, role and timestamp are provenance and reply-routing information, not recall
 boundaries. Each working conversation still orders its tool exchanges and keeps
 its immediate task context; a bounded excerpt from other conversations helps
 continuity across channels. `/new` changes working context without erasing memory.
-The POC remains a personal, single-owner service, not a multi-tenant memory store.
+One global private dream learns across those archives and can update the shared
+soul. The shell remains a trusted shared environment, not tenant isolation.
+See [people and one global mind](people.md) for the hard/soft boundaries.
 
 There are three independent concerns:
 
@@ -416,7 +419,8 @@ coalesces missed occurrences to one execution; it never replays every missed
 tick. Executions of the same task do not overlap. Include `catch_up:true` in API requests to coalesce missed runs; the native
 tool can enable or disable it. Scheduled Telegram tasks inherit the chat
 owner and deliver results/approval requests there. System dream jobs are visible
-through `alina status`; they do not send routine Telegram notifications.
+through `alina api GET '/v1/status?scope=global'` when users are configured
+(`alina status` in legacy mode); they do not send routine Telegram notifications.
 
 Android suspension still suspends the daemon: the scheduler is portable, not an
 Android exact-alarm service. The next wake-up coalesces a missed occurrence.

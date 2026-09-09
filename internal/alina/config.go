@@ -13,7 +13,7 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.9.2-poc"
+const Version = "0.10.0-poc"
 
 // Codex ChatGPT model catalog, 2026-09-08. These are backend limits, not
 // the larger public API window. ContextTokens remains user configurable.
@@ -34,6 +34,8 @@ type Config struct {
 	OpenCodeAPI      string         `json:"opencode_api,omitempty"`
 	Search           SearchConfig   `json:"search"`
 	Telegram         TelegramConfig `json:"telegram"`
+	Users            []User         `json:"users,omitempty"`
+	LocalUser        string         `json:"local_user,omitempty"`
 	WorkDir          string         `json:"work_dir"`
 	MaxSteps         int            `json:"max_steps"`
 	ContextTokens    int            `json:"context_tokens"`
@@ -117,9 +119,15 @@ func LoadConfig(dir string) (Config, error) {
 	if c.Search.OpenAIModel == "gpt-5.4" && c.Search.OpenAIKey == "" {
 		c.Search.OpenAIModel = ""
 	}
+	if err := validatePeopleState(dir, c); err != nil {
+		return c, err
+	}
 	return c, c.Validate()
 }
 func (c Config) Validate() error {
+	if err := c.validatePeople(); err != nil {
+		return err
+	}
 	if c.NetworkPolicy != "strict" && c.NetworkPolicy != "declared" {
 		return errors.New("network_policy must be strict or declared")
 	}
@@ -173,7 +181,7 @@ func (c Config) Validate() error {
 	if c.Telegram.Binding != "" && (!safeID(c.Telegram.Binding) || len(c.Telegram.Binding) > 32) {
 		return errors.New("invalid Telegram binding")
 	}
-	if c.Telegram.Enabled && (c.Telegram.Token == "" || c.Telegram.OwnerID <= 0) {
+	if c.Telegram.Enabled && (c.Telegram.Token == "" || c.Telegram.OwnerID <= 0 && len(c.Users) == 0) {
 		return errors.New("Telegram requires a bot token and a positive owner ID")
 	}
 	if _, err := time.LoadLocation(c.Timezone); err != nil {
@@ -191,6 +199,9 @@ func (c Config) Validate() error {
 	return nil
 }
 func SaveConfig(dir string, c Config) error {
+	if err := validatePeopleState(dir, c); err != nil {
+		return err
+	}
 	if err := c.Validate(); err != nil {
 		return err
 	}

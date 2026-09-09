@@ -24,7 +24,7 @@ func SetupAdvanced(ctx context.Context, dir string, in *bufio.Reader, out io.Wri
 	if os.IsNotExist(e) {
 		c.NetworkPolicy = "declared"
 	}
-	w := &wizard{ctx: ctx, in: in, out: out}
+	w := &wizard{dir: dir, ctx: ctx, in: in, out: out}
 	fmt.Fprintln(out, "Alina · configurazione\nI segreti restano nel file locale config.json (permessi 0600).\nNessuna modifica ai servizi o ai pacchetti del sistema.")
 	choice := "1"
 	if c.Provider == "opencode-go" {
@@ -80,7 +80,7 @@ func SetupAdvanced(ctx context.Context, dir string, in *bufio.Reader, out io.Wri
 	if c.Search.OpenAIModel == "-" {
 		c.Search.OpenAIModel = ""
 	}
-	if e = w.telegram(&c.Telegram); e != nil {
+	if e = w.telegram(&c); e != nil {
 		return e
 	}
 	c.Timezone = w.ask("Fuso orario IANA (es. Europe/Rome) oppure Local", c.Timezone)

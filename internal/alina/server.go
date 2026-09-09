@@ -85,12 +85,12 @@ func Serve(ctx context.Context, dir string, c Config) (result error) {
 	if e = os.Chmod(sock, 0600); e != nil {
 		return e
 	}
-	s := &http.Server{Handler: logAPI(handler(engine), events), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second}
+	s := &http.Server{Handler: logAPI(peopleHandler(engine), events), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second}
 	serviceCtx, cancel := context.WithCancel(ctx)
 	var background sync.WaitGroup
 	defer func() { cancel(); background.Wait() }()
 	background.Add(1)
-	go func() { defer background.Done(); engine.Scheduler.Run(serviceCtx) }()
+	go func() { defer background.Done(); engine.runSchedulers(serviceCtx) }()
 	if c.Telegram.Enabled {
 		tg := NewTelegram(dir, c.Telegram, engine, client)
 		background.Add(1)
@@ -103,7 +103,9 @@ func Serve(ctx context.Context, dir string, c Config) (result error) {
 	select {
 	case <-ctx.Done():
 		cancel()
-		engine.cancel()
+		for _, scoped := range engine.engines() {
+			scoped.cancel()
+		}
 		shutdown, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
 		_ = s.Shutdown(shutdown)
@@ -115,7 +117,11 @@ func Serve(ctx context.Context, dir string, c Config) (result error) {
 		return err
 	}
 }
-func handler(e *Engine) http.Handler {
+func handler(e *Engine, owners ...string) http.Handler {
+	owner := "local"
+	if len(owners) > 0 {
+		owner = owners[0]
+	}
 	mux := http.NewServeMux()
 	reply := func(w http.ResponseWriter, v any) {
 		w.Header().Set("Content-Type", "application/json")
@@ -154,9 +160,9 @@ func handler(e *Engine) http.Handler {
 		var j Job
 		var err error
 		if req.Interactive {
-			j, err = e.Receive(req.Session, "local", req.Message, req.RequestID)
+			j, err = e.Receive(req.Session, owner, req.Message, req.RequestID)
 		} else {
-			j, err = e.SubmitKey(req.Session, "local", req.Message, req.RequestID)
+			j, err = e.SubmitKey(req.Session, owner, req.Message, req.RequestID)
 		}
 		if err != nil {
 			http.Error(w, err.Error(), 400)
@@ -172,7 +178,7 @@ func handler(e *Engine) http.Handler {
 		if !decode(w, r, &req) {
 			return
 		}
-		j, err := e.Steer(r.PathValue("id"), "local", req.Message, req.RequestID)
+		j, err := e.Steer(r.PathValue("id"), owner, req.Message, req.RequestID)
 		if err != nil {
 			http.Error(w, err.Error(), 400)
 			return
@@ -232,7 +238,7 @@ func handler(e *Engine) http.Handler {
 		}
 		reply(w, map[string]bool{"ok": true})
 	})
-	stateHandlers(mux, e, reply, decode)
+	stateHandlers(mux, e, reply, decode, owner)
 	return mux
 }
 func LocalClient(dir string) *http.Client {

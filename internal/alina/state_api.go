@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func stateHandlers(mux *http.ServeMux, e *Engine, reply func(http.ResponseWriter, any), decode func(http.ResponseWriter, *http.Request, any) bool) {
+func stateHandlers(mux *http.ServeMux, e *Engine, reply func(http.ResponseWriter, any), decode func(http.ResponseWriter, *http.Request, any) bool, owner string) {
 	mux.HandleFunc("POST /v1/memory/focus", func(w http.ResponseWriter, r *http.Request) {
 		if !e.Config.Memory.Enabled {
 			http.Error(w, "memory disabled", 400)
@@ -37,9 +37,9 @@ func stateHandlers(mux *http.ServeMux, e *Engine, reply func(http.ResponseWriter
 		var t ScheduledTask
 		var err error
 		if a.At != "" {
-			t, err = e.Scheduler.AddOnce(a.Name, a.At, a.Prompt, "local", "user", "")
+			t, err = e.Scheduler.AddOnce(a.Name, a.At, a.Prompt, owner, "user", "")
 		} else {
-			t, err = e.Scheduler.Add(a.Name, a.Cron, a.Prompt, "local", a.CatchUp)
+			t, err = e.Scheduler.Add(a.Name, a.Cron, a.Prompt, owner, a.CatchUp)
 		}
 		if err != nil {
 			http.Error(w, err.Error(), 400)
@@ -67,7 +67,7 @@ func stateHandlers(mux *http.ServeMux, e *Engine, reply func(http.ResponseWriter
 			http.Error(w, "invalid memory job", 400)
 			return
 		}
-		j, err := e.submit("memory-"+randomID(), "local", a.Kind, "", a.Kind)
+		j, err := e.submit("memory-"+randomID(), owner, a.Kind, "", a.Kind)
 		if err != nil {
 			http.Error(w, err.Error(), 400)
 			return

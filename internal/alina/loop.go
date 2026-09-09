@@ -62,7 +62,7 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 	}
 	appendMessage := func(msg Message) error {
 		if !syntheticMessage(msg) {
-			if err := e.Memory.recordMessage(j.ctx, time.Now(), Job{Session: j.Session, ID: j.ID, Kind: j.Kind}, &msg); err != nil {
+			if err := e.Memory.recordMessage(j.ctx, time.Now(), Job{Session: j.Session, ID: j.ID, Kind: j.Kind, Owner: j.Owner}, &msg); err != nil {
 				return err
 			}
 		}

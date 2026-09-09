@@ -89,7 +89,7 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 			return Message{}, errors.New("personal exploration disabled")
 		}
 		day := time.Now().In(m.e.Memory.loc).Format("2006-01-02")
-		result, err := m.e.Memory.DB.ExecContext(ctx, `INSERT INTO autonomy_usage(day,calls) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET calls=calls+1 WHERE calls<?`, day, m.e.Config.Autonomy.MaxCalls)
+		result, err := m.e.global.Memory.DB.ExecContext(ctx, `INSERT INTO autonomy_usage(day,calls) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET calls=calls+1 WHERE calls<?`, day, m.e.Config.Autonomy.MaxCalls)
 		if err != nil {
 			return Message{}, err
 		}

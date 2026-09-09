@@ -78,6 +78,10 @@ func NewScheduler(dir string, e *Engine) (*Scheduler, error) {
 			}
 		}
 	}
+	if e.global != e {
+		delete(s.tasks, "dream")
+		return s, s.save()
+	}
 	c := e.Config
 	dream, exists := s.tasks["dream"]
 	if !exists || dream.Cron != c.Memory.DreamCron || dream.Timezone != c.Timezone {
@@ -175,6 +179,16 @@ func (s *Scheduler) Tick(now time.Time) error {
 	defer s.mu.Unlock()
 	for id, t := range s.tasks {
 		if !t.Enabled || t.Next.After(now) {
+			continue
+		}
+		if !s.Engine.acceptsOwner(t.Owner) {
+			old := t
+			t.Enabled = false
+			s.tasks[id] = t
+			if err := s.save(); err != nil {
+				s.tasks[id] = old
+				return err
+			}
 			continue
 		}
 		if t.Kind == "initiative" {

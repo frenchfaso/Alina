@@ -8,15 +8,27 @@ import (
 	"time"
 )
 
-func (w *wizard) telegram(c *TelegramConfig) error {
+func (w *wizard) telegram(config *Config) error {
+	c := &config.Telegram
 	if !w.yes("Abilitare il bot Telegram", c.Enabled) {
 		c.Enabled = false
 		return w.err
 	}
-	return w.connectTelegram(c, newHTTPClient(), true)
+	client := newHTTPClient()
+	if err := w.connectTelegram(config, client, true); err != nil {
+		return err
+	}
+	if c.Enabled {
+		return w.people(config, client, true)
+	}
+	return nil
 }
 
-func (w *wizard) connectTelegram(c *TelegramConfig, client *http.Client, edit bool) error {
+func (w *wizard) connectTelegram(config *Config, client *http.Client, edit bool) error {
+	c := &config.Telegram
+	if c.OwnerID <= 0 && len(config.Users) > 0 {
+		c.OwnerID = config.localUser().TelegramID
+	}
 	old := *c
 	if edit {
 		fmt.Fprintln(w.out, "Telegram · crea un bot dedicato: https://t.me/BotFather → /newbot.")
@@ -32,7 +44,10 @@ func (w *wizard) connectTelegram(c *TelegramConfig, client *http.Client, edit bo
 			c.Enabled, c.OwnerID = false, 0
 			return nil
 		}
-		tg := NewTelegram("", *c, nil, client)
+		if c.Token != old.Token || c.Binding == "" && c.OwnerID <= 0 {
+			c.Binding = randomID()
+		}
+		tg := NewTelegram(w.dir, *c, nil, client)
 		var me struct {
 			Username string `json:"username"`
 		}
@@ -53,11 +68,9 @@ func (w *wizard) connectTelegram(c *TelegramConfig, client *http.Client, edit bo
 			code := "alina-" + randomID()
 			fmt.Fprintf(w.out, "Apri https://t.me/%s?start=%s e premi Avvia (entro 2 minuti).\n", me.Username, code)
 			ctx, cancel := context.WithTimeout(w.ctx, 2*time.Minute)
-			c.OwnerID, err = pairTelegram(ctx, tg, code)
+			c.OwnerID, err = pairTelegram(ctx, tg, code, config.Users)
 			cancel()
-			if err == nil {
-				c.Binding = randomID()
-			}
+
 		}
 		if err == nil {
 			c.Enabled = true
@@ -86,24 +99,58 @@ func (w *wizard) connectTelegram(c *TelegramConfig, client *http.Client, edit bo
 	}
 }
 
-func pairTelegram(ctx context.Context, tg *Telegram, code string) (int64, error) {
-	var offset int64
+// Pairing also consumes the bot's update stream. Preserve messages from already
+// authorized people before acknowledging them, so adding a person cannot lose work.
+func pairTelegram(ctx context.Context, tg *Telegram, code string, people ...[]User) (int64, error) {
+	offset := tg.state.Offset
+	known := map[int64]bool{tg.Config.OwnerID: tg.Config.OwnerID > 0}
+	if len(people) > 0 {
+		for _, u := range people[0] {
+			known[u.TelegramID] = true
+		}
+	}
 	for ctx.Err() == nil {
 		var updates []tgUpdate
-		if err := tg.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 10, "allowed_updates": []string{"message"}}, &updates); err != nil {
+		if err := tg.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 10, "allowed_updates": []string{"message", "callback_query"}}, &updates); err != nil {
 			return 0, fmt.Errorf("Telegram pairing failed (use a dedicated bot without another poller or webhook): %w", err)
 		}
+		var paired int64
 		for _, u := range updates {
+			if u.ID < offset {
+				continue
+			}
 			offset = u.ID + 1
 			m := u.Message
-			if m != nil && m.From.ID > 0 && m.From.ID == m.Chat.ID && m.Chat.Type == "private" && m.Text == "/start "+code {
-				// Confirm only through the pairing message, leaving later
-				// messages available to the daemon on its first poll.
-				if err := tg.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 0, "allowed_updates": []string{"message", "callback_query"}}, nil); err != nil {
-					return 0, err
-				}
-				return m.From.ID, nil
+			if paired == 0 && m != nil && m.From.ID > 0 && m.From.ID == m.Chat.ID && m.Chat.Type == "private" && m.Text == "/start "+code {
+				paired = m.From.ID
+				continue
 			}
+			if m != nil && known[m.From.ID] || u.Callback != nil && known[u.Callback.From.ID] {
+				if len(tg.state.Pending) >= 1000 {
+					return 0, errors.New("pairing inbox full; start Alina to process saved messages first")
+				}
+				if len(people) > 0 {
+					for _, person := range people[0] {
+						if m != nil && person.TelegramID == m.From.ID || u.Callback != nil && person.TelegramID == u.Callback.From.ID {
+							u.Scope = person.scope()
+							break
+						}
+					}
+				}
+				tg.state.Pending = append(tg.state.Pending, u)
+			}
+		}
+		tg.state.Offset = offset
+		if tg.Dir != "" {
+			if err := tg.saveLocked(); err != nil {
+				return 0, err
+			}
+		}
+		if paired != 0 {
+			if err := tg.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 0, "allowed_updates": []string{"message", "callback_query"}}, nil); err != nil {
+				return 0, err
+			}
+			return paired, nil
 		}
 	}
 	return 0, ctx.Err()

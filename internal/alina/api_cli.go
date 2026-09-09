@@ -16,6 +16,7 @@ import (
 // tree. Less frequent operations stay here and in Alina's native tools.
 var apiCatalog = []map[string]any{
 	{"method": "GET", "path": "/v1/status"},
+	{"method": "GET", "path": "/v1/people", "note": "With users configured, use ?user=ID to select their memory domain; ?scope=global selects private global introspection on this administrative local socket."},
 	{"method": "POST", "path": "/v1/jobs", "body": map[string]any{"session": "local", "message": "Your request", "request_id": "unique-id", "interactive": true}},
 	{"method": "GET", "path": "/v1/jobs/{id}"},
 	{"method": "POST", "path": "/v1/jobs/{id}/steer", "body": map[string]string{"message": "Correction", "request_id": "unique-id"}},

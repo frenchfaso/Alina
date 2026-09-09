@@ -1,6 +1,6 @@
 # Operating and debugging Alina
 
-Alina 0.9.2 has eight commands. The former commands are removed, without aliases.
+Alina 0.10 has eight commands. The former commands are removed, without aliases.
 Run `alina help` for the CLI and `alina api` for the local endpoint catalog.
 There is no additional runtime, remote log collector or telemetry service.
 
@@ -70,7 +70,9 @@ exclusive state lock as the daemon, including while it is still starting.
 
 An invalid field can be corrected with a patch. Syntactically damaged JSON is
 left untouched for explicit file repair. `setup --advanced` remains available
-for interactive preferences, and `setup telegram` for guided bot pairing.
+for interactive preferences, and `setup telegram` for guided bot pairing and
+native user/family management. See [people and one global mind](people.md) for
+memory boundaries, shared introspection and administrative scope selectors.
 
 ## Logs
 

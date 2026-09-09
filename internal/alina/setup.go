@@ -59,7 +59,7 @@ func setupCLI(ctx context.Context, dir string, args []string, in *bufio.Reader, 
 		fmt.Fprintln(out, "Avvia: alina serve · Chat locale: alina chat")
 		return nil
 	}
-	w := &wizard{ctx: ctx, in: in, out: out}
+	w := &wizard{dir: dir, ctx: ctx, in: in, out: out}
 	if !w.yes("Avvia Alina ora", true) {
 		fmt.Fprintln(out, "Quando vuoi: alina serve")
 		return w.err
@@ -86,7 +86,7 @@ func setupQuick(ctx context.Context, dir string, in *bufio.Reader, out io.Writer
 	if fresh && telegramOnly {
 		return errors.New("prima esegui alina setup")
 	}
-	w := &wizard{ctx: ctx, in: in, out: out}
+	w := &wizard{dir: dir, ctx: ctx, in: in, out: out}
 	fmt.Fprintln(out, "Alina · setup")
 	if fresh {
 		c.NetworkPolicy = "declared"
@@ -105,13 +105,18 @@ func setupQuick(ctx context.Context, dir string, in *bufio.Reader, out io.Writer
 		return w.err
 	}
 	if telegramOnly {
-		if err := w.connectTelegram(&c.Telegram, client, true); err != nil {
+		if err := w.connectTelegram(&c, client, true); err != nil {
 			return err
+		}
+		if c.Telegram.Enabled {
+			if err := w.people(&c, client, true); err != nil {
+				return err
+			}
 		}
 		if err := SaveConfig(dir, c); err != nil {
 			return err
 		}
-		fmt.Fprintln(out, "Telegram salvato.")
+		fmt.Fprintln(out, "Telegram e persone salvati.")
 		return nil
 	}
 	info, err := os.Stat(c.WorkDir)
@@ -133,12 +138,17 @@ func setupQuick(ctx context.Context, dir string, in *bufio.Reader, out io.Writer
 		}
 	}
 	if fresh || c.Telegram.Enabled {
-		if err := w.connectTelegram(&c.Telegram, client, fresh); err != nil {
+		if err := w.connectTelegram(&c, client, fresh); err != nil {
 			return err
 		}
 	}
 	if w.err != nil {
 		return w.err
+	}
+	if c.Telegram.Enabled && len(c.Users) == 0 {
+		if err := w.people(&c, client, false); err != nil {
+			return err
+		}
 	}
 	// Save completed account choices before live checks, so a transient outage
 	// does not force the user to repeat login or pairing.

@@ -260,6 +260,7 @@ func readLine(ctx context.Context, in *bufio.Reader) (string, error) {
 }
 
 type wizard struct {
+	dir string
 	ctx context.Context
 	in  *bufio.Reader
 	out io.Writer
