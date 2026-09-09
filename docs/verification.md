@@ -4,6 +4,26 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Personal Telegram model controls — 0.14 (2026-09-09)
+
+The full macOS ARM64 race suite passed: 165 top-level tests passed and the
+optional public-web smoke was skipped (166 total). After final prompt-stability
+and unknown-catalog-model fixes, the model-control and harness regressions passed
+again with the race detector. Go vet, formatting and diff checks passed.
+
+New regressions cover concurrent catalog caching, persistence and account
+isolation, stale-cache retry backoff, personal model/effort on the provider wire,
+context and vision adaptation, unavailable capabilities, stale Telegram buttons,
+and a failed stop acknowledgement retried while newer work is active.
+Tests use disposable state and fake authenticated provider/Telegram transports;
+no real Telegram messages or account-backed inference requests were sent.
+
+CGO-free builds passed for Android/arm64, Linux/arm64, FreeBSD/amd64,
+OpenBSD/amd64 and NetBSD/amd64. These are compilation checks, not native tests.
+The Galaxy A15 was not updated or restarted. Real account catalog discovery and
+Telegram button rendering remain to be checked on the installed instance.
+See [control behavior and limits](operations.md#telegram-model-and-reasoning-controls).
+
 ## Harness awareness and controlled self-restart — 0.13 (2026-09-09)
 
 Validation uses disposable local state, fake providers and native subprocesses.

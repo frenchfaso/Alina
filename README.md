@@ -17,8 +17,10 @@ go build -trimpath -o alina .
 ```
 
 Providers: a dedicated ChatGPT subscription login or OpenCode Go. Telegram
-supports multiple trusted people, native families, photos and files. Families
-share memories; a single global soul and nightly dream shape Alina's orientation.
+supports multiple trusted people, native families, photos and files. Its small
+command menu includes `/model`, `/think`, `/status`, `/stop` and `/resume`;
+ChatGPT model/reasoning choices come from the provider catalog and are personal.
+Families share memories; a single global soul and nightly dream shape Alina's orientation.
 A SQLite event archive and attention-based notes preserve continuity; working
 context compacts automatically under pressure, independently of dream.
 

@@ -10,7 +10,7 @@ import (
 type reasoningEffortKey struct{}
 
 func (p *Provider) reasoningEffort(ctx context.Context) string {
-	if effort, ok := ctx.Value(reasoningEffortKey{}).(string); ok && effort != "" {
+	if effort, ok := ctx.Value(reasoningEffortKey{}).(string); ok {
 		return effort
 	}
 	if p.Config.ReasoningEffort != "" {
@@ -61,9 +61,13 @@ type contextSample struct {
 	PrefixTokens int    `json:"prefix_tokens"`
 }
 
-func (e *Engine) historyTokens(history []Message) int {
+func (e *Engine) historyTokens(history []Message, models ...string) int {
+	model := e.Config.Model
+	if len(models) > 0 && models[0] != "" {
+		model = models[0]
+	}
 	for i := len(history) - 1; i >= 0; i-- {
-		if sample := history[i].Context; sample != nil && sample.Model == e.Config.Model && sample.InputTokens > 0 {
+		if sample := history[i].Context; sample != nil && sample.Model == model && sample.InputTokens > 0 {
 			return max(0, sample.InputTokens-sample.PrefixTokens) + sample.OutputTokens + estimatedTokens(history[i+1:])
 		}
 	}

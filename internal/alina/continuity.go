@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -81,6 +82,7 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 		return Message{}, err
 	}
 	defer release()
+
 	if m.j.Kind == "dream" && m.j.modelCalls >= 12 {
 		return Message{}, errors.New("reflection model-call budget reached; notes and archive retained")
 	}
@@ -99,12 +101,28 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 		}
 	}
 	m.j.modelCalls++
+	if purpose != "search" && m.j.model != nil {
+		ctx = context.WithValue(ctx, selectedModelKey{}, *m.j.model)
+		if ctx.Value(reasoningEffortKey{}) == nil && m.j.Reasoning != "" {
+			ctx = context.WithValue(ctx, reasoningEffortKey{}, m.j.Reasoning)
+		}
+	}
+
 	if m.j.Kind == "dream" && ctx.Value(reasoningEffortKey{}) == nil {
 		ctx = context.WithValue(ctx, reasoningEffortKey{}, m.e.Config.DreamEffort)
+	}
+	if m.j.model != nil && purpose != "search" {
+		effort, _ := ctx.Value(reasoningEffortKey{}).(string)
+		if !slices.Contains(m.j.model.Levels, effort) {
+			ctx = context.WithValue(ctx, reasoningEffortKey{}, m.j.model.Default)
+		}
 	}
 	started := time.Now()
 	callID := randomID()
 	provider, model := m.e.Config.Provider, m.e.Config.Model
+	if m.j.model != nil && purpose != "search" {
+		model = m.j.model.ID
+	}
 	effort := m.e.Config.ReasoningEffort
 	if override, ok := ctx.Value(reasoningEffortKey{}).(string); ok {
 		effort = override
@@ -159,14 +177,14 @@ func estimatedTokens(v any) int {
 // Keep a whole assistant/tool exchange together at the boundary. The preceding
 // transcript remains on disk, so a failed summary cannot destroy it.
 func (e *Engine) compact(j *runningJob, history []Message, path string, overhead ...int) ([]Message, error) {
-	budget := e.Config.ContextTokens * 95 / 100
+	budget := e.contextBudget(j) * 95 / 100
 	if len(overhead) > 0 {
 		budget -= overhead[0]
 	}
 	if budget < 2500 {
 		return history, errors.New("fixed context leaves too little working space; shorten pinned context or increase context_tokens")
 	}
-	if e.historyTokens(history) <= budget {
+	if e.historyTokens(history, j.Model) <= budget {
 		return history, nil
 	}
 	cut := len(history) - 12

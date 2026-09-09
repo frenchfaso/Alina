@@ -109,6 +109,14 @@ func serve(ctx context.Context, dir string, c Config, managed bool, ready ...fun
 	defer func() { cancel(); background.Wait() }()
 	background.Add(1)
 	go func() { defer background.Done(); engine.runSchedulers(serviceCtx) }()
+	if c.Provider == "chatgpt" {
+		background.Add(1)
+		go func() {
+			defer background.Done()
+			_, err := engine.models(serviceCtx, true)
+			engine.Events.emit("model.catalog", err)
+		}()
+	}
 	if c.Telegram.Enabled {
 		tg := NewTelegram(dir, c.Telegram, engine, client)
 		background.Add(1)

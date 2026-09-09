@@ -236,3 +236,57 @@ local diagnosis. Stop the service before manually inspecting/restoring its
 `Previous` configuration; never publish the file because it contains credentials.
 After resolving the incident, remove the obsolete transaction and run `alina serve`.
 No persistent supervisor, automatic boot registration or infinite retry is added.
+
+## Telegram model and reasoning controls
+
+The menu contains `/model`, `/think`, `/status`, `/stop`, `/resume` and `/help`.
+It is registered with Telegram at daemon startup. `/model` provides paged buttons
+(or `/model MODEL_ID`); `/think` provides the selected model's effort buttons
+(or `/think high`). `/model default` follows the global model and clears the
+personal effort; `/think default` follows the configured effort when supported,
+otherwise the selected model's catalog default.
+
+Preferences belong to the configured person, shared between their Telegram and
+local identity, and persist through restarts and `/new`. They do not change a
+spouse's preferences, global configuration, dream, checkpoint policy or hosted
+search model. The next ordinary model request uses them without a daemon restart.
+A switch to a smaller model caps the working context using catalog metadata;
+text-only models receive file metadata instead of image inputs. Checkpoints use
+the selected model but keep their separate effort, falling back to that model's
+default when needed. Raw transcripts and memory remain intact.
+
+Alina fetches the authenticated ChatGPT Codex model catalog, selecting visible
+entries with usable capability metadata. Effort choices are the intersection
+of that model's declared levels and the adapter's wire efforts. `ultra` is not
+a Responses effort: it is a Codex orchestration mode and is not offered.
+The public API model list is not substituted for the subscription catalog.
+
+One private `model-catalog.json` cache holds normalized metadata for the provider
+and account (hashed account binding, no tokens), shared by both menus and all
+people. Fresh metadata is reused for 24 hours and survives daemon restart. A
+background startup check preloads it; a menu request refreshes expired metadata.
+There is no idle refresh timer or fetch per model invocation. Refresh failures
+use the same account's previous cache with its date displayed and a five-minute
+retry backoff. Without metadata, menus report unavailability rather than invent
+models or effort levels. Model selection reads the chosen entry from this cache.
+A model removed from a refreshed catalog falls back to the configured global
+model; `/status` shows the effective preference. Provider/account changes cannot
+reuse another account's cache or preferences.
+
+Dynamic selection currently supports ChatGPT. OpenCode Go's public models
+endpoint returns IDs without protocol, context or reasoning metadata; its model
+configuration remains in `setup --advanced` until a capability adapter can select
+those safely. A listed ChatGPT model still requires successful account access
+at inference time; the catalog is not a successful generation test.
+
+`/status` reports effective model/reasoning, active owned jobs and approximate
+working-context use, not subscription quota. `/stop` stops the owned active chat
+without an ID (multiple active chats require `/cancel ID`). `/resume` selects the
+most recent failed/interrupted/cancelled owned chat; `/resume ID` remains exact.
+Targets are recorded before side effects so Telegram retries do not affect newer
+work. Old reasoning buttons become invalid after a model change; callbacks are
+bound to the current person and catalog. These controls do not call the LLM.
+
+Sources: [official Codex catalog client](https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/endpoint/models.rs),
+[OpenAI Astra capabilities](https://developers.openai.com/api/docs/models/gpt-6-astra),
+[OpenCode Go catalog](https://opencode.ai/v2/docs/console/go).

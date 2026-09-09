@@ -113,6 +113,10 @@ func (p *Provider) prepareImages(messages []Message) []Message {
 				continue
 			}
 			reason := "outside the current visual input budget"
+			if p.VisionDisabled {
+				out[i].Content += "\nThe selected model does not support image input; the attachment remains available as a file."
+				continue
+			}
 			if count < maxInputImages && a.Size >= 0 && a.Size <= int64(bytesLeft) {
 				b, err := readAttachment(p.Workspace, a.Path)
 				if err == nil {
@@ -139,7 +143,7 @@ func (p *Provider) prepareImages(messages []Message) []Message {
 }
 
 func (p *Provider) supportsImages() bool {
-	return p.Config.Provider == "chatgpt" || p.Config.OpenCodeAPI == "responses"
+	return !p.VisionDisabled && (p.Config.Provider == "chatgpt" || p.Config.OpenCodeAPI == "responses")
 }
 
 func nonVisualText(m Message) string {

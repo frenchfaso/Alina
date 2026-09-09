@@ -86,7 +86,14 @@ func (e *Engine) harnessTool(j *runningJob, raw string) (string, error) {
 	case "manual":
 		return "Alina " + Version + "\n\n" + harnessGuide, nil
 	case "status":
-		return jsonText(e.harnessStatus()), nil
+		out := e.harnessStatus()
+		model, effort := e.Config.Model, e.Config.ReasoningEffort
+		if j.Model != "" {
+			model, effort = j.Model, j.Reasoning
+		}
+		out["conversation_model"] = model
+		out["conversation_reasoning"] = effort
+		return jsonText(out), nil
 	case "config":
 		e.global.restartMu.Lock()
 		defer e.global.restartMu.Unlock()

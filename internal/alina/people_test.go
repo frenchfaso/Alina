@@ -434,7 +434,9 @@ func TestFamilyPairingInboxReplayAndMembershipChange(t *testing.T) {
 					return nil, err
 				}
 				mu.Lock()
-				sent = append(sent, body.Text)
+				if strings.HasSuffix(r.URL.Path, "/sendMessage") {
+					sent = append(sent, body.Text)
+				}
 				mu.Unlock()
 				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"ok":true,"result":{}}`))}, nil
 			})}

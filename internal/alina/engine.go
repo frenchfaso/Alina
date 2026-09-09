@@ -19,6 +19,8 @@ type Approval struct {
 	Expires time.Time `json:"expires"`
 }
 type Job struct {
+	Model           string       `json:"model,omitempty"`
+	Reasoning       string       `json:"reasoning,omitempty"`
 	Continuation    string       `json:"continuation,omitempty"`
 	ServiceNotice   string       `json:"service_notice,omitempty"`
 	ID              string       `json:"id"`
@@ -38,6 +40,7 @@ type Job struct {
 	PendingSteering int          `json:"pending_steering,omitempty"`
 }
 type runningJob struct {
+	model *catalogModel
 	Job
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -49,6 +52,7 @@ type runningJob struct {
 	steerSignal chan struct{}
 }
 type Engine struct {
+	catalog     reasoningCatalog
 	restartMu   sync.Mutex
 	restarting  atomic.Bool
 	managed     bool

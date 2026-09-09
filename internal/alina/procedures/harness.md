@@ -122,3 +122,22 @@ replies show content with formatting and typing, without job IDs/status headers.
 Errors and approvals remain visible. Attachments are stored in the current
 workspace; output files use durable delivery receipts. Delivery can still be
 ambiguous if the process dies between Telegram acceptance and saving a receipt.
+
+## Personal model controls
+
+Telegram `/model` and `/think` select a person's model and effort from the
+provider catalog; `/status` shows them. `/model default` resets model and effort;
+`/think default` follows the configured effort if supported, or the model's
+catalog default. Preferences persist and apply at the next ordinary model call,
+including local chat for the same configured person. They do not reconfigure
+other people, dream or hosted search. Checkpoints retain their separate effort
+where the selected model supports it. A smaller model lowers the context budget;
+a text-only model receives no visual input. `harness status` includes the current
+conversation's model and effort alongside the global configuration.
+
+The ChatGPT catalog is cached for 24 hours, scoped to provider/account. Menus
+refresh an expired cache; failed refresh uses the previous cache with its date.
+No metadata means no invented choices. Ultra is not a wire reasoning effort.
+OpenCode Go currently retains setup-based selection because its catalog lacks
+required capability metadata. `/stop` and `/resume` operate on the person's own
+work and do not require the model to be responsive.

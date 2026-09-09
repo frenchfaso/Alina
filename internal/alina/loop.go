@@ -13,6 +13,7 @@ import (
 // Chat, scheduled work, personal initiatives and reflection all use this loop.
 // Their differences are the initiating message, tools and execution budget.
 func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
+	e.refreshJobModel(j)
 	path := filepath.Join(e.Dir, "sessions", j.Session+".json")
 	history := []Message{}
 	if b, err := os.ReadFile(path); err == nil {
@@ -106,6 +107,12 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		if err = e.drainSteering(j, &history, appendMessage); err != nil {
 			return "", err
 		}
+		vision := j.model == nil || j.model.Vision
+		e.refreshJobModel(j)
+		if vision != (j.model == nil || j.model.Vision) {
+			specs = e.toolsFor(j)
+			prefix[0].Content = e.prompt(specs)
+		}
 		e.activity(j, fmt.Sprintf("Model · step %d", step+1))
 		history, err = e.compact(j, history, path, estimatedTokens(prefix)+estimatedTokens(specs))
 		if err != nil {
@@ -125,7 +132,12 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			return "", err
 		}
 		if msg.Usage != nil {
-			msg.Context = &contextSample{Model: e.Config.Model, InputTokens: msg.Usage.InputTokens, OutputTokens: msg.Usage.OutputTokens, PrefixTokens: estimatedTokens(prefix) + estimatedTokens(specs)}
+			msg.Context = &contextSample{Model: func() string {
+				if j.Model != "" {
+					return j.Model
+				}
+				return e.Config.Model
+			}(), InputTokens: msg.Usage.InputTokens, OutputTokens: msg.Usage.OutputTokens, PrefixTokens: estimatedTokens(prefix) + estimatedTokens(specs)}
 		}
 		if len(msg.Calls) > 8 {
 			return "", errors.New("model requested more than eight tools in one step")

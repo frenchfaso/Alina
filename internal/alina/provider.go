@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -43,14 +44,26 @@ type Model interface {
 	Complete(context.Context, string, []Message, []ToolSpec, func(string)) (Message, error)
 }
 type Provider struct {
-	Config    Config
-	Auth      *Auth
-	Client    *http.Client
-	BaseURL   string
-	Workspace string
+	Config         Config
+	Auth           *Auth
+	Client         *http.Client
+	BaseURL        string
+	VisionDisabled bool
+	Workspace      string
 }
 
 func (p *Provider) Complete(ctx context.Context, session string, msg []Message, tools []ToolSpec, delta func(string)) (Message, error) {
+	if selected, ok := ctx.Value(selectedModelKey{}).(catalogModel); ok {
+		copy := *p
+		copy.Config.Model = selected.ID
+		copy.VisionDisabled = !selected.Vision
+		p = &copy
+		effort := p.reasoningEffort(ctx)
+		if !slices.Contains(selected.Levels, effort) {
+			effort = selected.Default
+		}
+		ctx = context.WithValue(ctx, reasoningEffortKey{}, effort)
+	}
 	if p.Config.Provider == "chatgpt" {
 		c, e := p.Auth.Get(ctx)
 		if e != nil {
@@ -300,8 +313,10 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		ts = append(ts, map[string]any{"type": "web_search"})
 	}
 	body := map[string]any{"model": model, "instructions": system, "input": input, "store": false, "stream": true, "tools": ts}
-	if model == defaultModel {
+	if (model == defaultModel || ctx.Value(selectedModelKey{}) != nil) && p.reasoningEffort(ctx) != "" {
 		body["reasoning"] = map[string]any{"effort": p.reasoningEffort(ctx)}
+	}
+	if model == defaultModel {
 		verbosity := p.Config.Verbosity
 		if verbosity == "" {
 			verbosity = "low"

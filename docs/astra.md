@@ -25,7 +25,7 @@ upper bound for this ChatGPT adapter, not an assertion that every account has
 been tested with that much context. The public API model card instead lists
 1050000 total tokens, maximum input 922000 and maximum output 128000.
 
-Supported effort values are `low`, `medium`, `high`, `xhigh`, `max`. Ultra is an
+For this verified Astra configuration, supported effort values are `low`, `medium`, `high`, `xhigh`, `max`. Ultra is an
 orchestration mode in Codex, not a single-response effort in Alina. Astra function
 calling uses Responses. No temperature, top_p, logprobs, paid service-tier
 override or backend-unverified output/cache lifetime parameters are sent.
@@ -72,3 +72,8 @@ The catalog is evidence of configured capabilities, not a large-context live
 benchmark or universal Plus/Pro entitlement. Request tests use a local HTTP
 fixture; real model and hosted-search access still require Alina's own login.
 No credentials from Codex or another application are imported.
+
+Telegram `/model` and `/think` now obtain choices from the authenticated provider
+catalog, cached per account. Personal selections override ordinary conversation
+requests without changing these global defaults or dream effort; see
+[model controls](operations.md#telegram-model-and-reasoning-controls).

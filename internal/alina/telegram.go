@@ -178,6 +178,11 @@ func (t *Telegram) Run(ctx context.Context) {
 		t.Engine.Events.emit("telegram.state_invalid", t.stateErr)
 		return
 	}
+	check, stopMenu := context.WithTimeout(ctx, 5*time.Second)
+	if err := t.api(check, "setMyCommands", map[string]any{"commands": telegramMenu, "scope": map[string]string{"type": "all_private_chats"}}, nil); err != nil {
+		t.Engine.Events.emit("telegram.menu_failed", err)
+	}
+	stopMenu()
 	done := make(chan struct{})
 	go func() { defer close(done); t.notify(ctx) }()
 	defer func() { cancel(); <-done }()
@@ -289,6 +294,9 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	}
 	if u.Callback != nil {
 		c := u.Callback
+		if strings.HasPrefix(c.Data, "p:") {
+			return t.controlCallback(ctx, id, engine, owner, u)
+		}
 
 		parts := strings.Split(c.Data, ":")
 		answer := "Richiesta non valida"
@@ -329,7 +337,19 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	chat := strconv.FormatInt(m.Chat.ID, 10)
 	switch fields[0] {
 	case "/start", "/help":
-		return t.sendTo(ctx, id, "Alina · operatore personale\nScrivi una richiesta. Durante un lavoro, nuovi messaggi e allegati lo aggiornano al prossimo punto sicuro.\n/status · lavori\n/cancel ID · interrompi subito\n/resume ID · riprendi\n/intentions · intenzioni personali\n/new · nuova conversazione\n/permissions · consensi\n/revoke ID · revoca", nil)
+		return t.sendTo(ctx, id, telegramHelp, nil)
+	case "/think", "/model":
+		if len(fields) > 2 {
+			return t.sendTo(ctx, id, "Uso: "+fields[0]+" [valore|default]", nil)
+		}
+		value := ""
+		if len(fields) == 2 {
+			value = fields[1]
+		}
+		return t.modelControl(ctx, id, engine, owner, strings.TrimPrefix(fields[0], "/"), value, 0)
+	case "/stop":
+		return t.jobControl(ctx, id, engine, owner, "stop", t.updateKey(u.ID))
+
 	case "/new":
 		t.mu.Lock()
 		t.state.Sessions[chat] = "tg-" + t.updateKey(u.ID)
@@ -340,8 +360,11 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		}
 		return t.sendTo(ctx, id, "Nuova sessione avviata.", nil)
 	case "/status":
-		return t.sendTo(ctx, id, formatJobs(engine.Jobs(owner)), nil)
+		return t.briefStatus(ctx, id, engine, owner)
 	case "/resume":
+		if len(fields) == 1 {
+			return t.jobControl(ctx, id, engine, owner, "resume", t.updateKey(u.ID))
+		}
 		if len(fields) != 2 {
 			return t.sendTo(ctx, id, "Uso: /resume ID", nil)
 		}

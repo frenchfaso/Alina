@@ -43,6 +43,9 @@ func (e *Engine) toolsFor(j *runningJob) []ToolSpec {
 	}
 	visible := specs[:0]
 	for _, s := range specs {
+		if s.Name == "view_image" && j.model != nil && !j.model.Vision {
+			continue
+		}
 		if s.Name == "send_file" && !e.canSendFile(j) {
 			continue
 		}
