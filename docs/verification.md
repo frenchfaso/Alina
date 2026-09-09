@@ -4,6 +4,35 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Telegram network recovery — 0.14.2 (2026-09-09)
+
+Live Galaxy A15 logs on 0.12.0 showed Telegram polling network errors followed
+by a roughly three-minute stalled request. After reception, the affected turn
+completed in 11 seconds. No typing failure was logged for that turn; the logs
+cannot establish whether the client displayed the indicator.
+
+The receiver now has a 65-second deadline around its unchanged 50-second long
+poll. Typing also covers queued chats, allows five seconds for the HTTP request,
+and retries transient failures after four seconds; API rejections retain the
+30-second cooldown. Idle operation still sends no typing requests.
+
+The full macOS ARM64 race suite passed: 178 top-level tests passed, one optional
+public-web smoke skipped, zero failures. Go vet, gofmt and diff checks passed;
+the CGO-free Android/arm64 binary compiled. Five new regressions cover typing
+retries/renewal and rejection cooldown, slow connections, queued family routing
+and cancellation, shutdown during an in-flight request, and reconnecting after
+a stalled long poll. These use virtual time and fake transports.
+
+All six selected Telegram typing/polling tests also passed natively on Galaxy
+A15 Termux. After verifying no active jobs across people/global scopes, the
+device was upgraded from 0.12.0 to 0.14.2 and restarted. The saved configuration
+hash was unchanged. Offline doctor passed; live read-only Telegram checks
+confirmed bot access, no webhook/pending updates, and the five registered
+commands. Authenticated model-catalog loading succeeded. Only the current
+`alina` executable remains in the deployment directory; temporary tests and
+rollback binary were removed. No Telegram test message was sent. Actual typing
+visibility still requires a user interaction in the Telegram client.
+
 ## Review fixes and Telegram stop — 0.14.1 (2026-09-09)
 
 The full macOS ARM64 race suite passed: 173 top-level tests passed, one optional

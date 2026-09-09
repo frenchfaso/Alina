@@ -221,7 +221,11 @@ func (t *Telegram) Run(ctx context.Context) {
 		offset := t.state.Offset
 		t.mu.Unlock()
 		var updates []tgUpdate
-		e := t.api(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 50, "allowed_updates": []string{"message", "callback_query"}}, &updates)
+		// Leave headroom above Telegram's 50-second long poll, without letting
+		// a broken mobile connection consume the shared client's 3-minute limit.
+		poll, stopPoll := context.WithTimeout(ctx, 65*time.Second)
+		e := t.api(poll, "getUpdates", map[string]any{"offset": offset, "timeout": 50, "allowed_updates": []string{"message", "callback_query"}}, &updates)
+		stopPoll()
 		if e != nil {
 			if ctx.Err() != nil {
 				return

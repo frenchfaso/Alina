@@ -38,6 +38,14 @@ local service/log health, credential-file permissions, state JSON, SQLite
 `quick_check` in read-only mode, and the soul. Its checks include status, stable
 names and a suggested next action. A stopped daemon is reported explicitly.
 
+Telegram waits up to 50 seconds for incoming updates; a stalled connection is
+cancelled after 65 seconds and retried after 5 seconds. Typing starts for queued
+or running chat work, renews every 4 seconds, and stops during approval waits
+or after completion. Transient typing failures retry after 4 seconds; API
+rejections retain a 30-second cooldown. No typing requests run while idle.
+If Telegram has not yet delivered a message, Alina cannot show typing for it.
+Look for `telegram.poll_failed` and `telegram.typing_failed` in the logs.
+
 `doctor --live` requires the daemon to be stopped, so it cannot race the
 daemon when refreshing OAuth credentials. It makes small model and selected-search requests and verifies
 configured Telegram/embedding connections. It uses those accounts' normal usage
