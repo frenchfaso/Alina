@@ -3,23 +3,36 @@
 A small personal device operator in Go. Android/Termux first; Linux, macOS
 and BSD targets. **Start simple, stay simple. Less is more.**
 
-The POC runs as a service. Talk to it through Telegram or its plain terminal
-chat. It uses installed shell tools, with approval for network access and
-package manager operations. Integrated search supports OpenAI, Tavily and Brave.
+Talk through Telegram or a plain terminal chat. Alina uses installed commands,
+a few native tools, integrated web search and web reading. Quick setup asks
+consent for arbitrary downloads and package installation; stricter network
+approval is available.
 
 ```sh
-go build -o alina .
+go build -trimpath -o alina .
 ./alina setup
-./alina serve
-# In another terminal:
+./alina serve        # starts in the background, or reports the existing daemon
 ./alina chat
+# ./alina serve stop
 ```
 
-Providers: ChatGPT subscription login and OpenCode Go. Daily and weekly memory,
-a SQLite archive, scheduled tasks and a nightly “dream” keep continuity.
-Configuration and state use the OS user config directory (`~/.config/alina` on
-Termux/Linux; `~/Library/Application Support/alina` on macOS), or `ALINA_HOME`.
-The wizard can be run again while the service is stopped.
+Providers: a dedicated ChatGPT subscription login or OpenCode Go. Telegram
+supports multiple trusted people, native families, photos and files. Families
+share memories; a single global soul and nightly dream shape Alina's orientation.
+A SQLite event archive and attention-based notes preserve continuity; working
+context compacts automatically under pressure, independently of dream.
 
-See [POC usage and limits](docs/poc.md), [test results](docs/verification.md)
-and [memory research notes](docs/research-memory.md). MIT licensed: [LICENSE](LICENSE).
+Alina can read its bundled Markdown manual, inspect its live configuration and
+logs, and apply user-requested settings through a controlled self-restart with
+startup rollback. No plugin runtime, mandatory external converter, permanent
+supervisor or boot autostart is required. This remains an experimental POC.
+
+State uses the OS user config directory (`~/.config/alina` on Termux/Linux;
+`~/Library/Application Support/alina` on macOS), or `ALINA_HOME`. Setup and local
+configuration writes require the daemon stopped. Configured people share a
+trusted OS account; family memory separation is not an OS security boundary.
+
+See [usage and limits](docs/poc.md), [operations and debugging](docs/operations.md),
+[the harness manual](internal/alina/procedures/harness.md),
+[verification](docs/verification.md) and [memory research](docs/research-memory.md).
+MIT licensed: [LICENSE](LICENSE).

@@ -14,6 +14,9 @@ import (
 //go:embed procedures/markitdown.md
 var markitdownGuide string
 
+//go:embed procedures/harness.md
+var harnessGuide string
+
 func (e *Engine) Workspace() string { return filepath.Join(e.Dir, "workspace") }
 func within(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
@@ -25,9 +28,21 @@ func (e *Engine) initWorkspace() error {
 			return err
 		}
 	}
+	if err := writeText(filepath.Join(e.Workspace(), "procedures", "harness.md"), "<!-- Alina "+Version+" -->\n"+harnessGuide); err != nil {
+		return err
+	}
 	path := filepath.Join(e.Workspace(), "procedures", "index.md")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if err = writeText(path, "# Procedures\n\nKeep reusable scripts and short instructions here. For each capability, record its purpose, path, inputs, last actual verification and known limitations. Mark experiments as unverified until tested. Update this index when a procedure changes.\n\n- [Document conversion with MarkItDown](markitdown.md): optional dependency; check platform limitations first.\n"); err != nil {
+			return err
+		}
+	}
+	index, err := readSmallFile(path, 64<<10)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(index, "(harness.md)") {
+		if err = writeText(path, index+"\n- [Harness reference](harness.md): software-owned guide; inspect live state with the harness tool.\n"); err != nil {
 			return err
 		}
 	}

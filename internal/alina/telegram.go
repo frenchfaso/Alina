@@ -280,6 +280,9 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	if !authorized {
 		return nil
 	}
+	if engine.global.restarting.Load() {
+		return errHarnessRestarting
+	}
 	owner := telegramOwner(t.Config, id)
 	if u.Message != nil && u.Scope != "" && u.Scope != engine.Scope {
 		return t.sendTo(ctx, id, "Questo messaggio è arrivato prima del cambio di famiglia. Reinvia la richiesta per usarla nel nuovo spazio.", nil)
@@ -431,6 +434,9 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		}
 	}
 	_, e := engine.Receive(session, owner, input, key, attachments...)
+	if errors.Is(e, errHarnessRestarting) {
+		return e
+	}
 	if e != nil {
 		return t.sendTo(ctx, id, "Impossibile avviare: "+e.Error(), nil)
 	}

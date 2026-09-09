@@ -36,6 +36,10 @@ func lockDaemonState(dir string) (*os.File, error) {
 }
 
 func Serve(ctx context.Context, dir string, c Config, ready ...func()) (result error) {
+	return serve(ctx, dir, c, false, ready...)
+}
+
+func serve(ctx context.Context, dir string, c Config, managed bool, ready ...func()) (result error) {
 	ctx, requestStop := context.WithCancel(ctx)
 	defer requestStop()
 	lock, e := lockDaemonState(dir)
@@ -68,6 +72,7 @@ func Serve(ctx context.Context, dir string, c Config, ready ...func()) (result e
 		return e
 	}
 	defer engine.Close()
+	engine.managed = managed
 	sock := socketPath(dir)
 	if info, er := os.Lstat(sock); er == nil {
 		if info.Mode()&os.ModeSocket == 0 {
@@ -96,6 +101,7 @@ func Serve(ctx context.Context, dir string, c Config, ready ...func()) (result e
 		}
 		requestStop()
 	})
+	mux.Handle("/v1/harness/restart/", restartHandler(engine))
 	mux.Handle("/", peopleHandler(engine))
 	s := &http.Server{Handler: logAPI(mux, events), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second}
 	serviceCtx, cancel := context.WithCancel(ctx)

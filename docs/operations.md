@@ -1,6 +1,6 @@
 # Operating and debugging Alina
 
-Alina 0.10 has eight commands. The former commands are removed, without aliases.
+Alina has eight commands. The former commands are removed, without aliases.
 Run `alina help` for the CLI and `alina api` for the local endpoint catalog.
 There is no additional runtime, remote log collector or telemetry service.
 
@@ -168,7 +168,7 @@ as soon as an update arrives. These waits do not invoke the language model.
 
 Telegram user chats show typing only while active, format Markdown, and include same-chat quoted text as context. The send_file tool queues workspace documents (four per reply, 20 MiB each) for the current Telegram user; files are delivered after successful completion. Outbox snapshots remain available in the workspace.
 
-## Background service — 0.12
+## Background service
 
 `alina serve` starts an independent daemon and returns JSON only once the local
 API is ready. Repeating it reports the existing process. It requires no root,
@@ -193,3 +193,46 @@ process. The Termux service installer now uses this foreground mode.
 This command does not install native service definitions, enable autostart at
 boot/login, or restart the daemon after a crash. Android may still suspend or
 kill Termux processes; detaching from the terminal does not bypass that policy.
+
+## Self-inspection and controlled restart
+
+The native `harness` tool exposes manual, status, config, diagnose, configure
+discard and restart. The Markdown [manual](../internal/alina/procedures/harness.md) is
+embedded and refreshed in `workspace/procedures/harness.md` for each scope;
+Alina's index and other procedures are preserved. Its contents are not injected
+into every model request. Dream may inspect the harness but cannot mutate it.
+
+Status and diagnostics expose only the current scope's jobs and log events.
+Configuration hides credentials, people and Telegram routing. Diagnostic checks
+are local; they do not prove provider availability. `configure` stages a validated
+partial patch for ordinary device-wide behavior (models, reasoning, context,
+timeouts, network policy, search selection, memory/dream and autonomy). Credential,
+endpoint and identity/routing changes remain in the local setup/config interface.
+The shared-machine trust model still applies: the model must have an explicit
+user request to mutate settings; a string in an external document is not consent.
+
+The active configuration is immutable. `harness config` distinguishes active,
+saved and pending settings. `restart` launches a temporary helper outside shell
+subprocess cleanup. It waits for the requesting turn to complete, Telegram's
+persisted reply receipt where applicable, and all active work to finish. The
+90-second wait is bounded; busy work or failed delivery cancels the restart.
+Incoming work is briefly refused once the drain completes, letting Telegram
+retry its durable input. Foreground/external-supervisor mode refuses self-restart.
+
+The helper serializes lifecycle operations, stops gracefully, checks for concurrent
+configuration edits, applies the candidate and starts the same executable. A
+failed startup restores the previous saved config and makes one fallback start.
+Successful local readiness is not a remote model/Telegram connectivity check.
+The original owner/session resumes with a stable continuation ID and the lifecycle
+outcome; the terminal follows it across the brief disconnect. Telegram delivers
+it through the normal durable reply path. A failed resumed model still exposes
+the recorded outcome. That continuation cannot configure/restart again, preventing
+a restart loop. Cancelled restarts report an outcome without replaying user work.
+
+`harness-restart.json` is a private, atomic transaction (0600), containing the
+previous/candidate config. It is removed after the continuation is recorded.
+If the OS kills the helper or recovery cannot start the daemon, it remains for
+local diagnosis. Stop the service before manually inspecting/restoring its
+`Previous` configuration; never publish the file because it contains credentials.
+After resolving the incident, remove the obsolete transaction and run `alina serve`.
+No persistent supervisor, automatic boot registration or infinite retry is added.

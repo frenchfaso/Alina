@@ -80,7 +80,7 @@ func (e *Engine) dream(j *runningJob, now time.Time) (string, error) {
 }
 
 func reflectionSpecs() []ToolSpec {
-	return append(stateToolSpecs(), imageToolSpec(), ToolSpec{Name: "soul", Description: "Revise your short personal orientation in English only when experience warrants it. Supply the exact previous text to preserve concurrent edits. No change is also valid.", Parameters: map[string]any{
+	return append(stateToolSpecs(), imageToolSpec(), harnessSpec(), ToolSpec{Name: "soul", Description: "Revise your short personal orientation in English only when experience warrants it. Supply the exact previous text to preserve concurrent edits. No change is also valid.", Parameters: map[string]any{
 		"type": "object", "properties": map[string]any{"previous": map[string]any{"type": "string"}, "text": map[string]any{"type": "string"}, "reason": map[string]any{"type": "string"}}, "required": []string{"previous", "text", "reason"},
 	}})
 }
@@ -122,6 +122,9 @@ func (m *Memory) reviseSoul(ctx context.Context, now time.Time, previous, next, 
 }
 
 func (e *Engine) reflectionTool(j *runningJob, c ToolCall) (string, error) {
+	if c.Name == "harness" {
+		return e.harnessTool(j, c.Arguments)
+	}
 	if c.Name == "view_image" {
 		if e == e.global && len(e.scopes) > 0 {
 			var a struct{ Path string }

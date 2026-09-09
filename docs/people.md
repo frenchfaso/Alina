@@ -108,3 +108,9 @@ for explicit archive administration. A requested dream always runs globally.
 Diagnostic agents should select the intended user explicitly rather than assume
 the default local identity matches the person requesting help. `doctor` checks
 all stored scope databases, including inactive ones, without traversing workspaces.
+
+The `harness` tool follows these boundaries: job status and diagnostic events are
+scoped, configuration omits other people and Telegram routing, and in-chat
+patches cannot edit identity bindings. Behavior settings remain device-wide and
+affect all families. Only user conversations may request changes/restarts; the
+global dream can inspect state but cannot change administrative settings.

@@ -11,9 +11,9 @@ go build -trimpath -o alina .
 `setup` connects ChatGPT, pairs Telegram and checks the model and the selected
 search provider. The default path needs only the ChatGPT device login, a dedicated
 Telegram bot token and a tap on its pairing link. An existing login and verified
-bot are reused. It then offers to run Alina in the current terminal; Ctrl-C stops
-it. Use Telegram or `alina chat` in another terminal. It does not install packages
-or a background system service.
+bot are reused. It then offers to start Alina in the background. Use Telegram or `alina chat`;
+`alina serve stop` stops the daemon. Setup does not install packages or register
+a boot/login service.
 
 New quick setups enable memory, the 03:00 dream, catch-up, personal exploration
 (12 model calls/day, five minutes/run, with search), and the declared network
@@ -155,8 +155,9 @@ send an image as a file when preserving the original matters. See the
 
 ## Native file tools
 
-The ordinary agent loop exposes up to nine tools: `shell`, `read`, `write`, `edit`,
-`web_search`, `web_fetch`, `memory`, `schedule` and `view_image`. The file tools follow Pi's
+The ordinary agent loop exposes `shell`, `read`, `write`, `edit`, `web_search`,
+`web_fetch`, `memory`, `schedule`, `view_image` and `harness`; Telegram user turns
+also expose `send_file`. The file tools follow Pi's
 small interfaces, implemented directly in Go without additional dependencies:
 
 Disabled search/memory and unsupported image adapters are omitted from the tool
@@ -347,8 +348,8 @@ There are three independent concerns:
 
 `memory/focus.md` is a generated view of attention, not an independent source of
 truth. Edit notes through tools; `note` supports optional evidence `sources` and
-an explicit `supersedes` ID. Unknown sources are rejected. Superseded records and
-notes directly citing them leave ordinary retrieval, but remain readable by ID.
+an explicit `supersedes` ID. Unknown sources are rejected. Superseded records leave ordinary retrieval, but remain readable by ID.
+Citing a superseded record does not implicitly supersede the citing note.
 A source citation establishes provenance, not that an interpretation is correct.
 
 `soul.md` remains a short personal orientation (180 words / 1600 bytes), with a
@@ -363,7 +364,7 @@ are preserved and the reflection prompt guides faithful translation when needed.
 
 Dream defaults to `0 3 * * *`, with one catch-up after missed executions. It uses
 **the same agent loop and imprinting as chat**, with memory, scheduling, saved-image
-inspection and soul revision tools. It has six iterations, twelve total model calls including any
+inspection, harness inspection and soul revision tools. It has six iterations, twelve total model calls including any
 checkpoints, and ten minutes. It does not summarize days, archive old records,
 prepare embeddings or execute shell commands. A successful run advances its
 observed-event cursor; messages arriving during reflection remain eligible next
@@ -457,3 +458,13 @@ installation operations; configured web search is available separately. Shell
 scope remains a cooperative contract under the same OS user, not filesystem
 isolation. A wake-up checks that its intention is still active before submitting work.
 If a budget expires, progress and the intention remain; resumption is explicit.
+
+## Harness awareness and user-requested changes
+
+The versioned [harness manual](../internal/alina/procedures/harness.md) ships in
+the binary and is refreshed at startup in each workspace. Its index entry is
+added without replacing personal procedures. The system prompt does not include
+the manual. Alina can read it on demand, including during reflection through
+`harness manual`. Live status/configuration and scoped diagnostics use that same
+tool. Only user conversations may stage configuration changes and request a
+self-restart. See [the lifecycle and recovery contract](operations.md#self-inspection-and-controlled-restart).

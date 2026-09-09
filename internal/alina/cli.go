@@ -24,6 +24,9 @@ func Main(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	dir := Home()
+	if len(args) == 2 && args[0] == "__restart" {
+		return restartHelper(ctx, dir, args[1])
+	}
 	if len(args) == 1 && args[0] == "__daemon" {
 		pipe := os.NewFile(3, "readiness")
 		if pipe == nil {
@@ -33,7 +36,7 @@ func Main(args []string) error {
 		if info, err := pipe.Stat(); err != nil || info.Mode()&os.ModeNamedPipe == 0 {
 			return errors.New("invalid daemon readiness pipe")
 		}
-		err := Serve(ctx, dir, Config{}, func() { fmt.Fprintln(pipe, "ready"); pipe.Close() })
+		err := serve(ctx, dir, Config{}, true, func() { fmt.Fprintln(pipe, "ready"); pipe.Close() })
 		if err != nil {
 			fmt.Fprintln(pipe, err.Error())
 		}
@@ -155,6 +158,7 @@ func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Write
 	client := LocalClient(dir)
 	defer client.CloseIdleConnections()
 	last := ""
+	var reconnectUntil time.Time
 	for {
 		if ctx.Err() != nil {
 			c, stop := context.WithTimeout(context.Background(), 3*time.Second)
@@ -165,6 +169,13 @@ func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Write
 		var j Job
 		if e := requestLocalJSON(ctx, client, "GET", "/v1/jobs/"+id, nil, &j); e != nil {
 			if ctx.Err() != nil {
+				continue
+			}
+			if time.Now().Before(reconnectUntil) {
+				select {
+				case <-ctx.Done():
+				case <-time.After(300 * time.Millisecond):
+				}
 				continue
 			}
 			return e
@@ -204,6 +215,12 @@ func waitJob(ctx context.Context, dir, id string, in *bufio.Reader, out io.Write
 			}
 			if j.Output != "" {
 				fmt.Fprintln(out, j.Output)
+			}
+			if j.Continuation != "" {
+				id = j.Continuation
+				last = ""
+				reconnectUntil = time.Now().Add(3 * time.Minute)
+				continue
 			}
 			if j.Error != "" {
 				return errors.New(j.Error)

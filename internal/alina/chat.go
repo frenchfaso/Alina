@@ -39,6 +39,7 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 	watch := map[string]string{}
+	reconnect := map[string]time.Time{}
 	defer func() {
 		if ctx.Err() == nil {
 			return
@@ -144,6 +145,9 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 			for _, id := range ids {
 				var j Job
 				if err := requestLocalJSON(ctx, client, "GET", "/v1/jobs/"+id, nil, &j); err != nil {
+					if time.Now().Before(reconnect[id]) {
+						continue
+					}
 					return err
 				}
 				stamp := j.Status + ":" + j.Activity
@@ -171,6 +175,11 @@ func chat(ctx context.Context, dir, session string, in *bufio.Reader, out io.Wri
 						fmt.Fprintln(out, "Messaggi salvati in attesa:", resumeCommand(id))
 					}
 					delete(watch, id)
+					delete(reconnect, id)
+					if j.Continuation != "" {
+						watch[j.Continuation] = ""
+						reconnect[j.Continuation] = time.Now().Add(3 * time.Minute)
+					}
 				} else if j.Activity != "" {
 					fmt.Fprintf(out, "\n· %s · %s\n", id, j.Activity)
 				}

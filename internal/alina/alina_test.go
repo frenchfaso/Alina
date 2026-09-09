@@ -19,7 +19,12 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == "__daemon" {
+	if len(os.Args) > 1 && (os.Args[1] == "__daemon" || os.Args[1] == "__restart") {
+		if os.Args[1] == "__daemon" && os.Getenv("ALINA_TEST_FAIL_START") == "1" {
+			if c, err := LoadConfig(Home()); err == nil && c.Model == "startup-failure-fixture" {
+				os.Exit(1)
+			}
+		}
 		if e := Main(os.Args[1:]); e != nil {
 			WriteError(os.Stderr, e)
 			os.Exit(1)

@@ -1,4 +1,25 @@
-# POC verification — 2026-09-09
+# POC verification
+
+Entries below are dated release snapshots, not a live device inventory. Earlier
+installation paths, retained binaries and account states describe those test
+runs; they may since have changed.
+
+## Harness awareness and controlled self-restart — 0.13 (2026-09-09)
+
+Validation uses disposable local state, fake providers and native subprocesses.
+The macOS ARM64 race suite and Go vet pass. Eight new top-level regression tests
+cover configuration/privacy boundaries, manual refresh without losing personal
+procedures, delivery/idle draining, real detached restart and startup rollback,
+concurrent saved-config edits, idempotent continuation/cancellation, Telegram
+input retry, and reconnection in both terminal modes. A failed resumed model
+retains the lifecycle outcome for the user. There are 162 top-level tests in the
+suite; optional external-network smokes remain opt-in.
+
+CGO-free builds pass for Android/arm64, Linux/arm64 and FreeBSD/OpenBSD/NetBSD
+amd64. These are compilation checks, not native execution on those platforms.
+This update does not deploy to or restart the configured Galaxy A15 instance.
+No real Telegram messages or account-backed model requests are sent by these
+tests. See [implementation and limits](review-0.13.md).
 
 ## General review and recovery fixes — 0.10.1
 

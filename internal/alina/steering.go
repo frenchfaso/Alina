@@ -30,7 +30,7 @@ func (e *Engine) Receive(session, owner, input, key string, attachments ...Attac
 			return Job{}, err
 		}
 		if _, exists := e.getLocked(key); exists {
-			return e.submitLocked(session, owner, input, key, "chat", "", attachments...)
+			return e.submitLocked(session, owner, input, key, "chat", "", "", attachments...)
 		}
 	}
 	var target *runningJob
@@ -42,7 +42,7 @@ func (e *Engine) Receive(session, owner, input, key string, attachments ...Attac
 	if target != nil {
 		return e.steerLocked(target, input, key, attachments...)
 	}
-	return e.submitLocked(session, owner, input, key, "chat", "", attachments...)
+	return e.submitLocked(session, owner, input, key, "chat", "", "", attachments...)
 }
 
 func (e *Engine) Steer(id, owner, input, key string) (Job, error) {

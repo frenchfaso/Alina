@@ -80,12 +80,12 @@ func TestPromptAndToolsMatchCapabilities(t *testing.T) {
 	e := newTestEngine(t, &scriptedModel{})
 	e.Search = &Search{Config: e.Config.Search}
 	chat := e.toolsFor(&runningJob{})
-	if len(chat) != 9 {
+	if len(chat) != 10 {
 		t.Fatal("default tools", len(chat))
 	}
 	dream := e.toolsFor(&runningJob{Job: Job{Kind: "dream"}})
 	prompt := e.prompt(dream)
-	if len(dream) != 4 || strings.Contains(prompt, "prefer read") || strings.Contains(prompt, "Research with web_search") || strings.Contains(prompt, "Use schedule for requested tasks") {
+	if len(dream) != 5 || strings.Contains(prompt, "prefer read") || strings.Contains(prompt, "Research with web_search") || strings.Contains(prompt, "Use schedule for requested tasks") {
 		t.Fatal("reflection advertised unavailable operations", prompt)
 	}
 	e.Config.Memory.Enabled = false

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,6 +19,8 @@ type Approval struct {
 	Expires time.Time `json:"expires"`
 }
 type Job struct {
+	Continuation    string       `json:"continuation,omitempty"`
+	ServiceNotice   string       `json:"service_notice,omitempty"`
 	ID              string       `json:"id"`
 	Session         string       `json:"session"`
 	Owner           string       `json:"owner"`
@@ -46,6 +49,9 @@ type runningJob struct {
 	steerSignal chan struct{}
 }
 type Engine struct {
+	restartMu   sync.Mutex
+	restarting  atomic.Bool
+	managed     bool
 	Events      *EventLog
 	Scope       string
 	AdminDir    string
@@ -145,14 +151,17 @@ func (e *Engine) SubmitKey(session, owner, input, key string) (Job, error) {
 func (e *Engine) submit(session, owner, input, key, kind string, attachments ...Attachment) (Job, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.submitLocked(session, owner, input, key, kind, "", attachments...)
+	return e.submitLocked(session, owner, input, key, kind, "", "", attachments...)
 }
 
 // Caller holds mu, including interactive routing and resume recovery.
-func (e *Engine) submitLocked(session, owner, input, key, kind, resumeFrom string, attachments ...Attachment) (Job, error) {
+func (e *Engine) submitLocked(session, owner, input, key, kind, resumeFrom, serviceNotice string, attachments ...Attachment) (Job, error) {
 	attachments = append([]Attachment(nil), attachments...)
 	if !safeID(session) || len(input) == 0 || len(input) > 32000 {
 		return Job{}, errors.New("invalid session or message (1-32000 bytes)")
+	}
+	if e.global.restarting.Load() {
+		return Job{}, errHarnessRestarting
 	}
 	if e.ctx.Err() != nil {
 		return Job{}, errors.New("service shutting down")
@@ -187,7 +196,7 @@ func (e *Engine) submitLocked(session, owner, input, key, kind, resumeFrom strin
 		cancel()
 		ctx, cancel = context.WithTimeout(e.ctx, 10*time.Minute)
 	}
-	j := &runningJob{Job: Job{ID: key, Session: session, Owner: owner, Kind: kind, Input: input, Attachments: append([]Attachment(nil), attachments...), Status: "queued", Created: time.Now().UTC()}, ctx: ctx, cancel: cancel, decision: make(chan string, 1), done: make(chan struct{}), after: e.sessionTail[session], accepting: true, steerSignal: make(chan struct{}, 1)}
+	j := &runningJob{Job: Job{ID: key, Session: session, Owner: owner, Kind: kind, Input: input, ServiceNotice: serviceNotice, Attachments: append([]Attachment(nil), attachments...), Status: "queued", Created: time.Now().UTC()}, ctx: ctx, cancel: cancel, decision: make(chan string, 1), done: make(chan struct{}), after: e.sessionTail[session], accepting: true, steerSignal: make(chan struct{}, 1)}
 	if err := e.persistSubmission(j, resumeFrom); err != nil {
 		cancel()
 		return Job{}, err
@@ -250,9 +259,9 @@ func (e *Engine) resumeKey(id, owner, key string) (Job, error) {
 		return Job{}, errors.New("cancel or finish the active job before resuming")
 	}
 	if old.Kind == "dream" || old.Kind == "reindex" {
-		return e.submitLocked(old.Session, old.Owner, old.Input, key, old.Kind, "")
+		return e.submitLocked(old.Session, old.Owner, old.Input, key, old.Kind, "", "")
 	}
-	return e.submitLocked(old.Session, old.Owner, "Resume job "+old.ID+". Original intention: "+truncate(old.Input, 20000)+"\nPrevious outcome: "+old.Status+" "+truncate(old.Error, 2000)+"\nRead the session checkpoint and verify the device's current state before taking another action. Tool calls without recorded results have unknown outcomes; do not blindly repeat them.", key, old.Kind, old.ID, old.Attachments...)
+	return e.submitLocked(old.Session, old.Owner, "Resume job "+old.ID+". Original intention: "+truncate(old.Input, 20000)+"\nPrevious outcome: "+old.Status+" "+truncate(old.Error, 2000)+"\nRead the session checkpoint and verify the device's current state before taking another action. Tool calls without recorded results have unknown outcomes; do not blindly repeat them.", key, old.Kind, old.ID, "", old.Attachments...)
 }
 func (e *Engine) Cancel(id, owner string) error {
 	e.mu.Lock()
@@ -362,6 +371,9 @@ func (e *Engine) activity(j *runningJob, text string) { e.mu.Lock(); j.Activity 
 func (e *Engine) finish(j *runningJob, output string, err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if output == "" {
+		output = j.ServiceNotice
+	}
 	j.Output = output
 	j.accepting = false
 	j.Approval = nil
@@ -423,7 +435,7 @@ func (e *Engine) run(j *runningJob) {
 func toolSpecs() []ToolSpec {
 	specs := []ToolSpec{{Name: "shell", Description: "Run an installed command with sh -c. Declare network=true for network access, download=true for arbitrary file downloads, install=true for installation. Strict network policy asks consent for any network access; declared policy asks for downloads/installation. Subprocesses are owned by this invocation and cleaned up on completion.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}, "directory": map[string]any{"type": "string"}, "network": map[string]any{"type": "boolean"}, "download": map[string]any{"type": "boolean"}, "install": map[string]any{"type": "boolean"}}, "required": []string{"command"}}}, {Name: "web_search", Description: "Search the web using openai, tavily or brave. Returns text and source URLs; no arbitrary file downloads.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}, "provider": map[string]any{"type": "string", "enum": []string{"openai", "tavily", "brave"}}}, "required": []string{"query"}}}}
 	specs = append(specs, fileToolSpecs()...)
-	specs = append(specs, fetchToolSpec())
+	specs = append(specs, fetchToolSpec(), harnessSpec())
 	specs = append(specs, sendFileSpec())
 	return append(append(specs, stateToolSpecs()...), imageToolSpec())
 }
@@ -433,6 +445,8 @@ func imageToolSpec() ToolSpec {
 }
 func (e *Engine) tool(j *runningJob, c ToolCall) (string, error) {
 	switch c.Name {
+	case "harness":
+		return e.harnessTool(j, c.Arguments)
 	case "send_file":
 		return e.queueFile(j, c.Arguments)
 	case "web_fetch":
