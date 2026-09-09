@@ -236,10 +236,14 @@ operation's outcome unknown.
 - Local `npm run`/`go run` are no longer classified as installation solely because
   of `run`; commands that actually need to fetch dependencies must declare it.
 - On **Linux/Android ARM64 and AMD64**, unapproved shell processes receive an
-  inherited seccomp filter denying socket creation/connections (including Unix
-  sockets), ptrace, cross-process memory writes and io_uring creation. Existing
-  socket descriptors are not passed to the child. Filter installation failures
-  stop execution. This also blocks network calls made inside scripts.
+  inherited seccomp filter denying non-Unix socket creation, all outbound
+  connections (including Unix sockets), ptrace, cross-process memory writes and
+  io_uring creation. Local Unix listeners and socketpairs are allowed: Termux:API
+  connects back to such listeners to return device results. Existing socket
+  descriptors are not passed to the child. Filter installation failures stop
+  execution. Direct TCP/UDP calls made inside scripts remain blocked. Device
+  APIs and other processes reached through local IPC have their own privileges;
+  this filter is not an isolation boundary against delegated operations.
 - On **macOS**, the POC uses the system `sandbox-exec` network denial profile.
   This deprecated OS facility is a portability risk. On systems without a
   supported filter, including the current **BSD** implementation, strict-policy shell execution
@@ -252,7 +256,8 @@ operation's outcome unknown.
   privileges/filesystem access as well. Alina's prompt forbids bypassing policy
   or reading/modifying its credentials and grant store.
 - Child environments exclude API keys and other arbitrary daemon environment
-  variables. Shell output is capped at 48 KiB, command execution at 120 seconds
+  variables, while retaining Android runtime paths and boot classpaths required
+  by Termux:API's `am`/`app_process`. Shell output is capped at 48 KiB, command execution at 120 seconds
   by default. Process groups are killed on cancellation/timeout and after their
   foreground command exits. Deliberately daemonized descendants are outside the
   POC's process-group guarantees.

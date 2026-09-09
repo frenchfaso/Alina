@@ -33,7 +33,19 @@ func sandboxExec(args []string) error {
 	if runtime.GOARCH == "amd64" {
 		f = append(f, unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JGE | unix.BPF_K, K: 0x40000000, Jf: 1}, unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_KILL_PROCESS})
 	}
-	for _, n := range []uint32{unix.SYS_SOCKET, unix.SYS_SOCKETPAIR, unix.SYS_CONNECT, unix.SYS_PTRACE, unix.SYS_PROCESS_VM_WRITEV, unix.SYS_IO_URING_SETUP} {
+	// Termux:API returns results through local Unix listeners. Allow only
+	// that socket family; outbound connect stays denied, including Unix
+	// sockets, so local proxies/admin sockets are not opened by this filter.
+	for _, n := range []uint32{unix.SYS_SOCKET, unix.SYS_SOCKETPAIR} {
+		f = append(f,
+			unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: n, Jf: 4},
+			unix.SockFilter{Code: unix.BPF_LD | unix.BPF_W | unix.BPF_ABS, K: 16}, // args[0]: domain
+			unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: unix.AF_UNIX, Jt: 1},
+			unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)},
+			unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ALLOW},
+		)
+	}
+	for _, n := range []uint32{unix.SYS_CONNECT, unix.SYS_PTRACE, unix.SYS_PROCESS_VM_WRITEV, unix.SYS_IO_URING_SETUP} {
 		f = append(f, unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: n, Jf: 1}, unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)})
 	}
 	f = append(f, unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ALLOW})

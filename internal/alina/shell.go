@@ -69,7 +69,10 @@ func (b *cappedBuffer) String() string {
 }
 func shellEnvironment() []string {
 	// Keep only ordinary execution settings; never inherit provider credentials.
-	keys := []string{"PATH", "HOME", "ALINA_HOME", "XDG_CONFIG_HOME", "PREFIX", "TMPDIR", "LANG", "LC_ALL", "TERM", "SHELL", "LD_LIBRARY_PATH", "ANDROID_ROOT", "ANDROID_DATA", "EXTERNAL_STORAGE"}
+	keys := []string{"PATH", "HOME", "ALINA_HOME", "XDG_CONFIG_HOME", "PREFIX", "TMPDIR", "LANG", "LC_ALL", "TERM", "SHELL", "LD_LIBRARY_PATH", "ANDROID_ROOT", "ANDROID_DATA", "EXTERNAL_STORAGE",
+		// Termux:API launches Android's app_process through am. ART needs its
+		// platform paths/classpath even though arbitrary daemon secrets stay out.
+		"ANDROID_ART_ROOT", "ANDROID_RUNTIME_ROOT", "ANDROID_I18N_ROOT", "ANDROID_TZDATA_ROOT", "BOOTCLASSPATH", "DEX2OATBOOTCLASSPATH"}
 	env := []string{}
 	for _, k := range keys {
 		if v, ok := os.LookupEnv(k); ok {

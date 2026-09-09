@@ -46,6 +46,14 @@ rejections retain a 30-second cooldown. No typing requests run while idle.
 If Telegram has not yet delivered a message, Alina cannot show typing for it.
 Look for `telegram.poll_failed` and `telegram.typing_failed` in the logs.
 
+For Termux device APIs, `socket(): Operation not permitted` from a local shell
+on older Alina versions can come from the harness filter rather than Android
+permissions. Since 0.14.3, Unix listeners/socketpairs are allowed and Android
+runtime paths/boot classpaths are retained. TCP/UDP socket creation and outbound
+connections remain denied for local commands. `termux-camera-info` lists camera
+IDs without taking a photo. Check that `termux-camera-photo` produced a valid
+file, since Termux:API can return exit zero even when an operation failed.
+
 `doctor --live` requires the daemon to be stopped, so it cannot race the
 daemon when refreshing OAuth credentials. It makes small model and selected-search requests and verifies
 configured Telegram/embedding connections. It uses those accounts' normal usage

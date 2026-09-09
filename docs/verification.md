@@ -4,6 +4,38 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Termux device API access — 0.14.3 (2026-09-09)
+
+The user's camera attempt on Galaxy A15 failed with `socket(): Operation not
+permitted`, despite valid Android permission and working direct camera metadata
+queries. Reproduction found two harness causes: seccomp denied local Unix
+listeners used by Termux:API, and the shell environment omitted Android runtime
+paths/boot classpaths required by `am`/`app_process`. Enabling only local listeners
+still timed out until the platform environment was restored.
+
+The corrected filter permits Unix sockets/socketpairs while keeping outbound
+`connect`, Internet/other socket families, ptrace, cross-process writes and
+io_uring creation denied. A native subprocess regression checks Unix socketpair
+transfer and incoming local results, plus rejection of IPv4, IPv6, netlink,
+packet sockets and outbound Unix connect. The shell environment regression
+retains Android runtime values while still excluding arbitrary API credentials.
+
+On the Galaxy, the corrected filter plus the sanitized platform environment
+returned camera metadata and captured a front-camera JPEG (436,059 bytes,
+JPEG signature checked). The temporary photo was deleted without being copied,
+displayed or sent. Android property-access warnings accompanied the successful
+result. The existing shell network/timeout test and new Unix IPC test passed
+natively. Focused macOS race tests and vet passed; Linux/amd64 vet/build and
+Android/arm64 build passed. Android-specific opt-in metadata testing is included
+and does not take a photo.
+
+The final build passed all four selected tests natively on Galaxy A15, including
+the opt-in camera metadata call through `runShell` (four camera IDs returned).
+With no active work across configured people/global scopes, the device was
+upgraded to 0.14.3 and restarted. Offline doctor passed, the saved configuration
+hash stayed unchanged, and only the current executable remains in the deployment
+directory. No Telegram message was sent by these tests.
+
 ## Telegram network recovery — 0.14.2 (2026-09-09)
 
 Live Galaxy A15 logs on 0.12.0 showed Telegram polling network errors followed

@@ -425,9 +425,18 @@ func TestShellDiagnosticsKeepInstanceWithoutCredentials(t *testing.T) {
 	t.Setenv("ALINA_HOME", "/example/alina-instance")
 	t.Setenv("XDG_CONFIG_HOME", "/example/config")
 	t.Setenv("OPENAI_API_KEY", "PRIVATE_ENV_SECRET")
+	platform := []string{"ANDROID_ART_ROOT", "ANDROID_RUNTIME_ROOT", "ANDROID_I18N_ROOT", "ANDROID_TZDATA_ROOT", "BOOTCLASSPATH", "DEX2OATBOOTCLASSPATH"}
+	for _, key := range platform {
+		t.Setenv(key, "/android-fixture/"+key)
+	}
 	env := strings.Join(shellEnvironment(), "\n")
 	if !strings.Contains(env, "ALINA_HOME=/example/alina-instance") || !strings.Contains(env, "XDG_CONFIG_HOME=/example/config") || strings.Contains(env, "PRIVATE_ENV_SECRET") {
 		t.Fatal("diagnostic shell environment is wrong")
+	}
+	for _, key := range platform {
+		if !strings.Contains(env, key+"=/android-fixture/"+key) {
+			t.Fatalf("Android runtime environment lost %s", key)
+		}
 	}
 }
 
