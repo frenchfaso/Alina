@@ -59,7 +59,7 @@ func readRootFile(root *os.Root, name string, limit int64) ([]byte, error) {
 	if err != nil || !info.Mode().IsRegular() || info.Size() > limit {
 		return nil, errors.New("attachment is unavailable, not a regular file, or too large")
 	}
-	f, err := root.Open(name)
+	f, _, err := openTextFile(root, name, false)
 	if err != nil {
 		return nil, errors.New("attachment is unavailable")
 	}

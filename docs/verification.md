@@ -429,3 +429,19 @@ accounts' normal usage and does not send Telegram messages. Send a private
 message to the configured bot to verify complete Telegram delivery.
 
 See [operational limits](poc.md) and [research/design notes](research-memory.md).
+
+## 0.11.0 — Telegram essentials and setup recovery
+
+- Full macOS race suite passed; the subsequently added family/tool-visibility
+  regression also passed with the race detector. Go vet and formatting checks passed.
+- Galaxy A15: 151 top-level tests passed, zero failures/skips, with
+  ALINA_TEST_WEB=1. The additional family/tool-visibility test passed separately
+  on Android (152 tested cases in total).
+- Real Galaxy `alina setup --no-start` completed successfully: ChatGPT connected,
+  Telegram connected, Astra response and OpenAI web search verified, then Pronta.
+  Existing two users and family configuration were preserved. Telegram had been
+  disabled in saved configuration; getMe/getWebhookInfo verified it before
+  restoring enabled=true under the daemon lock, with a private backup.
+- Telegram delivery tests use fake transports; no real chat messages or files
+  were sent. The service was not started by these checks.
+- 0.11.0 installed at ~/alina-poc/bin/alina; prior 0.10.3 saved alongside it.

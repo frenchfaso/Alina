@@ -43,6 +43,9 @@ func (e *Engine) toolsFor(j *runningJob) []ToolSpec {
 	}
 	visible := specs[:0]
 	for _, s := range specs {
+		if s.Name == "send_file" && !e.canSendFile(j) {
+			continue
+		}
 		if s.Name == "web_fetch" && j.Kind == "initiative" && !e.Config.Autonomy.Search {
 			continue
 		}

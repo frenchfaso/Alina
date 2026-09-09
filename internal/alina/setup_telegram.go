@@ -64,7 +64,7 @@ func (w *wizard) connectTelegram(config *Config, client *http.Client, edit bool)
 				err = errors.New("questo bot usa un webhook; usa un bot dedicato ad Alina")
 			}
 		}
-		if err == nil && (c.Token != old.Token || c.OwnerID <= 0 || !old.Enabled) {
+		if err == nil && (c.Token != old.Token || c.OwnerID <= 0) {
 			code := "alina-" + randomID()
 			fmt.Fprintf(w.out, "Apri https://t.me/%s?start=%s e premi Avvia (entro 2 minuti).\n", me.Username, code)
 			ctx, cancel := context.WithTimeout(w.ctx, 2*time.Minute)
@@ -88,9 +88,10 @@ func (w *wizard) connectTelegram(config *Config, client *http.Client, edit bool)
 			edit = true
 		case "3":
 			*c = old
-			// Keep the previous credentials for a later retry, but do not
-			// claim that an unverified integration is ready.
-			c.Enabled = false
+			// A failed health check must not disable an existing integration.
+			if old.Enabled {
+				fmt.Fprintln(w.out, "Configurazione Telegram mantenuta; connessione non verificata.")
+			}
 			return nil
 		}
 		if w.err != nil {

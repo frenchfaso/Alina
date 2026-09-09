@@ -137,6 +137,9 @@ func setupQuick(ctx context.Context, dir string, in *bufio.Reader, out io.Writer
 			return errors.New("serve una chiave OpenCode Go; riprendi con alina setup")
 		}
 	}
+	if !fresh && !c.Telegram.Enabled && c.Telegram.Token != "" {
+		c.Telegram.Enabled = w.yes("Riattivare Telegram già configurato", true)
+	}
 	if fresh || c.Telegram.Enabled {
 		if err := w.connectTelegram(&c, client, fresh); err != nil {
 			return err

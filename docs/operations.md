@@ -156,7 +156,8 @@ approvals, independently of the 50-job status/history view. Delivery receipts
 also live in SQLite; existing JSON receipts migrate automatically. Retried
 Telegram `/resume` updates reuse the same job ID. Sending a message and saving
 its receipt cannot be one transaction: a crash between them can still duplicate
-a reply, and a partially sent long reply can repeat earlier chunks.
+a reply. Individual text chunks and files have separate receipts, so a later
+failure does not repeat confirmed parts.
 
 Delivery runs on pending approvals and completed jobs, drains the startup
 backlog, then waits for an internal state-change signal instead of polling every
@@ -164,3 +165,5 @@ second. Failed deliveries retry after 5, 10, 20, 40 and then 60 seconds, capped
 at 60 seconds until success; no new incoming message is needed to retry.
 Incoming messages use a 50-second long poll (previously 25): Telegram returns
 as soon as an update arrives. These waits do not invoke the language model.
+
+Telegram user chats show typing only while active, format Markdown, and include same-chat quoted text as context. The send_file tool queues workspace documents (four per reply, 20 MiB each) for the current Telegram user; files are delivered after successful completion. Outbox snapshots remain available in the workspace.

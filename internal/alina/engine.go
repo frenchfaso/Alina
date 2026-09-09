@@ -31,6 +31,7 @@ type Job struct {
 	Created         time.Time    `json:"created"`
 	Usage           TokenUsage   `json:"usage"`
 	Attachments     []Attachment `json:"attachments,omitempty"`
+	OutputFiles     []Attachment `json:"output_files,omitempty"`
 	PendingSteering int          `json:"pending_steering,omitempty"`
 }
 type runningJob struct {
@@ -225,6 +226,7 @@ func (e *Engine) submitLocked(session, owner, input, key, kind, resumeFrom strin
 }
 func cloneJob(j Job) Job {
 	j.Attachments = append([]Attachment(nil), j.Attachments...)
+	j.OutputFiles = append([]Attachment(nil), j.OutputFiles...)
 	if j.Approval != nil {
 		a := *j.Approval
 		j.Approval = &a
@@ -422,6 +424,7 @@ func toolSpecs() []ToolSpec {
 	specs := []ToolSpec{{Name: "shell", Description: "Run an installed command with sh -c. Declare network=true for network access, download=true for arbitrary file downloads, install=true for installation. Strict network policy asks consent for any network access; declared policy asks for downloads/installation. Subprocesses are owned by this invocation and cleaned up on completion.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}, "directory": map[string]any{"type": "string"}, "network": map[string]any{"type": "boolean"}, "download": map[string]any{"type": "boolean"}, "install": map[string]any{"type": "boolean"}}, "required": []string{"command"}}}, {Name: "web_search", Description: "Search the web using openai, tavily or brave. Returns text and source URLs; no arbitrary file downloads.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}, "provider": map[string]any{"type": "string", "enum": []string{"openai", "tavily", "brave"}}}, "required": []string{"query"}}}}
 	specs = append(specs, fileToolSpecs()...)
 	specs = append(specs, fetchToolSpec())
+	specs = append(specs, sendFileSpec())
 	return append(append(specs, stateToolSpecs()...), imageToolSpec())
 }
 
@@ -430,6 +433,8 @@ func imageToolSpec() ToolSpec {
 }
 func (e *Engine) tool(j *runningJob, c ToolCall) (string, error) {
 	switch c.Name {
+	case "send_file":
+		return e.queueFile(j, c.Arguments)
 	case "web_fetch":
 		if j.Kind == "initiative" && !e.Config.Autonomy.Search {
 			return "", errors.New("web research for personal exploration is disabled")
