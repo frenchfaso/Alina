@@ -22,6 +22,14 @@ and API responses are JSON on stdout. Errors are JSON on stderr with exit code
 1; a failed doctor also leaves its complete report on stdout. Chat remains text.
 No agent needs to answer interactive prompts to inspect or change configuration.
 
+## State directory
+
+`ALINA_HOME` overrides the instance's state directory. Without it, Termux, Linux
+and BSD use `$XDG_CONFIG_HOME/alina` when set, otherwise `$HOME/.config/alina`.
+macOS uses `$HOME/Library/Application Support/alina`. Paths below written as
+`$ALINA_HOME/...` refer to that resolved directory even when the variable is unset.
+Use `alina api` for local requests instead of hardcoding a socket path.
+
 ## A short debugging workflow
 
 ```sh
@@ -212,7 +220,7 @@ kill Termux processes; detaching from the terminal does not bypass that policy.
 
 ## Self-inspection and controlled restart
 
-The native `harness` tool exposes manual, status, config, diagnose, configure
+The native `harness` tool exposes manual, status, config, diagnose, configure,
 discard and restart. The Markdown [manual](../internal/alina/procedures/harness.md) is
 embedded and refreshed in `workspace/procedures/harness.md` for each scope;
 Alina's index and other procedures are preserved. Its contents are not injected

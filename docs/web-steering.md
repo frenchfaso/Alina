@@ -1,9 +1,9 @@
-# Web reading, steering and document conversion — 0.7
+# Web reading, steering and document conversion
 
 The single agent loop remains unchanged in shape: prepare context, ask the model,
-execute tools, repeat. This update adds a bounded persistent mailbox at its safe
-boundaries and a Go web reader. There is no second agent, browser runtime, MCP
-server, Python service or additional model request for these features.
+execute tools, repeat. Steering uses a bounded persistent mailbox at its safe
+boundaries; web_fetch uses a Go web reader. There is no second agent, browser
+runtime, MCP server, Python service or additional model request for these features.
 
 ## Public web pages
 
@@ -26,8 +26,9 @@ There are no custom headers, cookies, credentials or environment proxies. Each
 DNS answer is checked before dialing the same IP; local/private/reserved
 addresses and HTTPS downgrades are rejected. Use shell under the configured
 network policy for local services. Personal initiatives expose web_fetch only
-when their existing web research permission is enabled; dream still has its four
-limited tools.
+when their existing web research permission is enabled. Dream has memory,
+personal scheduling, saved-image inspection when supported, read-only harness
+access and soul revision; it cannot fetch pages or run shell commands.
 
 The added parser is Go's `golang.org/x/net/html`, with its charset support. It
 does not require CGO. The module graph also updates x/sys and x/term and adds
@@ -62,7 +63,8 @@ at toolchain build time.
   the provider's call/result protocol valid. Messages enter as actual user input,
   with attachments, and the same objective and transcript remain in context.
 - A running shell command finishes normally; subsequent tools are reconsidered.
-  Use `/cancel ID` or `alina api POST /v1/jobs/ID/cancel` for immediate cancellation. Steering is
+  Use Telegram `/stop` to cancel all your active/queued jobs, or `/cancel ID`
+  and `alina api POST /v1/jobs/ID/cancel` for a specific job. Steering is
   a correction at a safe boundary, not process preemption.
 - A pending approval is superseded by steering without granting permission.
   Its old button/ID cannot authorize a later action. The chat uses `/approve
@@ -73,10 +75,12 @@ at toolchain build time.
   bytes each may wait per job. Steering never resets the model-step budget.
 - The transcript is persisted before a mailbox item is marked applied. Stable
   archive IDs avoid duplicate journal entries during recovery. Pending items
-  survive cancellation, failure and service restart; `resume` transfers them to
-  the resumed job transactionally. Status reports their count. Applied messages
-  remain in the normal transcript/archive; unapplied ones remain in the mailbox
-  until resume, rather than becoming a silently executed new request.
+  survive cancellation, failure and service restart; the explicit local
+  `alina api POST /v1/jobs/ID/resume` recovery operation transfers them to the
+  resumed job transactionally. Telegram `/resume` is removed. Status reports
+  their count. Applied messages remain in the normal transcript/archive;
+  unapplied ones remain in the mailbox
+  until explicit recovery, rather than becoming a silently executed new request.
 - Acceptance and the final empty-mailbox check share a lock. A message racing
   normal completion either continues that job or starts a new queued turn.
 

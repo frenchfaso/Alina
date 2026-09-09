@@ -1,4 +1,4 @@
-# Prompt example — 0.13
+# Prompt example
 
 Rendered by the actual Go builder with `DefaultConfig`, the seed soul and all
 ten non-Telegram chat tools. Paths and hostname are normalized; OS/architecture are from
@@ -61,7 +61,8 @@ A request and its attachments follow as the actual user message. Steering
 messages join the same transcript as new user messages at a safe boundary,
 without replacing the system prefix or duplicating the original request.
 
-Dream uses the same builder and loop with memory, schedule, view_image and soul
-(subject to adapter capabilities). Its specific cue is `dreamPrompt` in
+Dream uses the same builder and loop with memory, schedule, view_image, read-only
+harness access and soul (subject to adapter capabilities). Its specific cue is
+`dreamPrompt` in
 [prompts.go](../internal/alina/prompts.go); it does not advertise shell or file
 operations.

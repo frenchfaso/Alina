@@ -4,6 +4,30 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Validation status at 0.14.3
+
+- The latest full macOS race suite was run for 0.14.2. The 0.14.3 camera fix
+  received focused macOS and native Galaxy A15 tests, plus Android/Linux builds
+  and vet checks described below. This does not claim a fresh full-suite run
+  for 0.14.3. BSD has cross-build coverage, not native runtime validation.
+- Real ChatGPT login, Astra inference and OpenAI hosted search passed during
+  the [0.11 setup check](#telegram-essentials-and-setup-recovery--0110).
+  Telegram conversation use has been reported by the user; the 0.14.2 checks
+  additionally verified bot access and authenticated model-catalog loading.
+  Automated delivery tests use fixtures. Actual typing visibility and model
+  button rendering are not established by those tests.
+- The latest recorded Galaxy deployment is 0.14.3, with only the current
+  executable retained. Camera metadata and a temporary JPEG were verified
+  through the corrected shell environment/filter. The image was not sent.
+- Live OpenCode Go, Tavily, Brave and remote embeddings remain unverified in
+  this record. Tests do not establish long-term memory quality, reflection
+  quality, battery impact or peak resource use under sustained load.
+
+For another installation, `alina setup` checks its configured accounts.
+`alina doctor --live` repeats integration checks with the daemon stopped and
+uses normal provider usage; it never sends Telegram messages. A private user
+message to the bot checks the complete reply path. See [operations](operations.md).
+
 ## Termux device API access — 0.14.3 (2026-09-09)
 
 The user's camera attempt on Galaxy A15 failed with `socket(): Operation not
@@ -120,6 +144,37 @@ amd64. These are compilation checks, not native execution on those platforms.
 This update does not deploy to or restart the configured Galaxy A15 instance.
 No real Telegram messages or account-backed model requests are sent by these
 tests. See [implementation and limits](review-0.13.md).
+
+## Detached daemon lifecycle — 0.12.0
+
+- Full macOS race suite passed (including real detached subprocess lifecycle);
+  Go vet, gofmt and git diff checks passed.
+- Cross-builds passed: Android/arm64, Linux/arm64, FreeBSD/amd64,
+  OpenBSD/amd64 and NetBSD/amd64. macOS was tested natively.
+- Galaxy A15: all 154 top-level tests passed with ALINA_TEST_WEB=1. Coverage
+  includes foreground compatibility, detached startup/readiness, surviving the
+  launching command, idempotent start/stop, restart, and failed-start cleanup.
+- Installed 0.12.0 at ~/alina-poc/bin/alina; previous binary saved as
+  alina-v011-before-daemon. No live service was running at installation, and
+  none was started against real user data. No autostart or supervisor was added.
+- The Termux service installer passes shell syntax validation and uses
+  serve --foreground for compatibility with external runit supervision.
+
+## Telegram essentials and setup recovery — 0.11.0
+
+- Full macOS race suite passed; the subsequently added family/tool-visibility
+  regression also passed with the race detector. Go vet and formatting checks passed.
+- Galaxy A15: 151 top-level tests passed, zero failures/skips, with
+  ALINA_TEST_WEB=1. The additional family/tool-visibility test passed separately
+  on Android (152 tested cases in total).
+- Real Galaxy `alina setup --no-start` completed successfully: ChatGPT connected,
+  Telegram connected, Astra response and OpenAI web search verified, then Pronta.
+  Existing two users and family configuration were preserved. Telegram had been
+  disabled in saved configuration; getMe/getWebhookInfo verified it before
+  restoring enabled=true under the daemon lock, with a private backup.
+- Telegram delivery tests use fake transports; no real chat messages or files
+  were sent. The service was not started by these checks.
+- 0.11.0 installed at ~/alina-poc/bin/alina; prior 0.10.3 saved alongside it.
 
 ## General review and recovery fixes — 0.10.1
 
@@ -535,49 +590,12 @@ sh ~/alina-poc/install-termux-service.sh ~/alina-poc/bin/alina
 sv up alina
 ```
 
-## Account-dependent validation still needed
+### Account coverage at the 0.1 baseline
 
-No user credentials were supplied. ChatGPT login, live OpenCode Go inference,
-live searches, Telegram delivery and actual embedding quality therefore remain
-unverified. Protocol tests use fixtures, including the semantic-ranking test's
-deterministic embeddings; they do not measure the quality of a real model's
-memory, reflection or retrieval.
-
-`alina setup` configures each integration, including guided Telegram pairing.
-After configuration, `alina doctor --live` tests the selected model, configured
-search providers, bot token and embedding endpoint. It uses the corresponding
-accounts' normal usage and does not send Telegram messages. Send a private
-message to the configured bot to verify complete Telegram delivery.
+No user credentials were supplied for that original run. ChatGPT login, live
+OpenCode Go inference, live searches, Telegram delivery and actual embedding
+quality were therefore unverified at that point. Protocol tests used fixtures,
+including deterministic embeddings for semantic ranking. Later live checks are
+recorded above; this historical limitation is not the current account status.
 
 See [operational limits](poc.md) and [research/design notes](research-memory.md).
-
-## 0.11.0 — Telegram essentials and setup recovery
-
-- Full macOS race suite passed; the subsequently added family/tool-visibility
-  regression also passed with the race detector. Go vet and formatting checks passed.
-- Galaxy A15: 151 top-level tests passed, zero failures/skips, with
-  ALINA_TEST_WEB=1. The additional family/tool-visibility test passed separately
-  on Android (152 tested cases in total).
-- Real Galaxy `alina setup --no-start` completed successfully: ChatGPT connected,
-  Telegram connected, Astra response and OpenAI web search verified, then Pronta.
-  Existing two users and family configuration were preserved. Telegram had been
-  disabled in saved configuration; getMe/getWebhookInfo verified it before
-  restoring enabled=true under the daemon lock, with a private backup.
-- Telegram delivery tests use fake transports; no real chat messages or files
-  were sent. The service was not started by these checks.
-- 0.11.0 installed at ~/alina-poc/bin/alina; prior 0.10.3 saved alongside it.
-
-## 0.12.0 — detached daemon lifecycle
-
-- Full macOS race suite passed (including real detached subprocess lifecycle);
-  Go vet, gofmt and git diff checks passed.
-- Cross-builds passed: Android/arm64, Linux/arm64, FreeBSD/amd64,
-  OpenBSD/amd64 and NetBSD/amd64. macOS was tested natively.
-- Galaxy A15: all 154 top-level tests passed with ALINA_TEST_WEB=1. Coverage
-  includes foreground compatibility, detached startup/readiness, surviving the
-  launching command, idempotent start/stop, restart, and failed-start cleanup.
-- Installed 0.12.0 at ~/alina-poc/bin/alina; previous binary saved as
-  alina-v011-before-daemon. No live service was running at installation, and
-  none was started against real user data. No autostart or supervisor was added.
-- The Termux service installer passes shell syntax validation and uses
-  serve --foreground for compatibility with external runit supervision.

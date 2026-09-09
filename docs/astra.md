@@ -1,8 +1,9 @@
-# Astra configuration — 0.4
+# Astra configuration
 
-Verified on 2026-09-08 against the official model/Responses documentation and the
-local Codex 0.153.4 model catalog fetched that day. The subscription backend is
-not interchangeable with the public API.
+These are the current global defaults. The provider capability figures below
+were checked on 2026-09-08 against the official model/Responses documentation
+and the local Codex 0.153.4 catalog fetched that day. The subscription backend
+is not interchangeable with the public API.
 
 | Setting | Default |
 | --- | --- |
@@ -40,16 +41,20 @@ does not rewrite the cached prefix every turn. The implicit cache remains in use
 actual cache counts are recorded when the backend returns them.
 
 Compaction uses measured usage when available plus estimated growth, not a
-provider tokenizer. Original messages and encrypted items stay in the archive;
-checkpoint input contains readable text, call arguments, results and source IDs,
-without opaque encrypted items. Chunk size scales with the configured budget up
+provider tokenizer. Original messages and encrypted items remain in saved JSON
+transcripts; the searchable SQLite archive stores readable events. Checkpoint
+input contains readable text, call arguments, results and source IDs, without
+opaque encrypted items. Chunk size scales with the configured budget up
 to 500000 bytes, avoiding the former fixed 48000-byte sequence of small calls.
 The final checkpoint remains bounded to 6000 bytes. A failed checkpoint does not
 replace the working transcript. Measurements are invalidated after compaction.
 
-`alina setup` exposes ordinary effort, verbosity and context size. Other values
-are editable in `config.json` while stopped. `alina doctor` displays effective
-settings; `--live` checks the selected model and configured search providers.
+`alina setup --advanced` exposes Astra effort, verbosity and context size.
+For other global settings, use `alina config apply` with the daemon stopped;
+ordinary quick setup preserves existing choices. `alina doctor` reports the
+saved global settings; `doctor --live`, also while stopped, checks the configured
+model and selected search provider. Telegram `/status` reports the person's
+effective model and effort. See [configuration and diagnostics](operations.md).
 Existing ChatGPT configurations using the retired POC `gpt-5.4` default migrate
 on load to Astra; its old 32768-token default becomes 272000. Other selected
 models and custom context budgets remain unchanged. An old subscription search

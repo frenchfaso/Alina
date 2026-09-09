@@ -23,8 +23,9 @@ setup preserves existing custom settings and explicitly disabled features.
 
 `alina setup --advanced` retains provider/model selection, alternative search
 keys, work directory, memory/embedding settings and budgets. Run `alina setup`
-afterwards for connection checks. `alina setup telegram` pairs or replaces only
-the bot. `alina setup --no-start` configures without offering to launch; piped
+afterwards for connection checks. `alina setup telegram` pairs or replaces the bot
+and manages people/family membership, preserving the other settings.
+`alina setup --no-start` configures without offering to launch; piped
 input never starts the daemon. Setup/login require the service to be stopped.
 
 Connection checks make a small model request and, when enabled, a search request
@@ -88,11 +89,9 @@ alina api POST /v1/jobs/JOB_ID/cancel
 cat error.log | alina chat "Explain this log"
 ```
 
-The terminal client talks HTTP/JSON over a private Unix socket. For example:
-
-```sh
-curl --unix-socket "$HOME/.config/alina/alina.sock" http://alina/v1/status
-```
+The terminal client talks HTTP/JSON over a private Unix socket. `alina api`
+exposes the same endpoints without requiring a platform-specific socket path.
+See [state locations](operations.md#state-directory) when selecting an instance.
 
 `alina api POST /v1/jobs/JOB_ID/resume` resumes interrupted/failed work in its original session,
 with an explicit instruction to check current state before repeating effects.
@@ -195,8 +194,8 @@ the symlink itself. These are convenience guards under the existing trusted-owne
 model, not a complete filesystem sandbox. Local file tools need no new consent.
 
 The English system prompt briefly explains when to use each tool; argument and
-limit details live in tool descriptions. Reflection retains its four tools:
-memory, schedule, image inspection and soul revision.
+limit details live in tool descriptions. Reflection exposes memory, schedule,
+image inspection (when supported), read-only harness access and soul revision.
 
 ## Approvals
 
@@ -269,10 +268,10 @@ operation's outcome unknown.
   while the current conversation is waiting for consent.
 - Jobs are persisted in SQLite; status loads only active and 50 recent finished
   jobs. Old `jobs/*.json` are imported without overwriting existing IDs and retained
-  as migration backups. Specific older jobs remain available by ID. Do not run
-  a 0.1 binary against 0.2 state: it does not understand initiative budgets or
-  the new job store. A rollback requires a matching backup of the state. Status
-  `completed` means the turn finished; it is not independent proof of task success.
+  as migration backups. Specific older jobs remain available by ID. Older binaries
+  may not understand the current state schema; a rollback requires a matching
+  backup of the state. Status `completed` means the turn finished; it is not
+  independent proof of task success.
 - Working context is compacted at model-call boundaries when its size,
   including prompts and tool schemas, exceeds 95% of `context_tokens` (default
   272000 for Astra: the threshold is 258400). The most recent provider input/output
@@ -281,7 +280,8 @@ operation's outcome unknown.
   opaque encrypted reasoning and internal metadata are not tokenized as text.
   Unmeasured image input adds an estimated 12000 tokens per image, capped at four.
   This is not an exact preflight tokenizer. Configure the budget for the selected
-  model. Message count and elapsed days
+  model; personal model selections can further cap it using catalog metadata.
+  Message count and elapsed days
   do not trigger compaction. Checkpoints preserve objectives, verified results,
   uncertainty and next actions. Whole tool exchanges stay together. The shared
   SQLite archive and earlier JSON transcripts remain intact on success or failure.
@@ -323,7 +323,7 @@ On all supported Unix targets, `alina serve` starts in the background without ro
 Use `alina serve --foreground` under a native service supervisor. Boot/login
 autostart remains an explicit supervisor configuration.
 
-## Shared memory, attention and reflection — 0.3
+## Shared memory, attention and reflection
 
 Within each native family/personal scope, Alina shares an archive across channels. Source,
 job, role and timestamp are provenance and reply-routing information, not recall
@@ -404,8 +404,8 @@ alina api POST /v1/memory/jobs '{"kind":"reindex"}'
 
 Storage remains private plaintext. Recognized credentials are redacted in the
 memory archive; job and working-transcript files retain their existing behavior.
-No automatic expiry or disk quota is imposed. Keep a state backup before upgrading:
-older binaries do not understand the new note schema and must not use 0.3 state.
+No automatic expiry or disk quota is imposed. Keep a state backup before upgrading;
+do not open upgraded state with an older binary.
 
 ## Portable recurring tasks
 
