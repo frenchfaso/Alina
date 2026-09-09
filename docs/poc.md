@@ -311,8 +311,9 @@ service supervisor at boot. Android Doze, battery restrictions and process
 limits still apply; a wake lock alone does not guarantee availability. This
 POC does not change Android battery settings or other services.
 
-On Linux/macOS/BSD, run `alina serve` under the native user-service supervisor.
-Alina does not fork itself into the background or require root.
+On all supported Unix targets, `alina serve` starts in the background without root.
+Use `alina serve --foreground` under a native service supervisor. Boot/login
+autostart remains an explicit supervisor configuration.
 
 ## Shared memory, attention and reflection — 0.3
 

@@ -35,7 +35,9 @@ func lockDaemonState(dir string) (*os.File, error) {
 	return lock, nil
 }
 
-func Serve(ctx context.Context, dir string, c Config) (result error) {
+func Serve(ctx context.Context, dir string, c Config, ready ...func()) (result error) {
+	ctx, requestStop := context.WithCancel(ctx)
+	defer requestStop()
 	lock, e := lockDaemonState(dir)
 	if e != nil {
 		return e
@@ -85,7 +87,17 @@ func Serve(ctx context.Context, dir string, c Config) (result error) {
 	if e = os.Chmod(sock, 0600); e != nil {
 		return e
 	}
-	s := &http.Server{Handler: logAPI(peopleHandler(engine), events), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/service/stop", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, `{"stopping":true}`)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		requestStop()
+	})
+	mux.Handle("/", peopleHandler(engine))
+	s := &http.Server{Handler: logAPI(mux, events), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second}
 	serviceCtx, cancel := context.WithCancel(ctx)
 	var background sync.WaitGroup
 	defer func() { cancel(); background.Wait() }()
@@ -100,6 +112,9 @@ func Serve(ctx context.Context, dir string, c Config) (result error) {
 	go func() { errCh <- s.Serve(ln) }()
 	events.emit("service.ready", nil, "provider", c.Provider, "model", c.Model)
 	fmt.Fprintln(os.Stderr, "Alina", Version, "listening on", sock)
+	for _, fn := range ready {
+		fn()
+	}
 	select {
 	case <-ctx.Done():
 		cancel()
@@ -148,7 +163,7 @@ func handler(e *Engine, owners ...string) http.Handler {
 		return true
 	}
 	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, map[string]any{"version": Version, "provider": e.Config.Provider, "model": e.Config.Model, "network_sandbox": sandboxAvailable(), "jobs": jobSummaries(e.Jobs("")), "logging": e.Events.health()})
+		reply(w, map[string]any{"version": Version, "pid": os.Getpid(), "provider": e.Config.Provider, "model": e.Config.Model, "network_sandbox": sandboxAvailable(), "jobs": jobSummaries(e.Jobs("")), "logging": e.Events.health()})
 	})
 	mux.HandleFunc("POST /v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

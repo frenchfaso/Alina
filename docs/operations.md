@@ -7,7 +7,7 @@ There is no additional runtime, remote log collector or telemetry service.
 | Command | Purpose |
 | --- | --- |
 | `setup` | Interactive onboarding; `setup login [browser]` reconnects ChatGPT |
-| `serve` | Run the daemon in the foreground |
+| `serve [stop\|restart]` | Start in background, stop or restart; `--foreground` for debugging/supervisors |
 | `chat ["message"]` | Interactive chat, or one request including optional stdin |
 | `config [check\|apply]` | Redacted configuration, validation, JSON merge patch |
 | `status [JOB]` | Service summary or detailed job JSON |
@@ -167,3 +167,29 @@ Incoming messages use a 50-second long poll (previously 25): Telegram returns
 as soon as an update arrives. These waits do not invoke the language model.
 
 Telegram user chats show typing only while active, format Markdown, and include same-chat quoted text as context. The send_file tool queues workspace documents (four per reply, 20 MiB each) for the current Telegram user; files are delivered after successful completion. Outbox snapshots remain available in the workspace.
+
+## Background service — 0.12
+
+`alina serve` starts an independent daemon and returns JSON only once the local
+API is ready. Repeating it reports the existing process. It requires no root,
+nohup, shell background operator, or additional service package on Termux,
+Linux, FreeBSD, OpenBSD, NetBSD and macOS.
+
+Use `alina serve stop` for graceful shutdown and `alina serve restart` after a
+binary update. Stop waits for state cleanup and lock release; interrupted work
+is recoverable with the existing resume flow. The private local API identifies
+the running instance, so no persistent PID file is trusted for signals.
+
+`alina status` includes the PID. Operational events remain available through
+`alina logs`; startup failures and stderr are in `$ALINA_HOME/logs/daemon.log`
+(mode 0600, rotated at the next start when over 2 MiB). A failed start reports
+an error to the invoking command instead of falsely reporting success.
+
+`alina serve --foreground` retains the attached process for debugging and for
+runit, systemd, launchd or BSD service scripts. Under an external supervisor,
+use that supervisor's stop/restart commands so it does not relaunch a stopped
+process. The Termux service installer now uses this foreground mode.
+
+This command does not install native service definitions, enable autostart at
+boot/login, or restart the daemon after a crash. Android may still suspend or
+kill Termux processes; detaching from the terminal does not bypass that policy.

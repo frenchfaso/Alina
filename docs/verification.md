@@ -445,3 +445,18 @@ See [operational limits](poc.md) and [research/design notes](research-memory.md)
 - Telegram delivery tests use fake transports; no real chat messages or files
   were sent. The service was not started by these checks.
 - 0.11.0 installed at ~/alina-poc/bin/alina; prior 0.10.3 saved alongside it.
+
+## 0.12.0 — detached daemon lifecycle
+
+- Full macOS race suite passed (including real detached subprocess lifecycle);
+  Go vet, gofmt and git diff checks passed.
+- Cross-builds passed: Android/arm64, Linux/arm64, FreeBSD/amd64,
+  OpenBSD/amd64 and NetBSD/amd64. macOS was tested natively.
+- Galaxy A15: all 154 top-level tests passed with ALINA_TEST_WEB=1. Coverage
+  includes foreground compatibility, detached startup/readiness, surviving the
+  launching command, idempotent start/stop, restart, and failed-start cleanup.
+- Installed 0.12.0 at ~/alina-poc/bin/alina; previous binary saved as
+  alina-v011-before-daemon. No live service was running at installation, and
+  none was started against real user data. No autostart or supervisor was added.
+- The Termux service installer passes shell syntax validation and uses
+  serve --foreground for compatibility with external runit supervision.

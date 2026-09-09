@@ -64,12 +64,7 @@ func setupCLI(ctx context.Context, dir string, args []string, in *bufio.Reader, 
 		fmt.Fprintln(out, "Quando vuoi: alina serve")
 		return w.err
 	}
-	c, err := LoadConfig(dir)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintln(out, "Alina resta attiva in questo terminale; Ctrl-C la ferma.\nChat locale: alina chat in un altro terminale.")
-	return Serve(ctx, dir, c)
+	return serveCLI(ctx, dir, nil, out)
 }
 
 func setupQuick(ctx context.Context, dir string, in *bufio.Reader, out io.Writer, client *http.Client, telegramOnly bool) error {

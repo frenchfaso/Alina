@@ -24,6 +24,21 @@ func Main(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	dir := Home()
+	if len(args) == 1 && args[0] == "__daemon" {
+		pipe := os.NewFile(3, "readiness")
+		if pipe == nil {
+			return errors.New("missing daemon readiness pipe")
+		}
+		defer pipe.Close()
+		if info, err := pipe.Stat(); err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+			return errors.New("invalid daemon readiness pipe")
+		}
+		err := Serve(ctx, dir, Config{}, func() { fmt.Fprintln(pipe, "ready"); pipe.Close() })
+		if err != nil {
+			fmt.Fprintln(pipe, err.Error())
+		}
+		return err
+	}
 	if len(args) == 0 {
 		args = []string{"help"}
 	}
@@ -35,7 +50,7 @@ func Main(args []string) error {
 const cliHelp = `Alina — start simple, stay simple.
 
   alina setup                 Connect accounts and get started
-  alina serve                 Run the daemon
+  alina serve [stop|restart]  Start in background, stop or restart
   alina chat ["message"]       Chat, or send one request (also accepts stdin)
   alina config [check|apply]   Show redacted JSON, validate or patch via stdin
   alina status [JOB]           Service or job status as JSON
@@ -47,6 +62,7 @@ Use --version for the version. ALINA_HOME selects the state directory.
 Config, status, doctor and api output JSON; errors go to stderr, exit code 1.
 setup --no-start configures without starting; setup telegram pairs the bot.
 setup login [browser] reconnects ChatGPT; setup --advanced edits preferences.
+serve --foreground runs attached for debugging or an external service manager.
 logs accepts --job ID, --level ERROR, --lines 1-1000 (default 100).
 Config patches are JSON objects on stdin: omitted fields keep their values.
 `
@@ -68,10 +84,7 @@ func commandCLI(ctx context.Context, dir string, args []string, in *bufio.Reader
 	case "setup":
 		return setupCLI(ctx, dir, args[1:], in, out)
 	case "serve":
-		if len(args) != 1 {
-			return errors.New("usage: alina serve")
-		}
-		return Serve(ctx, dir, Config{})
+		return serveCLI(ctx, dir, args[1:], out)
 	case "config":
 		return configCLI(ctx, dir, args[1:], in, out)
 	case "doctor":

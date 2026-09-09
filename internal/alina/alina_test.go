@@ -19,6 +19,13 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "__daemon" {
+		if e := Main(os.Args[1:]); e != nil {
+			WriteError(os.Stderr, e)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "__cli" {
 		if e := Main(os.Args[2:]); e != nil {
 			WriteError(os.Stderr, e)
@@ -291,7 +298,7 @@ func TestDaemonAndCLIOnUnixSocket(t *testing.T) {
 	}
 	self, _ := os.Executable()
 	start := func() *exec.Cmd {
-		cmd := exec.Command(self, "__cli", "serve")
+		cmd := exec.Command(self, "__cli", "serve", "--foreground")
 		cmd.Env = append(os.Environ(), "ALINA_HOME="+d)
 		var logs bytes.Buffer
 		cmd.Stdout = &logs
@@ -331,7 +338,7 @@ func TestDaemonAndCLIOnUnixSocket(t *testing.T) {
 	if err != nil || !json.Valid(out) || !bytes.Contains(out, []byte(`"logging"`)) {
 		t.Fatal(string(out), err)
 	}
-	second := exec.Command(self, "__cli", "serve")
+	second := exec.Command(self, "__cli", "serve", "--foreground")
 	second.Env = append(os.Environ(), "ALINA_HOME="+d)
 	if out, err = second.CombinedOutput(); err == nil || !bytes.Contains(out, []byte("already running")) {
 		t.Fatal("instance lock failed", string(out), err)

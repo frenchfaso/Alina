@@ -22,7 +22,7 @@ cat >> "$alina_stage/run" <<'SCRIPT'
 set -eu
 ALINA_HOME=$(cat ./state)
 export ALINA_HOME
-exec "$(cat ./binary)" serve 2>&1
+exec "$(cat ./binary)" serve --foreground 2>&1
 SCRIPT
 printf '#!%s/bin/sh\n' "$PREFIX" > "$alina_stage/log/run"
 cat >> "$alina_stage/log/run" <<'SCRIPT'
