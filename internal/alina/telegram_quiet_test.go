@@ -18,7 +18,7 @@ func TestTelegramQuietDeliveryKeepsActionableNotices(t *testing.T) {
 		{name: "empty completion", status: "completed", output: " \n"},
 		{name: "error", status: "failed", failure: "Connection unavailable", want: "Connection unavailable"},
 		{name: "interrupted", status: "interrupted", want: "interrupted"},
-		{name: "pending steering", status: "completed", pending: 1, want: "/resume quiet-job"},
+		{name: "pending steering", status: "completed", pending: 1, want: "Reinvia le indicazioni ancora valide"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newTestEngine(t, nil)

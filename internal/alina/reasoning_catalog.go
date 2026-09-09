@@ -18,10 +18,11 @@ import (
 const catalogClientVersion = "0.153.4"
 
 type reasoningCatalog struct {
-	mu     sync.Mutex
-	cached modelCatalog
-	key    string
-	retry  time.Time
+	mu      sync.Mutex
+	cached  modelCatalog
+	key     string
+	retry   time.Time
+	loading chan struct{}
 }
 type catalogModel struct {
 	ID      string   `json:"id"`
@@ -93,6 +94,50 @@ func parseModelCatalog(raw []byte) (modelCatalog, error) {
 	}
 	return c, nil
 }
+func (p *Provider) catalogKey(account string) string {
+	return contentID(p.Config.Provider + "\n" + p.BaseURL + "\n" + account + "\n" + catalogClientVersion)
+}
+func (p *Provider) currentCatalogKey() (string, error) {
+	var credential Credential
+	raw, err := os.ReadFile(filepath.Join(p.Auth.Dir, "chatgpt.json"))
+	if err != nil || json.Unmarshal(raw, &credential) != nil || credential.AccountID == "" {
+		return "", errors.New("model catalog requires ChatGPT login")
+	}
+	return p.catalogKey(credential.AccountID), nil
+}
+func (c modelCatalog) snapshot() modelCatalog {
+	c.Stale = time.Since(c.Fetched) > 24*time.Hour
+	return c
+}
+func (c modelCatalog) available(err error) (modelCatalog, error) {
+	if c.Key != "" {
+		return c.snapshot(), nil
+	}
+	if err == nil {
+		err = errors.New("model catalog unavailable")
+	}
+	return c, err
+}
+func loadModelCatalog(path, key string) modelCatalog {
+	b, err := readSmallFile(path, 256<<10)
+	var saved modelCatalog
+	if err != nil || json.Unmarshal([]byte(b), &saved) != nil || saved.Key != key || len(saved.Models) == 0 || len(saved.Models) > 500 || saved.Fetched.IsZero() || saved.Fetched.After(time.Now().Add(time.Minute)) {
+		return modelCatalog{}
+	}
+	seen := map[string]bool{}
+	for _, m := range saved.Models {
+		if !validModelID(m.ID) || m.Context < 8192 || seen[m.ID] || m.Default != "" && !slices.Contains(m.Levels, m.Default) {
+			return modelCatalog{}
+		}
+		seen[m.ID] = true
+		for _, level := range m.Levels {
+			if !wireEffort(level) {
+				return modelCatalog{}
+			}
+		}
+	}
+	return saved
+}
 func (e *Engine) models(ctx context.Context, refresh bool) (modelCatalog, error) {
 	root := e.global
 	p, ok := root.Model.(*Provider)
@@ -100,59 +145,67 @@ func (e *Engine) models(ctx context.Context, refresh bool) (modelCatalog, error)
 		return modelCatalog{}, errors.New("dynamic model controls require the ChatGPT catalog adapter")
 	}
 	cache := &root.catalog
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	var credential Credential
-	raw, err := os.ReadFile(filepath.Join(p.Auth.Dir, "chatgpt.json"))
-	if err != nil || json.Unmarshal(raw, &credential) != nil || credential.AccountID == "" {
-		return modelCatalog{}, errors.New("model catalog requires ChatGPT login")
-	}
-	key := contentID(p.Config.Provider + "\n" + p.BaseURL + "\n" + credential.AccountID + "\n" + catalogClientVersion)
-	if cache.key != key {
-		cache.key = key
-		cache.cached = modelCatalog{}
-		cache.retry = time.Time{}
-		b, err := readSmallFile(filepath.Join(root.AdminDir, "model-catalog.json"), 256<<10)
-		var saved modelCatalog
-		if err == nil && json.Unmarshal([]byte(b), &saved) == nil && saved.Key == key {
-			valid := len(saved.Models) > 0 && len(saved.Models) <= 500 && !saved.Fetched.IsZero() && !saved.Fetched.After(time.Now().Add(time.Minute))
-			for _, m := range saved.Models {
-				valid = valid && validModelID(m.ID) && m.Context >= 8192
-				for _, level := range m.Levels {
-					valid = valid && wireEffort(level)
-				}
+	path := filepath.Join(root.AdminDir, "model-catalog.json")
+	for {
+		if err := ctx.Err(); err != nil {
+			return modelCatalog{}, err
+		}
+		key, err := p.currentCatalogKey()
+		if err != nil {
+			return modelCatalog{}, err
+		}
+		cache.mu.Lock()
+		if cache.key != key {
+			cache.key, cache.retry = key, time.Time{}
+			cache.cached = loadModelCatalog(path, key)
+		}
+		cached := cache.cached.snapshot()
+		if !refresh || cached.Key != "" && !cached.Stale {
+			cache.mu.Unlock()
+			return cached.available(nil)
+		}
+		if done := cache.loading; done != nil {
+			cache.mu.Unlock()
+			// A stale snapshot is usable immediately; only the first load waits.
+			if cached.Key != "" {
+				return cached, nil
 			}
-			if valid {
-				cache.cached = saved
+			select {
+			case <-ctx.Done():
+				return modelCatalog{}, ctx.Err()
+			case <-done:
+				continue
 			}
 		}
-	}
-	cached := cache.cached
-	cached.Stale = time.Since(cached.Fetched) > 24*time.Hour
-	if !refresh || cached.Key != "" && !cached.Stale || time.Now().Before(cache.retry) {
-		if cached.Key == "" {
-			return cached, errors.New("model catalog unavailable")
+		if time.Now().Before(cache.retry) {
+			cache.mu.Unlock()
+			return cached.available(nil)
 		}
-		return cached, nil
-	}
-	cache.retry = time.Now().Add(5 * time.Minute)
-	check, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	fetched, err := p.fetchModelCatalog(check)
-	if err != nil {
-		if cached.Key != "" {
-			cached.Stale = true
-			return cached, nil
+		cache.loading = make(chan struct{})
+		cache.retry = time.Now().Add(5 * time.Minute)
+		cache.mu.Unlock()
+
+		// Network/auth waits never own the snapshot lock.
+		check, cancel := context.WithTimeout(ctx, 10*time.Second)
+		fetched, err := p.fetchModelCatalog(check)
+		cancel()
+		currentKey, identityErr := p.currentCatalogKey()
+		cache.mu.Lock()
+		if identityErr != nil || currentKey != key || cache.key != key || err == nil && fetched.Key != key {
+			err = errors.New("model catalog account changed during refresh")
+			cached = modelCatalog{}
+		} else if err == nil {
+			fetched.Fetched = time.Now().UTC()
+			err = writeJSON(path, fetched)
+			if err == nil {
+				cache.cached, cached = fetched, fetched
+			}
 		}
-		return cached, err
+		close(cache.loading)
+		cache.loading = nil
+		cache.mu.Unlock()
+		return cached.available(err)
 	}
-	fetched.Key = key
-	fetched.Fetched = time.Now().UTC()
-	if err = writeJSON(filepath.Join(root.AdminDir, "model-catalog.json"), fetched); err != nil {
-		return cached, err
-	}
-	cache.cached = fetched
-	return fetched, nil
 }
 func (p *Provider) fetchModelCatalog(ctx context.Context) (modelCatalog, error) {
 	credential, err := p.Auth.Get(ctx)
@@ -187,7 +240,9 @@ func (p *Provider) fetchModelCatalog(ctx context.Context) (modelCatalog, error) 
 	if err = decodeLimited(resp.Body, &raw); err != nil {
 		return modelCatalog{}, errors.New("invalid model catalog response")
 	}
-	return parseModelCatalog(raw)
+	catalog, err := parseModelCatalog(raw)
+	catalog.Key = p.catalogKey(credential.AccountID)
+	return catalog, err
 }
 
 type modelPreference struct{ Catalog, Model, Effort string }
@@ -257,28 +312,45 @@ func (e *Engine) setModelPreference(ctx context.Context, owner, action, value st
 
 type selectedModelKey struct{}
 
-func (e *Engine) refreshJobModel(j *runningJob) {
+// Only the job goroutine updates its selection. A changed selection invalidates
+// prepared tools, context and model parameters together, before dispatch.
+func (e *Engine) refreshJobModel(j *runningJob) bool {
 	if j.Kind != "" && j.Kind != "chat" {
-		return
+		return false
 	}
-	c, err := e.models(j.ctx, false)
-	if err != nil {
-		return
+	var selected *catalogModel
+	model, effort := e.Config.Model, e.Config.ReasoningEffort
+	if c, err := e.models(j.ctx, false); err == nil {
+		m, r := e.selectedModel(j.ctx, j.Owner, c)
+		model, effort = m.ID, r
+		if _, known := c.model(m.ID); known {
+			selected = &m
+		}
 	}
-	m, effort := e.selectedModel(j.ctx, j.Owner, c)
+	changed := j.Model != model || j.Reasoning != effort || !sameCatalogModel(j.model, selected)
 	e.mu.Lock()
-	j.model = &m
-	if _, known := c.model(m.ID); !known {
-		// Preserve explicitly configured behavior when the catalog lacks it.
-		j.model = nil
-	}
-	j.Model = m.ID
-	j.Reasoning = effort
+	j.model, j.Model, j.Reasoning = selected, model, effort
 	e.mu.Unlock()
+	return changed
+}
+func sameCatalogModel(a, b *catalogModel) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.ID == b.ID && a.Default == b.Default && a.Context == b.Context && a.Vision == b.Vision && slices.Equal(a.Levels, b.Levels)
 }
 func (e *Engine) contextBudget(j *runningJob) int {
 	if j.model != nil && j.model.ID != e.Config.Model {
 		return min(e.Config.ContextTokens, j.model.Context)
 	}
 	return e.Config.ContextTokens
+}
+func (e *Engine) jobVision(j *runningJob) bool {
+	if j != nil && j.model != nil {
+		return j.model.Vision
+	}
+	if p, ok := e.Model.(*Provider); ok {
+		return p.supportsImages()
+	}
+	return true
 }

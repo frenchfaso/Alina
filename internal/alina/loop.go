@@ -100,6 +100,7 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 	if err = appendMessage(Message{Role: "user", Content: input, Attachments: j.Attachments}); err != nil {
 		return "", err
 	}
+	vision := e.jobVision(j)
 	for step := 0; step < maxSteps; step++ {
 		if err = j.ctx.Err(); err != nil {
 			return "", err
@@ -107,14 +108,18 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		if err = e.drainSteering(j, &history, appendMessage); err != nil {
 			return "", err
 		}
-		vision := j.model == nil || j.model.Vision
 		e.refreshJobModel(j)
-		if vision != (j.model == nil || j.model.Vision) {
+		if vision != e.jobVision(j) {
+			vision = e.jobVision(j)
 			specs = e.toolsFor(j)
 			prefix[0].Content = e.prompt(specs)
 		}
 		e.activity(j, fmt.Sprintf("Model · step %d", step+1))
 		history, err = e.compact(j, history, path, estimatedTokens(prefix)+estimatedTokens(specs))
+		if errors.Is(err, errRequestChanged) {
+			step--
+			continue
+		}
 		if err != nil {
 			return "", err
 		}
@@ -125,6 +130,10 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			continue
 		}
 		msg, err := (jobModel{e: e, j: j}).Complete(j.ctx, j.Session, append(append([]Message{}, prefix...), history...), specs, nil)
+		if errors.Is(err, errRequestChanged) {
+			step--
+			continue
+		}
 		if err != nil {
 			return "", err
 		}
@@ -137,7 +146,7 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 					return j.Model
 				}
 				return e.Config.Model
-			}(), InputTokens: msg.Usage.InputTokens, OutputTokens: msg.Usage.OutputTokens, PrefixTokens: estimatedTokens(prefix) + estimatedTokens(specs)}
+			}(), InputTokens: msg.Usage.InputTokens, OutputTokens: msg.Usage.OutputTokens, PrefixTokens: estimatedTokens(prefix) + estimatedTokens(specs), VisionDisabled: !e.jobVision(j)}
 		}
 		if len(msg.Calls) > 8 {
 			return "", errors.New("model requested more than eight tools in one step")
@@ -152,6 +161,9 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			continue
 		}
 		for _, call := range msg.Calls {
+			if err = j.ctx.Err(); err != nil {
+				return "", err
+			}
 			started := time.Now()
 			toolName := call.Name
 			if !hasTool(specs, toolName) {

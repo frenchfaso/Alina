@@ -116,8 +116,8 @@ a durable inbox. Changing the bot isolates its update IDs and delivery receipts;
 adding or editing people preserves that binding. Use a dedicated bot without
 another poller or webhook. Only messages and buttons from configured people in
 private chats are accepted. Groups and unconfigured users are ignored. See
-[native families and global introspection](people.md). The Telegram menu exposes `/model`, `/think`, `/status`, `/stop`, `/resume`
-and `/help`. `/new`, `/permissions`, `/revoke ID`, `/cancel ID`, `/resume ID` and
+[native families and global introspection](people.md). The Telegram menu exposes `/model`, `/think`, `/status`, `/stop`
+and `/help`. `/new`, `/permissions`, `/revoke ID`, `/cancel ID` and
 `/intentions` remain available outside the short menu. See
 [personal model controls](operations.md#telegram-model-and-reasoning-controls).
 

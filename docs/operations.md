@@ -154,7 +154,7 @@ outdated notes explicitly rather than relying on cascading invalidation.
 Telegram delivery reads pending jobs from SQLite in batches, prioritizing
 approvals, independently of the 50-job status/history view. Delivery receipts
 also live in SQLite; existing JSON receipts migrate automatically. Retried
-Telegram `/resume` updates reuse the same job ID. Sending a message and saving
+Telegram `/stop` updates retain their exact cancelled job set. Sending a message and saving
 its receipt cannot be one transaction: a crash between them can still duplicate
 a reply. Individual text chunks and files have separate receipts, so a later
 failure does not repeat confirmed parts.
@@ -239,7 +239,7 @@ No persistent supervisor, automatic boot registration or infinite retry is added
 
 ## Telegram model and reasoning controls
 
-The menu contains `/model`, `/think`, `/status`, `/stop`, `/resume` and `/help`.
+The menu contains `/model`, `/think`, `/status`, `/stop` and `/help`.
 It is registered with Telegram at daemon startup. `/model` provides paged buttons
 (or `/model MODEL_ID`); `/think` provides the selected model's effort buttons
 (or `/think high`). `/model default` follows the global model and clears the
@@ -253,7 +253,11 @@ search model. The next ordinary model request uses them without a daemon restart
 A switch to a smaller model caps the working context using catalog metadata;
 text-only models receive file metadata instead of image inputs. Checkpoints use
 the selected model but keep their separate effort, falling back to that model's
-default when needed. Raw transcripts and memory remain intact.
+default when needed. Raw transcripts and memory remain intact. Model/effort
+selection is rechecked after waiting for the shared inference gate. A changed
+selection rebuilds tools and context before dispatch, including changes made
+during checkpoints. Text-only context estimates omit visual cost while keeping
+attachment metadata and the original files.
 
 Alina fetches the authenticated ChatGPT Codex model catalog, selecting visible
 entries with usable capability metadata. Effort choices are the intersection
@@ -265,7 +269,10 @@ One private `model-catalog.json` cache holds normalized metadata for the provide
 and account (hashed account binding, no tokens), shared by both menus and all
 people. Fresh metadata is reused for 24 hours and survives daemon restart. A
 background startup check preloads it; a menu request refreshes expired metadata.
-There is no idle refresh timer or fetch per model invocation. Refresh failures
+There is no idle refresh timer or fetch per model invocation. Cached readers
+remain available during a network refresh; concurrent first-load waiters honor
+cancellation. An account change during a fetch prevents publishing its result.
+Refresh failures
 use the same account's previous cache with its date displayed and a five-minute
 retry backoff. Without metadata, menus report unavailability rather than invent
 models or effort levels. Model selection reads the chosen entry from this cache.
@@ -280,12 +287,19 @@ those safely. A listed ChatGPT model still requires successful account access
 at inference time; the catalog is not a successful generation test.
 
 `/status` reports effective model/reasoning, active owned jobs and approximate
-working-context use, not subscription quota. `/stop` stops the owned active chat
-without an ID (multiple active chats require `/cancel ID`). `/resume` selects the
-most recent failed/interrupted/cancelled owned chat; `/resume ID` remains exact.
-Targets are recorded before side effects so Telegram retries do not affect newer
-work. Old reasoning buttons become invalid after a model change; callbacks are
-bound to the current person and catalog. These controls do not call the LLM.
+working-context use, not subscription quota. `/stop` cancels all active or queued
+jobs owned by that Telegram identity, including pending approvals and scheduled
+work already started. Other people's jobs are untouched. It does not disable
+future schedules or the global dream. The exact target set is persisted before
+cancellation, so retrying an update cannot stop newer work. Cancellation is
+checked between tools as well as during provider and shell operations.
+
+Telegram `/resume` (with or without an ID) is removed, including menu/help and
+notification suggestions. Old commands receive a brief retirement notice and
+never reach the model. Send a new instruction to continue a conversation; local
+explicit recovery APIs and controlled self-restart continuations remain available.
+Old reasoning buttons become invalid after a model change; callbacks are bound
+to the current person and catalog. These controls do not call the LLM.
 
 Sources: [official Codex catalog client](https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/endpoint/models.rs),
 [OpenAI Astra capabilities](https://developers.openai.com/api/docs/models/gpt-6-astra),

@@ -257,7 +257,7 @@ func TestTelegramStopRetryDoesNotCancelNewWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	awaitStatus(t, e, first.ID, "running")
-	if err = tg.jobControl(e.ctx, 42, e, tg.owner(), "stop", "update-1"); err == nil {
+	if err = tg.stopControl(e.ctx, 42, e, tg.owner(), "update-1"); err == nil {
 		t.Fatal("expected failed acknowledgement")
 	}
 	awaitStatus(t, e, first.ID, "cancelled")
@@ -266,7 +266,7 @@ func TestTelegramStopRetryDoesNotCancelNewWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	awaitStatus(t, e, second.ID, "running")
-	if err = tg.jobControl(e.ctx, 42, e, tg.owner(), "stop", "update-1"); err != nil {
+	if err = tg.stopControl(e.ctx, 42, e, tg.owner(), "update-1"); err != nil {
 		t.Fatal(err)
 	}
 	current, _ := e.Get(second.ID)

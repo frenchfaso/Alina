@@ -348,7 +348,7 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		}
 		return t.modelControl(ctx, id, engine, owner, strings.TrimPrefix(fields[0], "/"), value, 0)
 	case "/stop":
-		return t.jobControl(ctx, id, engine, owner, "stop", t.updateKey(u.ID))
+		return t.stopControl(ctx, id, engine, owner, t.updateKey(u.ID))
 
 	case "/new":
 		t.mu.Lock()
@@ -362,24 +362,8 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 	case "/status":
 		return t.briefStatus(ctx, id, engine, owner)
 	case "/resume":
-		if len(fields) == 1 {
-			return t.jobControl(ctx, id, engine, owner, "resume", t.updateKey(u.ID))
-		}
-		if len(fields) != 2 {
-			return t.sendTo(ctx, id, "Uso: /resume ID", nil)
-		}
-		j, err := engine.resumeKey(fields[1], owner, t.updateKey(u.ID))
-		if err != nil {
-			return t.sendTo(ctx, id, err.Error(), nil)
-		}
-		t.mu.Lock()
-		t.state.Sessions[chat] = j.Session
-		err = t.saveLocked()
-		t.mu.Unlock()
-		if err != nil {
-			return err
-		}
-		return t.sendTo(ctx, id, "Ripresa avviata: "+j.ID, nil)
+		// Retired commands must not accidentally become model instructions.
+		return t.sendTo(ctx, id, "Il comando /resume è stato rimosso. Scrivimi cosa vuoi fare.", nil)
 	case "/intentions":
 		intentions, err := engine.Memory.Intentions(ctx, false)
 		if err != nil {
@@ -533,7 +517,7 @@ func (t *Telegram) deliverPending(ctx context.Context) (bool, error) {
 				text += "\n" + j.Error
 			}
 			if j.PendingSteering > 0 {
-				text += fmt.Sprintf("\n%d messaggi salvati in attesa: /resume %s", j.PendingSteering, j.ID)
+				text += fmt.Sprintf("\n%d messaggi salvati ma non elaborati. Reinvia le indicazioni ancora valide.", j.PendingSteering)
 			}
 		}
 		if stamp == "" {

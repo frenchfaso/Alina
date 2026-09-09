@@ -55,21 +55,25 @@ func (u *TokenUsage) add(v TokenUsage) {
 // Saved with a working response, never sent to the provider. Compaction clears
 // samples because their measured input describes the pre-compaction history.
 type contextSample struct {
-	Model        string `json:"model"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
-	PrefixTokens int    `json:"prefix_tokens"`
+	VisionDisabled bool   `json:"vision_disabled,omitempty"`
+	Model          string `json:"model"`
+	InputTokens    int    `json:"input_tokens"`
+	OutputTokens   int    `json:"output_tokens"`
+	PrefixTokens   int    `json:"prefix_tokens"`
 }
 
-func (e *Engine) historyTokens(history []Message, models ...string) int {
-	model := e.Config.Model
-	if len(models) > 0 && models[0] != "" {
-		model = models[0]
+func (e *Engine) historyTokens(history []Message, jobs ...*runningJob) int {
+	model, vision := e.Config.Model, e.jobVision(nil)
+	if len(jobs) > 0 && jobs[0] != nil {
+		if jobs[0].Model != "" {
+			model = jobs[0].Model
+		}
+		vision = e.jobVision(jobs[0])
 	}
 	for i := len(history) - 1; i >= 0; i-- {
-		if sample := history[i].Context; sample != nil && sample.Model == model && sample.InputTokens > 0 {
-			return max(0, sample.InputTokens-sample.PrefixTokens) + sample.OutputTokens + estimatedTokens(history[i+1:])
+		if sample := history[i].Context; sample != nil && sample.Model == model && sample.VisionDisabled == !vision && sample.InputTokens > 0 {
+			return max(0, sample.InputTokens-sample.PrefixTokens) + sample.OutputTokens + estimatedTokens(history[i+1:], vision)
 		}
 	}
-	return estimatedTokens(history)
+	return estimatedTokens(history, vision)
 }

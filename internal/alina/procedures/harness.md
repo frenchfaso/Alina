@@ -131,13 +131,19 @@ provider catalog; `/status` shows them. `/model default` resets model and effort
 catalog default. Preferences persist and apply at the next ordinary model call,
 including local chat for the same configured person. They do not reconfigure
 other people, dream or hosted search. Checkpoints retain their separate effort
-where the selected model supports it. A smaller model lowers the context budget;
-a text-only model receives no visual input. `harness status` includes the current
+where the selected model supports it. Selections are rechecked at dispatch after
+waiting for inference; model changes rebuild tools and context coherently.
+A smaller model lowers the context budget;
+a text-only model receives no visual input or visual token allowance. `harness status` includes the current
 conversation's model and effort alongside the global configuration.
 
 The ChatGPT catalog is cached for 24 hours, scoped to provider/account. Menus
 refresh an expired cache; failed refresh uses the previous cache with its date.
+Cached reads remain available while refresh performs network I/O.
 No metadata means no invented choices. Ultra is not a wire reasoning effort.
 OpenCode Go currently retains setup-based selection because its catalog lacks
-required capability metadata. `/stop` and `/resume` operate on the person's own
-work and do not require the model to be responsive.
+required capability metadata. `/stop` cancels all active/queued work owned by
+that Telegram identity, including pending approvals. It does not cancel other
+people's jobs or disable future schedules/global dream. Cancellation does not
+require a model response. Telegram `/resume` has been removed; the user can send
+a new instruction. Explicit local recovery and self-restart continuations remain.

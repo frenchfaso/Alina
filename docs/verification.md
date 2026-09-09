@@ -4,6 +4,25 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Review fixes and Telegram stop — 0.14.1 (2026-09-09)
+
+The full macOS ARM64 race suite passed: 173 top-level tests passed, one optional
+public-web smoke skipped, zero failures (174 total). Go vet, gofmt and diff
+checks passed. CGO-free builds passed for Android/arm64, Linux/arm64,
+FreeBSD/amd64, OpenBSD/amd64 and NetBSD/amd64.
+
+Eight new regressions cover text-only attachment context, cached reads during a
+stalled refresh, first-load cancellation, account changes during refresh,
+model/effort changes while queued and during checkpoints, stopping multiple
+owned active/queued jobs without affecting another person, and cancelling a
+pending approval. Existing stop retry tests still pass. The former Telegram
+resume retry test now verifies that the removed command never starts work.
+
+The fixes address the [0.14 review](review-0.14.md). All transports use fixtures
+and state is disposable. No live account-backed inference or Telegram messages
+were sent. The Galaxy A15 was not updated or restarted; cross-builds do not
+replace native device validation.
+
 ## Personal Telegram model controls — 0.14 (2026-09-09)
 
 The full macOS ARM64 race suite passed: 165 top-level tests passed and the

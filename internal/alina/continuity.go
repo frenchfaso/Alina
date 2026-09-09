@@ -60,6 +60,8 @@ func (g *modelGate) acquire(ctx context.Context, background bool) (func(), error
 	return func() { g.mu.Lock(); g.busy = false; close(g.changed); g.changed = make(chan struct{}); g.mu.Unlock() }, nil
 }
 
+var errRequestChanged = errors.New("request preparation changed; retry before dispatch")
+
 type jobModel struct {
 	e *Engine
 	j *runningJob
@@ -82,6 +84,14 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 		return Message{}, err
 	}
 	defer release()
+	// The loop prepared tools/context before waiting. Revalidate after acquiring
+	// the gate; returning to that loop rebuilds the entire request coherently.
+	if purpose != "search" && m.j.Model != "" && m.e.refreshJobModel(m.j) {
+		return Message{}, errRequestChanged
+	}
+	if purpose == "turn" && m.e.hasSteering(m.j) {
+		return Message{}, errRequestChanged
+	}
 
 	if m.j.Kind == "dream" && m.j.modelCalls >= 12 {
 		return Message{}, errors.New("reflection model-call budget reached; notes and archive retained")
@@ -149,7 +159,8 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 
 // Provider-independent conservative estimate, not a tokenizer or measured
 // provider usage. Include tool schemas and prompt overhead.
-func estimatedTokens(v any) int {
+func estimatedTokens(v any, visual ...bool) int {
+	vision := len(visual) == 0 || visual[0]
 	if messages, ok := v.([]Message); ok {
 		total := 0
 		images := 0
@@ -159,7 +170,7 @@ func estimatedTokens(v any) int {
 			visible := Message{Role: m.Role, Content: messageText(m), Calls: m.Calls, CallID: m.CallID, Reasoning: m.Reasoning}
 			tokens := (len(jsonText(visible)) + 2) / 3
 			for _, a := range m.Attachments {
-				if a.Image && images < maxInputImages {
+				if vision && a.Image && images < maxInputImages {
 					tokens += 12000 // Conservative image allowance until measured usage arrives.
 					images++
 				}
@@ -178,13 +189,14 @@ func estimatedTokens(v any) int {
 // transcript remains on disk, so a failed summary cannot destroy it.
 func (e *Engine) compact(j *runningJob, history []Message, path string, overhead ...int) ([]Message, error) {
 	budget := e.contextBudget(j) * 95 / 100
+	estimate := func(messages []Message) int { return estimatedTokens(messages, e.jobVision(j)) }
 	if len(overhead) > 0 {
 		budget -= overhead[0]
 	}
 	if budget < 2500 {
 		return history, errors.New("fixed context leaves too little working space; shorten pinned context or increase context_tokens")
 	}
-	if e.historyTokens(history, j.Model) <= budget {
+	if e.historyTokens(history, j) <= budget {
 		return history, nil
 	}
 	cut := len(history) - 12
@@ -194,7 +206,7 @@ func (e *Engine) compact(j *runningJob, history []Message, path string, overhead
 	for cut < len(history) && history[cut].Role != "user" {
 		cut++
 	}
-	for cut < len(history) && estimatedTokens(history[cut:]) > budget/2 {
+	for cut < len(history) && estimate(history[cut:]) > budget/2 {
 		cut++
 		for cut < len(history) && history[cut].Role != "user" {
 			cut++
@@ -215,7 +227,7 @@ func (e *Engine) compact(j *runningJob, history []Message, path string, overhead
 	if snapshot >= 0 && (floor < 0 || snapshot < floor) {
 		floor = snapshot
 	}
-	if floor > 0 && cut > floor && estimatedTokens(history[floor:])+2500 <= budget {
+	if floor > 0 && cut > floor && estimate(history[floor:])+2500 <= budget {
 		cut = floor
 	}
 	// Never replace a request the model has not yet seen with a summary of it.
@@ -255,7 +267,7 @@ func (e *Engine) compact(j *runningJob, history []Message, path string, overhead
 		}
 	}
 	kept = append(kept, history[cut:]...)
-	if estimatedTokens(kept)+500 > budget {
+	if estimate(kept)+500 > budget {
 		return history, errors.New("current request and visual inputs exceed available context; reduce input or increase context_tokens")
 	}
 	prefix := history[:cut]
@@ -299,7 +311,7 @@ func (e *Engine) compact(j *runningJob, history []Message, path string, overhead
 	for i := range next {
 		next[i].Context = nil
 	}
-	if estimatedTokens(next) > budget {
+	if estimate(next) > budget {
 		return history, errors.New("checkpoint exceeds available context; original transcript retained")
 	}
 	if err := writeJSON(path, next); err != nil {

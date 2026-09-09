@@ -140,7 +140,7 @@ func TestTelegramScheduledApprovalFitsProtocol(t *testing.T) {
 	}
 }
 
-func TestTelegramResumeRetryDoesNotRepeatWork(t *testing.T) {
+func TestRemovedTelegramResumeNeverStartsWork(t *testing.T) {
 	var calls atomic.Int32
 	e := newTestEngine(t, modelFunc(func(context.Context, string, []Message, []ToolSpec, func(string)) (Message, error) {
 		calls.Add(1)
@@ -170,8 +170,8 @@ func TestTelegramResumeRetryDoesNotRepeatWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.wg.Wait()
-	if calls.Load() != 2 || len(e.Jobs(tg.owner())) != 2 {
-		t.Fatalf("retry duplicated the resumed action: %d model calls", calls.Load())
+	if calls.Load() != 1 || len(e.Jobs(tg.owner())) != 1 {
+		t.Fatalf("removed resume command started work: %d model calls", calls.Load())
 	}
 }
 

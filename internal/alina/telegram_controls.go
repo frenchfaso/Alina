@@ -17,12 +17,11 @@ var telegramMenu = []map[string]string{
 	{"command": "think", "description": "Livello di ragionamento"},
 	{"command": "model", "description": "Scegli il modello"},
 	{"command": "status", "description": "Modello, contesto e attività"},
-	{"command": "stop", "description": "Interrompi il lavoro corrente"},
-	{"command": "resume", "description": "Riprendi un lavoro interrotto"},
+	{"command": "stop", "description": "Ferma i tuoi lavori in corso"},
 	{"command": "help", "description": "Comandi essenziali"},
 }
 
-const telegramHelp = "Scrivi una richiesta; nuovi messaggi aggiornano il lavoro in corso.\n/think · ragionamento\n/model · modello\n/status · stato\n/stop · interrompi\n/resume · riprendi\n\n/new cambia contesto, senza cancellare memoria.\n/permissions e /revoke ID gestiscono i consensi.\n/think default e /model default ripristinano le impostazioni generali."
+const telegramHelp = "Scrivi una richiesta; nuovi messaggi aggiornano il lavoro in corso.\n/think · ragionamento\n/model · modello\n/status · stato\n/stop · interrompi\n\n/new cambia contesto, senza cancellare memoria.\n/permissions e /revoke ID gestiscono i consensi.\n/think default e /model default ripristinano le impostazioni generali."
 
 func (t *Telegram) selectorToken(e *Engine, owner, kind string, c modelCatalog) string {
 	key := owner + "\n" + c.Key + "\n" + jsonText(c.Models)
@@ -117,11 +116,9 @@ func (t *Telegram) controlCallback(ctx context.Context, id int64, e *Engine, own
 	return t.modelControl(ctx, id, e, owner, parts[2], value, page)
 }
 func (t *Telegram) briefStatus(ctx context.Context, id int64, e *Engine, owner string) error {
-	model, effort := e.Config.Model, e.Config.ReasoningEffort
-	if c, err := e.models(ctx, false); err == nil {
-		m, r := e.selectedModel(ctx, owner, c)
-		model, effort = m.ID, r
-	}
+	j := &runningJob{Job: Job{Kind: "chat", Owner: owner}, ctx: ctx}
+	e.refreshJobModel(j)
+	model, effort := j.Model, j.Reasoning
 	text := fmt.Sprintf("%s · reasoning %s", model, effort)
 	jobs := e.Jobs(owner)
 	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Created.After(jobs[j].Created) })
@@ -143,70 +140,60 @@ func (t *Telegram) briefStatus(ctx context.Context, id int64, e *Engine, owner s
 		var history []Message
 		raw, err := os.ReadFile(filepath.Join(e.Dir, "sessions", session+".json"))
 		if err == nil && json.Unmarshal(raw, &history) == nil {
-			budget := e.Config.ContextTokens
-			if c, err := e.models(ctx, false); err == nil {
-				if m, ok := c.model(model); ok && model != e.Config.Model {
-					budget = min(budget, m.Context)
-				}
-			}
-			used := e.historyTokens(history, model) + estimatedTokens([]Message{{Role: "system", Content: e.prompt(nil)}}) + estimatedTokens(e.toolsFor(&runningJob{}))
+			budget := e.contextBudget(j)
+			specs := e.toolsFor(j)
+			used := e.historyTokens(history, j) + estimatedTokens([]Message{{Role: "system", Content: e.prompt(specs)}}) + estimatedTokens(specs)
 			text += fmt.Sprintf("\nContesto ≈ %d / %d token (%.0f%%)", used, budget, 100*float64(used)/float64(budget))
 		}
 	}
 	return t.sendTo(ctx, id, text, nil)
 }
-func (t *Telegram) jobControl(ctx context.Context, id int64, e *Engine, owner, action, key string) error {
-	// Persist the target before the side effect: retries cannot stop/resume newer work.
-	stateKey := "telegram-control:" + key
-	var target string
-	err := e.Memory.DB.QueryRowContext(ctx, "SELECT value FROM memory_state WHERE key=?", stateKey).Scan(&target)
+
+// Persist the exact set before cancelling. A retried update cannot stop work
+// submitted later, and completion racing this request is harmless.
+func (t *Telegram) stopControl(ctx context.Context, id int64, e *Engine, owner, key string) error {
+	count, err := e.stopOwnedJobs(ctx, owner, "telegram-control:"+key)
+	if err != nil {
+		return err
+	}
+	text := "Interruzione richiesta."
+	if count == 0 {
+		text = "Nessun lavoro in corso."
+	}
+	return t.sendTo(ctx, id, text, nil)
+}
+func (e *Engine) stopOwnedJobs(ctx context.Context, owner, stateKey string) (int, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var raw string
+	var targets []string
+	err := e.Memory.DB.QueryRowContext(ctx, "SELECT value FROM memory_state WHERE key=?", stateKey).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		jobs := e.Jobs(owner)
-		candidates := []Job{}
-		for _, j := range jobs {
-			if (j.Kind == "chat" || j.Kind == "") && ((action == "stop" && !terminalStatus(j.Status)) || (action == "resume" && (j.Status == "failed" || j.Status == "interrupted" || j.Status == "cancelled"))) {
-				candidates = append(candidates, j)
+		for _, j := range e.jobs {
+			if j.Owner == owner && !terminalStatus(j.Status) && j.cancel != nil {
+				targets = append(targets, j.ID)
 			}
 		}
-		sort.Slice(candidates, func(i, j int) bool { return candidates[i].Created.After(candidates[j].Created) })
-		if action == "stop" && len(candidates) > 1 {
-			return t.sendTo(ctx, id, "Più lavori attivi. Usa /cancel ID:\n"+formatJobs(candidates), nil)
-		}
-		target = "none"
-		if len(candidates) > 0 {
-			target = candidates[0].ID
-		}
-		if _, err = e.Memory.DB.ExecContext(ctx, "INSERT INTO memory_state VALUES(?,?)", stateKey, target); err != nil {
-			return err
+		sort.Strings(targets)
+		if _, err = e.Memory.DB.ExecContext(ctx, "INSERT INTO memory_state VALUES(?,?)", stateKey, jsonText(targets)); err != nil {
+			return 0, err
 		}
 	} else if err != nil {
-		return err
-	}
-	if target == "none" {
-		return t.sendTo(ctx, id, "Nessun lavoro da "+map[string]string{"stop": "interrompere", "resume": "riprendere"}[action]+".", nil)
-	}
-	old, ok := e.Get(target)
-	if !ok || old.Owner != owner {
-		return t.sendTo(ctx, id, "Lavoro non disponibile.", nil)
-	}
-	if action == "stop" {
-		if !terminalStatus(old.Status) {
-			if err = e.Cancel(target, owner); err != nil {
-				return err
-			}
+		return 0, err
+	} else if err = json.Unmarshal([]byte(raw), &targets); err != nil {
+		// Version 0.14 receipts held a single target (or the sentinel "none").
+		if raw == "none" {
+			targets = nil
+		} else if safeID(raw) {
+			targets = []string{raw}
+		} else {
+			return 0, err
 		}
-		return t.sendTo(ctx, id, "Interruzione richiesta.", nil)
 	}
-	j, err := e.resumeKey(target, owner, key)
-	if err != nil {
-		return err
+	for _, id := range targets {
+		if j := e.jobs[id]; j != nil && j.Owner == owner && j.cancel != nil {
+			j.cancel()
+		}
 	}
-	t.mu.Lock()
-	t.state.Sessions[strconv.FormatInt(id, 10)] = j.Session
-	err = t.saveLocked()
-	t.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	return t.sendTo(ctx, id, "Ripresa avviata.", nil)
+	return len(targets), nil
 }
