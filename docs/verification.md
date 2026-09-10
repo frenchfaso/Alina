@@ -16,7 +16,7 @@ runs; they may since have changed.
   additionally verified bot access and authenticated model-catalog loading.
   Automated delivery tests use fixtures. Actual typing visibility and model
   button rendering are not established by those tests.
-- The latest recorded Galaxy deployment is 0.14.4, with only the current
+- The latest recorded Galaxy deployment is 0.15.0, with only the current
   executable retained. Camera metadata and a temporary JPEG were verified
   in 0.14.3 through the corrected shell environment/filter. The image was not sent.
 - Live OpenCode Go, Tavily, Brave and remote embeddings remain unverified in
@@ -52,6 +52,22 @@ fixtures; they do not establish actual draft visibility in a user's chat.
 The full macOS race suite passed, followed by targeted race regressions and Go
 vet after the last status changes. Android/arm64 build passed. All 42 local
 Markdown links checked resolve. No real Telegram test messages were sent.
+
+The daemon was updated to 0.15.0 with no active jobs; configuration hash was
+unchanged and offline doctor passed. A real Astra/high dream then completed in
+10.018 seconds, using 15,365 input tokens (7,552 cached), 185 output tokens and
+69 reported reasoning tokens. It produced a reflection without changing soul.
+This is a bounded batch, not a like-for-like benchmark against the prior failed
+attempt: remaining experiences stay eligible for later dreams.
+
+The completion and successful batch cursor were recorded. From the default
+family API, the report was listed and found by search; the complete transcript
+was read over two pages. Status reported the successful attempt, completion time
+and the next 03:00 Europe/Rome run. No jobs remained active. Temporary test and
+rollback files were removed, leaving only the current executable. Actual Telegram
+progress-message visibility still needs verification in a real conversation.
+Installed Android SHA-256:
+`6919e0a131725c7a09ab3aecdcd8890ed3b8c9e24ced6db152f8b7a93561a68f`.
 
 ## Telegram reaction feedback — 0.14.4 (2026-09-10)
 
