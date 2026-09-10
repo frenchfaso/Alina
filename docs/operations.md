@@ -147,6 +147,11 @@ alina api POST /v1/memory/jobs '{"kind":"dream"}'
 alina api GET /v1/tasks
 ```
 
+Telegram approval forms are deleted after a button choice is accepted, including
+denial. Clicking a stale/expired form also removes it; invalid choices or failed
+permission persistence keep a still-pending form usable. Cleanup retries never
+apply the original decision twice. Telegram may refuse deletion of old messages.
+
 Approval scopes remain `once`, `restart`, `always`, `deny`. Each approval requires
 its current approval ID; a pending approval is never consent. `chat "message"`
 and piped chat steer the current local chat job just like interactive input.

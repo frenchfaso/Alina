@@ -4,7 +4,7 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
-## Validation status at 0.15.0
+## Validation status at 0.15.1
 
 - The full macOS race suite passed for 0.15.0; final dream/harness/progress
   regressions and Go vet also passed after the last metadata changes. Earlier
@@ -16,7 +16,7 @@ runs; they may since have changed.
   additionally verified bot access and authenticated model-catalog loading.
   Automated delivery tests use fixtures. Actual typing visibility and model
   button rendering are not established by those tests.
-- The latest recorded Galaxy deployment is 0.15.0, with only the current
+- The latest recorded Galaxy deployment is 0.15.1, with only the current
   executable retained. Camera metadata and a temporary JPEG were verified
   in 0.14.3 through the corrected shell environment/filter. The image was not sent.
 - Live OpenCode Go, Tavily, Brave and remote embeddings remain unverified in
@@ -27,6 +27,23 @@ For another installation, `alina setup` checks its configured accounts.
 `alina doctor --live` repeats integration checks with the daemon stopped and
 uses normal provider usage; it never sends Telegram messages. A private user
 message to the bot checks the complete reply path. See [operations](operations.md).
+
+## Dismiss completed approval forms — 0.15.1 (2026-09-10)
+
+Telegram deletes the approval message after a successful button decision,
+including denial. Stale/expired clicks also dismiss the form. Invalid choices
+and failed consent persistence leave a pending form usable. A transient deletion
+failure retries the callback without reapplying the decision; an expired callback
+acknowledgement does not prevent cleanup. Telegram deletion restrictions still apply.
+
+The Telegram/consent race regressions and Go vet passed. Two tests passed natively
+on Galaxy A15, including nine approval-form cases: once, restart, always, deny,
+expired, stale, invalid choice, unauthorized user and retry. The specific completed
+form reported by the user was deleted successfully through the real Telegram API;
+no new test message was sent. 0.15.1 was installed with no active jobs, doctor
+passed, configuration was unchanged, and temporary test/rollback files were removed.
+Installed Android SHA-256:
+`7502487c2cbc0a6e734ecf49a0cbd023893fbc918caf3f583ec5e2acb4765375`.
 
 ## Shared dreams and Telegram progress — 0.15.0 (2026-09-10)
 

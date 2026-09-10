@@ -304,8 +304,10 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 
 		parts := strings.Split(c.Data, ":")
 		answer := "Richiesta non valida"
+		dismiss := false
 		if len(parts) == 3 && parts[0] == "a" {
 			answer = "Consenso scaduto o non più in attesa"
+			dismiss = true
 			for _, job := range engine.Jobs(owner) {
 				if job.Approval == nil || job.Approval.ID != parts[1] {
 					continue
@@ -314,6 +316,10 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 					answer = "Scelta registrata"
 				} else {
 					answer = err.Error()
+					// Keep a still-pending request usable after an invalid choice
+					// or failed persistence. A later stale click can dismiss it.
+					current, exists := engine.Get(job.ID)
+					dismiss = !exists || current.Approval == nil || current.Approval.ID != parts[1] || time.Now().After(current.Approval.Expires) || terminalStatus(current.Status)
 				}
 				break
 			}
@@ -324,7 +330,18 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 			// An expired callback cannot be acknowledged. Retrying this update
 			// indefinitely would block all subsequent owner messages.
 			engine.Events.emit("telegram.callback_rejected", err)
-			return nil
+			err = nil
+		}
+		if dismiss && c.Message.ID > 0 {
+			// Deleting the form is independent of acknowledging its callback:
+			// expired callbacks must still be able to remove old forms.
+			removeErr := t.api(ctx, "deleteMessage", map[string]any{"chat_id": id, "message_id": c.Message.ID}, nil)
+			if errors.As(removeErr, &apiErr) && (apiErr.code == 400 || apiErr.code == 403) {
+				// Already removed, or Telegram no longer permits deletion.
+				engine.Events.emit("telegram.approval_dismiss_rejected", removeErr)
+				removeErr = nil
+			}
+			err = errors.Join(err, removeErr)
 		}
 		return err
 	}
