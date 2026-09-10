@@ -121,6 +121,26 @@ func NewEngine(dir string, c Config, model Model, search *Search, events ...*Eve
 	if err != nil {
 		return nil, err
 	}
+	// Upgrade one personal archive to a shared household without copying data.
+	// Preserve all other legacy mappings; never merge existing family stores.
+	if id, personal := strings.CutPrefix(legacyScope, "user-"); personal {
+		family := c.localUser().Family
+		oneFamily, ownerPresent := family != "", false
+		for _, u := range c.Users {
+			oneFamily = oneFamily && u.Family == family
+			ownerPresent = ownerPresent || u.ID == id
+		}
+		if oneFamily && ownerPresent {
+			target := "family-" + family
+			if _, err := os.Stat(filepath.Join(dir, "scopes", target)); !os.IsNotExist(err) {
+				return nil, errors.New("shared family archive already exists; keep the previous memory binding")
+			}
+			if err := writeJSON(filepath.Join(dir, "people-state.json"), map[string]string{"legacy_scope": target}); err != nil {
+				return nil, err
+			}
+			legacyScope = target
+		}
+	}
 	global, err := newEngine(filepath.Join(dir, "mind"), dir, c, model, search, nil, events...)
 	if err != nil {
 		return nil, err
@@ -217,7 +237,7 @@ func (e *Engine) personContext(j *runningJob) string {
 			}
 		}
 	} else {
-		text += "Global private reflection. You may inspect these memory scopes using the memory tool's scope field:\n"
+		text += "Shared reflection. Existing archive locations are accessible with the memory tool's scope field:\n"
 		for _, u := range e.Config.Users {
 			text += jsonText(map[string]string{"scope": u.scope(), "id": u.ID, "name": u.Name}) + "\n"
 		}

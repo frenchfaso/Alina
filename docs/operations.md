@@ -95,7 +95,7 @@ exclusive state lock as the daemon, including while it is still starting.
 An invalid field can be corrected with a patch. Syntactically damaged JSON is
 left untouched for explicit file repair. `setup --advanced` remains available
 for interactive preferences, and `setup telegram` for guided bot pairing and
-native user/family management. See [people and one global mind](people.md) for
+adding, renaming and removing people in the shared family. See [people and one global mind](people.md) for
 memory boundaries, shared introspection and administrative scope selectors.
 
 ## Logs
@@ -190,6 +190,14 @@ at 60 seconds until success; no new incoming message is needed to retry.
 Incoming messages use a 50-second long poll (previously 25): Telegram returns
 as soon as an update arrives. These waits do not invoke the language model.
 
+Longer tasks can show one silent, editable progress message containing the
+model's user-facing comments. The first comment waits 1.5 seconds; edits are
+coalesced to at most one per three seconds. Approval or completion removes the
+draft, and final replies remain separate. Message IDs are checkpointed for
+cleanup after restart; transient draft failures do not fail the agent or stop
+final delivery. No private reasoning or automatic tool logs are sent. A crash
+between Telegram acceptance and recording the ID remains ambiguous.
+
 Telegram user chats show typing only while active, format Markdown, and include same-chat quoted text as context. The send_file tool queues workspace documents (four per reply, 20 MiB each) for the current Telegram user; files are delivered after successful completion. Outbox snapshots remain available in the workspace.
 
 Polling and pairing explicitly subscribe to `message_reaction`. Reaction changes
@@ -236,7 +244,11 @@ embedded and refreshed in `workspace/procedures/harness.md` for each scope;
 Alina's index and other procedures are preserved. Its contents are not injected
 into every model request. Dream may inspect the harness but cannot mutate it.
 
-Status and diagnostics expose only the current scope's jobs and log events.
+Status adds global dream metadata (last attempt/outcome, last completion and
+next execution). Job lists and diagnostic logs retain their current archive
+selection. Use `alina api GET '/v1/memory/read?q=dreams'` for dream reports; a
+returned job ID retrieves the full trace. A single family's searches include
+global reflections; legacy multiple-family archives remain separated.
 Configuration hides credentials, people and Telegram routing. Diagnostic checks
 are local; they do not prove provider availability. `configure` stages a validated
 partial patch for ordinary device-wide behavior (models, reasoning, context,

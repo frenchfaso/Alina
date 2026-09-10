@@ -35,7 +35,8 @@ func (e *Engine) dream(j *runningJob, now time.Time) (string, error) {
 			return "", err
 		}
 	}
-	if err = m.DB.QueryRowContext(j.ctx, `SELECT COALESCE(max(rowid),0) FROM journal WHERE role IN ('user','assistant')`).Scan(&latest); err != nil {
+	overview, latest, err := m.dreamOverview(j.ctx, last, 4000)
+	if err != nil {
 		return "", err
 	}
 	intents, err := m.Intentions(j.ctx, true)
@@ -52,10 +53,13 @@ func (e *Engine) dream(j *runningJob, now time.Time) (string, error) {
 		return "", err
 	}
 	if latest <= last && !scopeChanged && (completed > 0 || !e.Config.Autonomy.Enabled || len(intents) == 0) {
+		e.mu.Lock()
+		j.Skipped = true
+		e.mu.Unlock()
 		return "Nothing new to reflect on.", nil
 	}
 	// Keep the Job's immutable submitted input intact while using a runtime cue.
-	cue := fmt.Sprintf(dreamPrompt, last) + scopeCue
+	cue := dreamPrompt + "\n\n" + overview + scopeCue
 	result, err := e.turn(j, cue)
 	if err != nil {
 		return result, err
@@ -68,7 +72,7 @@ func (e *Engine) dream(j *runningJob, now time.Time) (string, error) {
 	if _, err = tx.ExecContext(j.ctx, `INSERT INTO memory_state VALUES('reflected-through',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.FormatInt(latest, 10)); err != nil {
 		return result, err
 	}
-	if _, err = tx.ExecContext(j.ctx, `INSERT INTO dreams VALUES(?,?) ON CONFLICT(day) DO UPDATE SET completed=excluded.completed`, day, now.UTC().Format(time.RFC3339Nano)); err != nil {
+	if _, err = tx.ExecContext(j.ctx, `INSERT INTO dreams VALUES(?,?) ON CONFLICT(day) DO UPDATE SET completed=excluded.completed`, day, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		return result, err
 	}
 	if scopeCursors != nil {
@@ -77,6 +81,46 @@ func (e *Engine) dream(j *runningJob, now time.Time) (string, error) {
 		}
 	}
 	return result, tx.Commit()
+}
+
+// A deterministic view, not another model pass. Each represented event has a
+// source/job reference; verbose tool arguments/results stay in the archive.
+// The existing cursor advances only through the represented batch, on success.
+func (m *Memory) dreamOverview(ctx context.Context, after int64, budget int) (string, int64, error) {
+	rows, err := m.DB.QueryContext(ctx, `SELECT rowid,id,stamp,session,job,role,content FROM journal
+ WHERE rowid>? AND role IN ('user','assistant') ORDER BY rowid`, after)
+	if err != nil {
+		return "", after, err
+	}
+	defer rows.Close()
+	var b strings.Builder
+	through := after
+	for rows.Next() {
+		var row int64
+		var entry MemoryEntry
+		if err = rows.Scan(&row, &entry.ID, &entry.Time, &entry.Session, &entry.Job, &entry.Role, &entry.Content); err != nil {
+			return "", after, err
+		}
+		text, calls, _ := strings.Cut(entry.Content, "\nTool request: ")
+		entry.Content = truncate(text, 700)
+		if len(text) > len(entry.Content) {
+			entry.Content += " [excerpt; read source for full text]"
+		}
+		if calls != "" {
+			for _, call := range strings.Split(calls, "\nTool request: ") {
+				name, _, _ := strings.Cut(call, " ")
+				entry.Content += "\nTool: " + truncate(name, 60) + " (details: read job)"
+			}
+		}
+		line := entryText(entry)
+		if b.Len()+len(line) > budget {
+			b.WriteString("\nMore experiences remain for the next dream.\n")
+			break
+		}
+		b.WriteString(line)
+		through = row
+	}
+	return b.String(), through, rows.Err()
 }
 
 func reflectionSpecs() []ToolSpec {
@@ -177,19 +221,58 @@ func (e *Engine) dreamScopes(ctx context.Context) (string, map[string]int64, boo
 		return "", nil, false, err
 	}
 	current := map[string]int64{}
-	cue := "\nExperiences across people and families (scope is a native sharing boundary, not a Telegram group):\n"
+	cue := "\nNew family experiences (source IDs retrieve full entries; job IDs retrieve tool details):\n"
 	changed := false
 	for _, engine := range e.engines()[1:] {
-		var latest int64
-		if err := engine.Memory.DB.QueryRowContext(ctx, `SELECT COALESCE(max(rowid),0) FROM journal WHERE role IN ('user','assistant')`).Scan(&latest); err != nil {
+		text, latest, err := engine.Memory.dreamOverview(ctx, previous[engine.Scope], max(1600, 16000/len(e.scopes)))
+		if err != nil {
 			return "", nil, false, err
 		}
 		current[engine.Scope] = latest
 		if latest > previous[engine.Scope] {
 			changed = true
-			cue += fmt.Sprintf("scope=%s; read part=after-%d; snapshot through row %d.\n", jsonText(engine.Scope), previous[engine.Scope], latest)
+			cue += fmt.Sprintf("\nscope=%s\n%s", jsonText(engine.Scope), text)
 		}
 	}
-	cue += "Use memory scope to read or update that family's notes. Keep personal details in their original scope. Global reflection is private; the shared soul expresses general values and methods, never private facts or identifiable stories. Learn across experiences without transferring confidences between families."
+	if len(e.scopes) > 1 {
+		cue += "Legacy multiple-family installation: use memory scope for each family's notes; keep confidences within their source scope."
+	}
 	return cue, current, changed, nil
+}
+
+// Operational evidence only; no prompt, transcript or private error details.
+func (e *Engine) dreamStatus() map[string]any {
+	out := map[string]any{"enabled": e.Config.Memory.Enabled && e.Config.Memory.Dream}
+	for _, task := range e.Scheduler.List() {
+		if task.Kind == "dream" && task.Enabled {
+			out["next"] = task.Next
+		}
+	}
+	var raw string
+	err := e.Memory.DB.QueryRow("SELECT payload FROM jobs WHERE json_extract(payload,'$.kind')='dream' ORDER BY created DESC,id LIMIT 1").Scan(&raw)
+	if err == nil {
+		var j Job
+		if err = json.Unmarshal([]byte(raw), &j); err == nil {
+			outcome := j.Status
+			if outcome == "completed" && j.Skipped {
+				outcome = "skipped"
+			}
+			attempt := map[string]any{"job_id": j.ID, "started": j.Created, "outcome": outcome}
+			if j.Error != "" {
+				attempt["error"] = errorInfo(errors.New(j.Error))
+			}
+			out["last_attempt"] = attempt
+		}
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		out["read_error"] = errorInfo(err)
+	}
+	var completed string
+	err = e.Memory.DB.QueryRow("SELECT completed FROM dreams ORDER BY completed DESC LIMIT 1").Scan(&completed)
+	if err == nil {
+		out["last_completed"] = completed
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		out["read_error"] = errorInfo(err)
+	}
+	return out
 }

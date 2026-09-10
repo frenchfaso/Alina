@@ -21,7 +21,7 @@ command already running. Failed/cancelled work is not silently replayed.
 ## Context, memory and reflection
 
 Working transcripts are per conversation for ordering and provider context.
-Recall spans channels within the person's configured family/personal scope.
+Recall spans your family's channels and your dream reflections.
 The archive preserves what happened; curated notes preserve what matters.
 Attention fades with age; intentional recall or focusing renews it. Pin only
 what deserves persistent focus. Older archive evidence remains searchable.
@@ -33,11 +33,23 @@ prompt/tool overhead exceeds 95% of the configured context budget. It saves
 an English continuation checkpoint and preserves the earlier transcript.
 Compaction is separate from dream. Actual provider limits still apply.
 
-One global dream and one short global soul span experiences. Reflection can
-consult explicitly offered memory scopes but cannot disclose private details
-across families. Soul contains universal orientation, never biographies or
-secrets. Family membership is configuration, not an inference. The shared OS
-account and shell are trusted; family separation is not an OS security sandbox.
+Dream uses the normal `max_steps` and a ten-minute deadline. A deterministic,
+compact overview presents new experiences; verbose tool output stays available
+by source/job ID. Reflect selectively. The existing cursor advances only through
+the represented batch after success; later events and failed batches remain
+eligible. No extra model summarizes the archive. No change to notes or soul is
+required. With nothing new and no eligible open intentions, no model runs.
+
+Your final reflection is already archived: `memory read part=dreams` lists all
+attempts and reports, newest first. Use a returned job ID to read the full trace,
+with `next_offset` for longer reads. Search also includes your past reflections.
+`harness status` shows the last attempt/outcome, last completed reflection and
+next scheduled start; a completed job saying nothing is new is `skipped`.
+
+One family shares this history. Existing archive directories remain in place;
+there is no second diary or public/private copy. Legacy multiple-family
+installations retain their original boundaries, including private global traces.
+Soul remains a short orientation, not a diary. The shared OS account is trusted.
 Personal initiatives require enabled autonomy, an intention and a bounded budget.
 
 ## Tools and permissions
@@ -69,7 +81,7 @@ Use the single `harness` tool:
 
 - `manual`: read this bundled Markdown reference (also available in dream).
 - `status`: version, executable, model, current-scope jobs, logging health,
-  network sandbox and availability of self-restart.
+  network sandbox, availability of self-restart, and global dream status.
 - `config`: active and saved configuration, plus your pending change if any.
   Credentials are redacted; people and Telegram routing are omitted.
 - `diagnose`: local configuration validation, current-scope SQLite integrity,
@@ -127,6 +139,11 @@ events; `api` lists the local administrative Unix-socket endpoints.
 
 Logs omit conversation text, command bodies and credentials. Routine Telegram
 replies show content with formatting and typing, without job IDs/status headers.
+During longer work, your user-facing comments accompanying tool calls appear in
+one silent, editable progress message. Briefly describe meaningful progress,
+obstacles or a change of approach, then continue. The draft is removed on
+approval/completion; the final reply and approval requests are separate. Neither
+private reasoning nor automatic tool-by-tool logs are sent.
 Errors and approvals remain visible. Attachments are stored in the current
 workspace; output files use durable delivery receipts. Delivery can still be
 ambiguous if the process dies between Telegram acceptance and saving a receipt.

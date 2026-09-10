@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -17,30 +16,30 @@ func (w *wizard) personDetails(c *Config, u *User) error {
 		if w.err != nil {
 			return w.err
 		}
-		families := []string{}
-		for _, p := range c.Users {
-			if p.Family != "" && !slices.Contains(families, p.Family) {
-				families = append(families, p.Family)
+		if len(c.Users) == 0 {
+			u.Family = "home"
+		} else if !slices.ContainsFunc(c.Users, func(p User) bool { return p.ID == u.ID }) {
+			u.Family = c.localUser().Family
+			if u.Family == "" {
+				return errors.New("legacy personal archive: configure a shared family with alina config apply before adding people")
 			}
-		}
-		if len(families) > 0 {
-			fmt.Fprintln(w.out, "Famiglie esistenti:", strings.Join(families, ", "))
-		}
-		u.Family = w.ask("Famiglia: ID esistente o nuovo; vuoto = personale, - rimuove", u.Family)
-		if u.Family == "-" {
-			u.Family = ""
 		}
 		check := Config{Users: []User{*u}}
 		if err := check.validatePeople(); err == nil {
 			return w.err
 		}
-		fmt.Fprintln(w.out, "Nome richiesto; ID famiglia: massimo 40 lettere ASCII, numeri, _ o -.")
+		fmt.Fprintln(w.out, "Nome richiesto, massimo 80 caratteri.")
 	}
 	return w.err
 }
 
 func (w *wizard) people(c *Config, client *http.Client, edit bool) error {
-	fmt.Fprintln(w.out, "Persone · stessa famiglia = memoria condivisa; famiglia vuota = memoria personale.\nGli utenti autorizzati sono fidati e possono usare il dispositivo. Soul e introspezione restano unici.")
+	fmt.Fprintln(w.out, "Una famiglia, più persone riconoscibili. Memoria e dream sono condivisi.\nGli utenti autorizzati sono fidati e possono usare il dispositivo.")
+	// A legacy personal owner becomes the first member of their household.
+	// NewEngine retains that owner's archive in place when the config is saved.
+	if len(c.Users) == 1 && c.Users[0].Family == "" {
+		c.Users[0].Family = c.Users[0].ID
+	}
 	first := len(c.Users) == 0
 	if first {
 		u := User{ID: "owner", TelegramID: c.Telegram.OwnerID}
@@ -57,11 +56,7 @@ func (w *wizard) people(c *Config, client *http.Client, edit bool) error {
 			}
 		} else {
 			for i, u := range c.Users {
-				family := u.Family
-				if family == "" {
-					family = "personale"
-				}
-				fmt.Fprintf(w.out, "%d · %s · %s\n", i+1, u.Name, family)
+				fmt.Fprintf(w.out, "%d · %s\n", i+1, u.Name)
 			}
 			action := w.choice("1 aggiungi · 2 modifica · 3 rimuovi · 4 fine", "4", "1", "2", "3", "4")
 			switch action {
@@ -82,7 +77,6 @@ func (w *wizard) people(c *Config, client *http.Client, edit bool) error {
 					}
 					c.Users = slices.Delete(c.Users, index, index+1)
 				} else {
-					fmt.Fprintln(w.out, "Cambiando famiglia, i ricordi precedenti restano nel loro spazio; non vengono trasferiti.")
 					if err := w.personDetails(c, &c.Users[index]); err != nil {
 						return err
 					}

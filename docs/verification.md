@@ -4,9 +4,10 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
-## Validation status at 0.14.4
+## Validation status at 0.15.0
 
-- The latest full macOS race suite and vet checks passed for 0.14.4. Earlier
+- The full macOS race suite passed for 0.15.0; final dream/harness/progress
+  regressions and Go vet also passed after the last metadata changes. Earlier
   native Galaxy tests and platform build checks are recorded per release below.
   BSD has cross-build coverage, not native runtime validation.
 - Real ChatGPT login, Astra inference and OpenAI hosted search passed during
@@ -26,6 +27,31 @@ For another installation, `alina setup` checks its configured accounts.
 `alina doctor --live` repeats integration checks with the daemon stopped and
 uses normal provider usage; it never sends Telegram messages. A private user
 message to the bot checks the complete reply path. See [operations](operations.md).
+
+## Shared dreams and Telegram progress — 0.15.0 (2026-09-10)
+
+The Galaxy's 03:00 dream on 0.14.4 failed after 20.964 seconds: all six steps
+were spent reading intentions and raw archive pages. Provider input across those
+requests totaled 69,491 tokens (44,672 cached); no reflection was completed.
+
+0.15.0 replaces those raw pages with a deterministic bounded overview and uses
+the normal turn step budget. No auxiliary summarizer is added. Successful turns
+advance only the represented batch; failed batches and concurrent experiences
+remain eligible. Final reflections and full traces are shared through existing
+memory tools in single-family installations. Status exposes execution evidence;
+new setup users automatically join the same family. Existing storage stays in
+place, with legacy multi-family boundaries retained for compatibility.
+
+Nine selected tests passed natively on Galaxy A15, including bounded views with
+large raw tool output, normal dream budgets, shared history/search, failure and
+concurrent-event cursors, legacy personal archive migration, no-change reflection,
+pairing preservation, Telegram draft editing/final delivery, restart cleanup
+failure, and loop commentary. Telegram and provider calls in these tests use
+fixtures; they do not establish actual draft visibility in a user's chat.
+
+The full macOS race suite passed, followed by targeted race regressions and Go
+vet after the last status changes. Android/arm64 build passed. All 42 local
+Markdown links checked resolve. No real Telegram test messages were sent.
 
 ## Telegram reaction feedback — 0.14.4 (2026-09-10)
 

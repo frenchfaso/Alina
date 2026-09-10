@@ -24,7 +24,7 @@ setup preserves existing custom settings and explicitly disabled features.
 `alina setup --advanced` retains provider/model selection, alternative search
 keys, work directory, memory/embedding settings and budgets. Run `alina setup`
 afterwards for connection checks. `alina setup telegram` pairs or replaces the bot
-and manages people/family membership, preserving the other settings.
+and manages people in the shared family, preserving the other settings.
 `alina setup --no-start` configures without offering to launch; piped
 input never starts the daemon. Setup/login require the service to be stopped.
 
@@ -335,14 +335,14 @@ autostart remains an explicit supervisor configuration.
 
 ## Shared memory, attention and reflection
 
-Within each native family/personal scope, Alina shares an archive across channels. Source,
+Alina shares memory across the family’s channels and her own reflections. Source,
 job, role and timestamp are provenance and reply-routing information, not recall
 boundaries. Each working conversation still orders its tool exchanges and keeps
 its immediate task context; a bounded excerpt from other conversations helps
 continuity across channels. `/new` changes working context without erasing memory.
-One global private dream learns across those archives and can update the shared
-soul. The shell remains a trusted shared environment, not tenant isolation.
-See [people and one global mind](people.md) for the hard/soft boundaries.
+One dream can update the shared soul; its history and complete traces are
+accessible to the family. Existing archives remain in place, including legacy
+multiple-family boundaries. See [people and one global mind](people.md).
 
 There are three independent concerns:
 
@@ -381,11 +381,22 @@ are preserved and the reflection prompt guides faithful translation when needed.
 
 Dream defaults to `0 3 * * *`, with one catch-up after missed executions. It uses
 **the same agent loop and imprinting as chat**, with memory, scheduling, saved-image
-inspection, harness inspection and soul revision tools. It has six iterations, twelve total model calls including any
-checkpoints, and ten minutes. It does not summarize days, archive old records,
-prepare embeddings or execute shell commands. A successful run advances its
-observed-event cursor; messages arriving during reflection remain eligible next
-time. No new events means no model call, except for active personal intentions
+inspection, harness inspection and soul revision tools. It uses the normal
+`max_steps` (default 20) and a ten-minute deadline. No separate six-step or
+12-call limit applies. It does not summarize days, archive old records, prepare
+embeddings or execute shell commands. A deterministic overview includes compact
+conversation excerpts and tool names, with source/job IDs for optional details.
+It includes up to 4000 bytes from the global archive and about 16000 across the
+family archives (minimum 1600 per legacy scope), plus headings. There is no
+extra summarization call. A successful run advances existing cursors only through
+the represented batch; later entries, concurrent messages and failed batches
+remain eligible. Raw tool output and full messages stay archived.
+
+The final response is the dream report, already preserved in the archive.
+`memory read part=dreams` lists attempts and results; read a job ID for its full
+transcript. Ordinary family search includes global reflections. `harness status`
+and `alina status` expose the last attempt, last completed reflection and next
+scheduled time, distinguishing skipped work from actual reflection. No new events means no model call, except for active personal intentions
 under enabled autonomy (at most once successfully per date). Personal exploration
 still runs in separately budgeted one-shot initiatives.
 
@@ -405,6 +416,7 @@ views from 0.2 are retained snapshots and are no longer refreshed.
 
 ```sh
 alina api POST /v1/memory/jobs '{"kind":"dream"}'
+alina api GET '/v1/memory/read?q=dreams'
 alina api GET '/v1/memory/read?q=focus'
 alina api GET '/v1/memory/read?q=SOURCE_ID&offset=16000'
 alina api GET '/v1/memory/search?q=backups'

@@ -315,6 +315,33 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 		position = end
 	}
 	switch part {
+	case "dreams":
+		rows, err := m.DB.QueryContext(ctx, `SELECT payload FROM jobs WHERE json_extract(payload,'$.kind')='dream' ORDER BY created DESC,id`)
+		if err != nil {
+			return MemoryPage{}, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var raw string
+			var job Job
+			if err = rows.Scan(&raw); err != nil {
+				return MemoryPage{}, err
+			}
+			if err = json.Unmarshal([]byte(raw), &job); err != nil {
+				return MemoryPage{}, err
+			}
+			outcome := job.Status
+			if job.Skipped {
+				outcome = "skipped"
+			}
+			appendPart(fmt.Sprintf("\n## %s · %s · read part=%s\n%s\n%s\n", job.Created.In(m.loc).Format(time.RFC3339), outcome, job.ID, job.Output, job.Error))
+			if b.Len() > limit {
+				break
+			}
+		}
+		if err = rows.Err(); err != nil {
+			return MemoryPage{}, err
+		}
 	case "soul":
 		text, notice := m.Soul()
 		appendPart(text + "\n" + notice)
@@ -331,6 +358,19 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 		}
 		appendPart(text)
 	default:
+		var job Job
+		var raw string
+		err := m.DB.QueryRowContext(ctx, "SELECT payload FROM jobs WHERE id=?", part).Scan(&raw)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return MemoryPage{}, err
+		}
+		isJob := err == nil
+		if isJob {
+			if err = json.Unmarshal([]byte(raw), &job); err != nil {
+				return MemoryPage{}, err
+			}
+			appendPart(fmt.Sprintf("# %s · %s · %s\n%s\n%s\n", job.Kind, job.Created.In(m.loc).Format(time.RFC3339), job.Status, job.Output, job.Error))
+		}
 		if part == "today" {
 			part = now.In(m.loc).Format("2006-01-02")
 		}
@@ -342,11 +382,14 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 				return MemoryPage{}, errors.New("invalid archive cursor")
 			}
 		}
-		if _, err := time.Parse("2006-01-02", part); err == nil || part == "archive" || part == "week" || after >= 0 {
+		if _, err := time.Parse("2006-01-02", part); err == nil || part == "archive" || part == "week" || after >= 0 || isJob {
 			query := "SELECT id,stamp,session,job,role,content FROM journal"
 			var args []any
 			order := " ORDER BY rowid"
 			switch {
+			case isJob:
+				query += " WHERE job=?"
+				args = []any{job.ID}
 			case part == "week":
 				appendPart("# Previous seven days · archive view\n")
 				query += " WHERE day>=? AND day<?"
@@ -384,7 +427,7 @@ func (m *Memory) ReadPage(ctx context.Context, part string, offset int, now time
 			if err != nil {
 				return MemoryPage{}, err
 			}
-			if count == 0 && part != "archive" && part != "week" && after < 0 {
+			if count == 0 && part != "archive" && part != "week" && after < 0 && !isJob {
 				var text string
 				if err = m.DB.QueryRowContext(ctx, "SELECT summary FROM days WHERE day=?", part).Scan(&text); err != nil {
 					return MemoryPage{}, err

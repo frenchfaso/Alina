@@ -18,9 +18,9 @@ enough harness to leave room for her own way of being useful.
 - **Make room for curiosity.** With autonomy enabled, she can keep intentions,
   schedule her own next steps, explore, and save useful procedures. You choose
   the scope and budget. A new message can steer her work; `/stop` can halt it.
-- **Keep one Alina.** People in the same family can share remembered context.
-  Personal and family memory have their own scopes, while one shared soul
-  develops through reflection on those different experiences.
+- **Keep one Alina.** One family shares remembered context and the history of her
+  dreams. She recognizes each person, while one shared soul develops through
+  those different experiences.
 
 Conversation, scheduled work, exploration and dream all use the same agent loop.
 A Go daemon, a few native tools, SQLite and readable Markdown give that loop

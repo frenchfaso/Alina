@@ -91,9 +91,9 @@ func stateHandlers(mux *http.ServeMux, e *Engine, reply func(http.ResponseWriter
 					return
 				}
 			}
-			out, err = e.Memory.ReadPage(r.Context(), r.URL.Query().Get("q"), offset, time.Now())
+			out, err = e.readMemory(r.Context(), r.URL.Query().Get("q"), offset, time.Now())
 		case "search":
-			out, err = e.Memory.Recall(r.Context(), r.URL.Query().Get("q"))
+			out, err = e.recall(r.Context(), r.URL.Query().Get("q"))
 		default:
 			http.NotFound(w, r)
 			return

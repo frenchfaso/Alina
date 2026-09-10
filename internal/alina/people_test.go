@@ -298,7 +298,7 @@ func TestPeopleSetupAndPairingPreserveExistingMessages(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
-	w := &wizard{dir: dir, ctx: context.Background(), in: bufio.NewReader(strings.NewReader("1\nBea\nhome\n4\n")), out: &out}
+	w := &wizard{dir: dir, ctx: context.Background(), in: bufio.NewReader(strings.NewReader("1\nBea\n4\n")), out: &out}
 	if err := w.people(&c, client, true); err != nil {
 		t.Fatal(err, out.String())
 	}

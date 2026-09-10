@@ -177,7 +177,7 @@ func handler(e *Engine, owners ...string) http.Handler {
 		return true
 	}
 	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, map[string]any{"version": Version, "pid": os.Getpid(), "provider": e.Config.Provider, "model": e.Config.Model, "network_sandbox": sandboxAvailable(), "jobs": jobSummaries(e.Jobs("")), "logging": e.Events.health()})
+		reply(w, e.harnessStatus())
 	})
 	mux.HandleFunc("POST /v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

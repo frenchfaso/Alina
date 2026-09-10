@@ -9,7 +9,7 @@ import (
 func stateToolSpecs() []ToolSpec {
 	s := func() map[string]any { return map[string]any{"type": "string"} }
 	return []ToolSpec{
-		{Name: "memory", Description: "Search the current memory scope across its channels. Read focus/recent/archive/soul, a date, after-N or a returned ID, with next_offset pagination. Reading a note intentionally refreshes its attention. Focus a note explicitly; pinned=true keeps it present, pinned=false releases the pin. Automatic views never reinforce notes. Note facts, preferences, lessons or hypotheses; supersedes explicitly corrects a prior ID. Keep personal intentions distinct from user commitments: intentions lists them, intend creates/updates with a reason, next step and stopping condition. No secrets.", Parameters: map[string]any{"type": "object", "properties": map[string]any{
+		{Name: "memory", Description: "Search shared family memory, including dream reflections. Read focus/recent/archive/soul/dreams, a date, after-N or a returned source/job ID, with next_offset pagination. dreams lists attempts and reports; job IDs retrieve full transcripts. Reading a note intentionally refreshes its attention. Focus a note explicitly; pinned=true keeps it present, pinned=false releases the pin. Automatic views never reinforce notes. Note facts, preferences, lessons or hypotheses; supersedes explicitly corrects a prior ID. Keep personal intentions distinct from user commitments: intentions lists them, intend creates/updates with a reason, next step and stopping condition. No secrets.", Parameters: map[string]any{"type": "object", "properties": map[string]any{
 			"action": map[string]any{"type": "string", "enum": []string{"search", "read", "note", "focus", "intentions", "intend"}}, "query": s(), "part": s(), "text": s(), "kind": s(), "supersedes": s(), "sources": map[string]any{"type": "array", "items": s()}, "pinned": map[string]any{"type": "boolean"}, "offset": map[string]any{"type": "integer", "minimum": 0}, "id": s(), "title": s(), "why": s(), "next": s(), "stop": s(), "status": map[string]any{"type": "string", "enum": []string{"active", "done", "dropped"}}}, "required": []string{"action"}}},
 		{Name: "schedule", Description: "Manage agent tasks: list/add/pause/resume/remove. Use cron for user-requested recurring work or at (RFC3339) for one wake-up. Personal exploration MUST specify origin=self and an active intention_id; it is one-shot, runs quietly within configured scope and daily budget, and never changes permissions.", Parameters: map[string]any{"type": "object", "properties": map[string]any{
 			"action": map[string]any{"type": "string", "enum": []string{"list", "add", "pause", "resume", "remove"}}, "id": s(), "name": s(), "cron": s(), "at": s(), "prompt": s(), "origin": map[string]any{"type": "string", "enum": []string{"user", "self"}}, "intention_id": s(), "catch_up": map[string]any{"type": "boolean"}}, "required": []string{"action"}}},
@@ -36,10 +36,10 @@ func (e *Engine) stateTool(j *runningJob, c ToolCall) (string, error) {
 		memory := selected.Memory
 		switch a.Action {
 		case "search":
-			r, err := memory.Recall(j.ctx, a.Query)
+			r, err := selected.recall(j.ctx, a.Query)
 			return jsonText(r), err
 		case "read":
-			r, err := memory.ReadPage(j.ctx, a.Part, a.Offset, time.Now())
+			r, err := selected.readMemory(j.ctx, a.Part, a.Offset, time.Now())
 			return jsonText(r), err
 		case "note":
 			id, err := memory.Note(j.ctx, time.Now(), j.Session, j.ID, a.Kind, a.Text, a.Supersedes, a.Sources)

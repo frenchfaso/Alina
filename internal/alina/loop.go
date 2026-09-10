@@ -83,9 +83,6 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		input = cue[0]
 	}
 	specs, maxSteps := e.toolsFor(j), e.Config.MaxSteps
-	if j.Kind == "dream" {
-		maxSteps = 6
-	}
 	prompt := e.prompt(specs)
 	context, err := e.runtimeContext(j)
 	if err != nil {
@@ -160,6 +157,7 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			}
 			continue
 		}
+		e.commentary(j, msg.Content)
 		for _, call := range msg.Calls {
 			if err = j.ctx.Err(); err != nil {
 				return "", err
@@ -211,6 +209,9 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 				return "", err
 			}
 		}
+	}
+	if j.Kind == "dream" {
+		return "", errors.New("step budget reached; reflection unfinished; experiences remain eligible for the next dream")
 	}
 	return "", errors.New("step budget reached; progress saved; use POST /v1/jobs/{id}/resume through alina api to continue")
 }

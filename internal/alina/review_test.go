@@ -156,8 +156,8 @@ func TestOpenAIResearchUsesInitiativeBudgetAndUsage(t *testing.T) {
 	if _, err := e.tool(j, call); err == nil || !strings.Contains(err.Error(), "budget") {
 		t.Fatal("research bypassed budget", err)
 	}
-	if calls != 1 || j.Usage.InputTokens != 100 || j.Usage.OutputTokens != 20 || j.modelCalls != 1 {
-		t.Fatal("untracked inference", calls, j.Usage, j.modelCalls)
+	if calls != 1 || j.Usage.InputTokens != 100 || j.Usage.OutputTokens != 20 {
+		t.Fatal("untracked inference", calls, j.Usage)
 	}
 }
 

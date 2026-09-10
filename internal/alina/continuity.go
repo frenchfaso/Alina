@@ -93,9 +93,6 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 		return Message{}, errRequestChanged
 	}
 
-	if m.j.Kind == "dream" && m.j.modelCalls >= 12 {
-		return Message{}, errors.New("reflection model-call budget reached; notes and archive retained")
-	}
 	if m.j.Kind == "initiative" {
 		if !m.e.Config.Autonomy.Enabled {
 			return Message{}, errors.New("personal exploration disabled")
@@ -110,7 +107,6 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 			return Message{}, errors.New("daily personal exploration budget reached; intention retained")
 		}
 	}
-	m.j.modelCalls++
 	if purpose != "search" && m.j.model != nil {
 		ctx = context.WithValue(ctx, selectedModelKey{}, *m.j.model)
 		if ctx.Value(reasoningEffortKey{}) == nil && m.j.Reasoning != "" {

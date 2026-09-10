@@ -31,6 +31,7 @@ type Telegram struct {
 	mu       sync.Mutex
 	state    telegramState
 	stateErr error
+	drafts   map[telegramDraftKey]*telegramDraft // Owned by the notification worker.
 }
 type tgMessage struct {
 	ReplyTo   *tgMessage `json:"reply_to_message,omitempty"`
@@ -458,6 +459,7 @@ func (t *Telegram) notify(ctx context.Context) {
 	for ctx.Err() == nil {
 		changed := t.Engine.jobChanged.watch()
 		more, err := t.deliverPending(ctx)
+		delay := t.syncProgress(ctx, time.Now())
 		if err != nil {
 			backoff = min(max(5*time.Second, 2*backoff), time.Minute)
 			timer := time.NewTimer(backoff)
@@ -472,9 +474,19 @@ func (t *Telegram) notify(ctx context.Context) {
 		if more {
 			continue // Drain the persisted backlog before waiting for new work.
 		}
+		var timer *time.Timer
+		var due <-chan time.Time
+		if delay > 0 {
+			timer = time.NewTimer(delay)
+			due = timer.C
+		}
 		select {
 		case <-ctx.Done():
 		case <-changed:
+		case <-due:
+		}
+		if timer != nil {
+			timer.Stop()
 		}
 	}
 }

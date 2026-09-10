@@ -29,6 +29,7 @@ type Job struct {
 	Kind            string       `json:"kind,omitempty"`
 	Input           string       `json:"input"`
 	Status          string       `json:"status"`
+	Skipped         bool         `json:"skipped,omitempty"`
 	Output          string       `json:"output,omitempty"`
 	Error           string       `json:"error,omitempty"`
 	Activity        string       `json:"activity,omitempty"`
@@ -47,7 +48,7 @@ type runningJob struct {
 	decision    chan string
 	done        chan struct{}
 	after       <-chan struct{}
-	modelCalls  int
+	commentary  string // User-facing intermediate text, never private reasoning.
 	accepting   bool
 	steerSignal chan struct{}
 }
@@ -328,6 +329,7 @@ func (e *Engine) allow(j *runningJob, a Action) error {
 	decision := make(chan string, 1)
 	j.decision = decision
 	j.Status = "approval"
+	j.commentary = ""
 	j.Approval = &Approval{ID: randomID(), Action: a, Expires: time.Now().Add(15 * time.Minute)}
 	err := e.persist(j)
 	approvalID := j.Approval.ID
@@ -372,6 +374,15 @@ func (e *Engine) allow(j *runningJob, a Action) error {
 	}
 }
 func (e *Engine) activity(j *runningJob, text string) { e.mu.Lock(); j.Activity = text; e.mu.Unlock() }
+func (e *Engine) commentary(j *runningJob, text string) {
+	if j.Kind == "dream" || j.Kind == "initiative" || strings.TrimSpace(text) == "" {
+		return
+	}
+	e.mu.Lock()
+	j.commentary = e.Memory.redact(truncate(strings.TrimSpace(text), 3000))
+	e.mu.Unlock()
+	e.jobChanged.wake()
+}
 func (e *Engine) finish(j *runningJob, output string, err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

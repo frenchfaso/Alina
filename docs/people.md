@@ -1,116 +1,90 @@
-# People, families and one global mind
+# One family, one Alina
 
-Alina has one personality, one `soul.md` and one scheduled dream. Conversations
-belong to native memory scopes: a family shares an archive; an unaffiliated
-person has a personal archive. Telegram groups do not define membership.
+Alina recognizes each person and shares memory across the family, including her
+own dream history. Telegram accounts remain separate conversations with distinct
+reply destinations; a Telegram group is not required. One soul, one reflection
+schedule and one inference gate serve everyone.
 
 ## Setup
 
-With the daemon stopped, run `alina setup telegram`. Connect a dedicated bot,
-give the first person a name and an optional family ID, then add other people
-through single-use pairing links. Matching family IDs share memory. A blank
-family means personal memory. Running the command again offers add/edit/remove.
-The first person is also the default identity for local chat. New local jobs and
-tasks capture that person's stable ID; changing `local_user` does not reassign
-them. Old records with owner `local` have no recoverable person binding and stay
-unattributed. In native-family mode, their schedules are disabled when due;
-recreate any still-needed task under the intended user. Legacy single-user mode
-continues to use `local` normally.
+Stop the daemon and run `alina setup telegram`. Pair a dedicated bot, give the
+first person a name, then add others through single-use pairing links. There is
+no family question: new users join the default person's family. Repeat the
+command to add, rename or remove people. The first person is the default for
+local chat; `local_user` can be changed through `alina config apply`.
 
-All configured people are trusted device operators. Families separate memory,
-not Unix accounts. The wizard says this explicitly. It never adds a person from
-a display name or a claim made in chat: Telegram's authenticated numeric ID is
-the account binding.
+All configured people are trusted device operators. Telegram's authenticated
+numeric ID identifies the person; names or claims in chat never grant access.
+Memory sharing does not make people's preferences or requests interchangeable.
+Messages, files and approval requests still go to the requester. `/stop` affects
+that person's work, not everyone else's.
 
-Configuration can also be managed through `alina config apply`:
+A configuration example (IDs are placeholders):
 
 ```json
 {
   "users": [
     {"id":"alex", "name":"Alex", "telegram_id":111, "family":"home"},
-    {"id":"bea", "name":"Bea", "telegram_id":222, "family":"home"},
-    {"id":"chris", "name":"Chris", "telegram_id":333}
+    {"id":"bea", "name":"Bea", "telegram_id":222, "family":"home"}
   ],
   "local_user":"alex"
 }
 ```
 
-The IDs above are examples, not real account bindings. A patch replaces the
-whole `users` array. User/family IDs are stable ASCII labels, up to 40 characters
-(letters, digits, `_`, `-`); display names can change. The POC permits 32 people.
-An added family member can recall that family's existing history. Moving a
-person changes their current scope; it does not copy or relabel old records.
-Histories of inactive scopes remain on disk but are not attached automatically.
+A patch replaces the entire `users` array. IDs are stable ASCII labels; names
+can change. The POC permits 32 people. Keep the existing `family` value when
+editing users: it also identifies the historical archive location.
 
-## Hard boundaries and discretion
+## Remembering dreams
 
-Native memory operations, relevance/search, transcripts, attachments and file
-tools use the authenticated person's scope. A conversation cannot choose
-another scope by passing an ID or a `scope` tool argument. Messages and pending
-approvals go to their requesting Telegram account, including scheduled jobs.
-Members of a family share memories but retain distinct names, preferences,
-active conversations and approval ownership. Durable/restart grants apply to
-their scope, for the existing exact command/directory permission contract.
+The ordinary `memory` tool searches both the family archive and the global mind.
+`read part=dreams` lists attempts, outcomes and final reflections, newest first.
+Read a returned source ID for a message, or a job ID for its complete transcript;
+long reads return `next_offset`. There is no separate diary or public/private
+copy. Interpretations remain distinct from verified observations.
 
-Global dream can explicitly inspect all active scopes, revisit evidence and
-update notes in their original archive. Its interpretations and transcript stay
-in the private global archive. It can distill general values, methods and
-lessons into the shared soul. Prompts ask Alina to use discretion: do not turn
-the soul into identifiable stories, quotes, family facts or secrets; do not
-transfer confidences into another family's replies or notes. This is a model
-instruction, not a deterministic privacy filter.
+Dream starts with a compact, deterministic batch of new conversation excerpts
+and tool names. Full text and tool output remain accessible by ID. Existing
+cursors advance only through the represented batch, after a successful turn;
+failed batches and concurrent or later events remain eligible. No additional
+model summarizes the archive. Context compaction remains separate.
 
-The shell, configured work directory and administrative local API are shared
-on the same OS account. Those paths rely on Alina's discretion and the trust
-between configured operators. This design does not claim tenant isolation.
+`harness status` and `alina status` expose the last attempt/outcome, most recent
+completed reflection and next scheduled time. A successful job with nothing to
+reflect on is reported as `skipped`, not as a completed reflection.
 
-## Small implementation
+## Existing installations
 
-There is still one process and one turn implementation. Each active scope
-reuses that implementation with its own SQLite state, transcripts, workspace,
-schedules and grants. A global inference gate prioritizes foreground work.
-The daily personal-exploration budget is shared; adding families does not
-multiply it. Only the global scheduler creates the built-in dream.
+Original SQLite databases, transcripts, workspaces and grants stay in place.
+The global mind remains under `$ALINA_HOME/mind`; the family's archive may live
+at the state root or under `scopes/`, as recorded by `people-state.json`. Shared
+retrieval reads these existing stores without copying records or changing IDs.
+A legacy single personal owner can become the first member of a family: its
+binding is updated on startup while its archive stays at the original path.
+An existing destination archive is never overwritten or silently merged.
 
-The global state lives in `$ALINA_HOME/mind`; other scopes live under `scopes/`.
-The former single-user archive stays at its original path and is bound once in
-`people-state.json`. Existing single-user configurations continue to work until
-native users are configured. Once that binding exists, removing all users is
-rejected rather than exposing family state through legacy `owner_id` mode.
-Do not delete or edit the binding to change membership.
+Older installations with multiple family/personal scopes retain their original
+boundaries and private global reflection. The simplified wizard does not create
+new families. Other legacy scope IDs and local API selectors remain for archive
+compatibility; inactive histories stay on disk. Do not delete the binding file.
 
-Dream snapshots each active archive's latest conversation row and remembers
-its cursor after a successful reflection. Concurrent new messages remain
-eligible for the next dream. It receives a compact index, not every archive in
-the prompt. Context compaction remains separate and driven by context usage.
-
-Pairing persists messages from already authorized people before acknowledging
-Telegram updates, then the daemon drains that inbox. If a saved message predates
-a family change, Alina asks the sender to resend it into the new scope. Removed
-users' scheduled tasks are disabled when next due; old results are not redirected.
-Failed delivery to one person does not prevent delivery to others.
+Pairing preserves pending updates from authorized users. Removed users' scheduled
+tasks are disabled when next due; replies are not reassigned. Unattributed legacy
+`local` records stay unattributed, even if the default local person changes.
 
 ## Local administration
 
-`alina chat` and `status` default to `local_user`. The Unix socket remains an
-administrative interface, not an authentication boundary:
-
 ```sh
 alina api GET /v1/people
-alina api GET '/v1/memory/read?q=focus&user=bea'
+alina api GET '/v1/memory/read?q=dreams'
+alina api GET '/v1/memory/read?q=JOB_ID&offset=16000'
+alina api GET '/v1/memory/search?q=reflection'
 alina api GET '/v1/status?scope=global'
-alina api GET '/v1/tasks?user=alex'
 alina api POST /v1/memory/jobs '{"kind":"dream"}'
 ```
 
-Use `?user=ID` for a person's current scope and local identity, or `?scope=...`
-for explicit archive administration. A requested dream always runs globally.
-Diagnostic agents should select the intended user explicitly rather than assume
-the default local identity matches the person requesting help. `doctor` checks
-all stored scope databases, including inactive ones, without traversing workspaces.
-
-The `harness` tool follows these boundaries: job status and diagnostic events are
-scoped, configuration omits other people and Telegram routing, and in-chat
-patches cannot edit identity bindings. Behavior settings remain device-wide and
-affect all families. Only user conversations may request changes/restarts; the
-global dream can inspect state but cannot change administrative settings.
+`?user=ID` selects the local person's identity; `?scope=...` selects an existing
+archive for administration. A requested dream always runs globally. The Unix
+socket and shell run under the same trusted OS account. `doctor` checks all stored
+scope databases. Configuration credentials and identity bindings still require
+local setup/config; autonomous dream cannot change them or restart the daemon.
