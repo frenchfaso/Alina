@@ -12,17 +12,22 @@ runs; they may since have changed.
 - Full macOS `go test -race ./...` and `go vet ./...` passed. Request fixtures
   verify low effort for chat/checkpoints/search, reasoning/phase replay and usage
   accounting; dream and personal-default reset tests also passed.
-- Android arm64 binary cross-built successfully. No native run or live provider
-  benchmark was performed for this release: the Galaxy A15 SSH endpoint timed
-  out on three connection attempts. Deployment and resetting its saved global
-  and personal model/effort settings are still pending; last verified device
-  version remains 0.15.1.
+- Android arm64 binary cross-built successfully and deployed to the Galaxy A15
+  after Tailscale connectivity was restored. Version 0.15.2 started as a daemon;
+  native `doctor` passed (optional document converter unavailable). No live
+  provider benchmark was performed for this release.
+- Saved model is Astra, with low chat/dream/checkpoint effort and low verbosity;
+  hosted search follows the model. Both configured users inherit these settings:
+  neither archive contained personal model/effort overrides. Memory and account
+  configuration were preserved. Temporary deployment files were removed.
+- Deployed binary SHA-256:
+  `0c1052f3d4b8fa9cd08a215ca0fb1540be4d7459d5d465418aebf0762fbf591d`.
 - Token-efficiency audit checked the existing stable-prefix, stateless reasoning
   replay, bounded context and lazy documentation design against official OpenAI
   guidance. No backend-unverified API cache parameters were added. See
   [token efficiency](operations.md#token-efficiency) for limits.
 
-## Validation status at 0.15.1
+## Validation status at 0.15.2
 
 - The full macOS race suite passed for 0.15.0; final dream/harness/progress
   regressions and Go vet also passed after the last metadata changes. Earlier
@@ -34,7 +39,7 @@ runs; they may since have changed.
   additionally verified bot access and authenticated model-catalog loading.
   Automated delivery tests use fixtures. Actual typing visibility and model
   button rendering are not established by those tests.
-- The latest recorded Galaxy deployment is 0.15.1, with only the current
+- The latest recorded Galaxy deployment is 0.15.2, with only the current
   executable retained. Camera metadata and a temporary JPEG were verified
   in 0.14.3 through the corrected shell environment/filter. The image was not sent.
 - Live OpenCode Go, Tavily, Brave and remote embeddings remain unverified in
