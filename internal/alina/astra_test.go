@@ -29,10 +29,7 @@ func TestAstraOAuthParametersSearchAndUsage(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
-		effort := "medium"
-		if count > 1 {
-			effort = "low"
-		}
+		effort := "low"
 		if body["model"] != defaultModel || body["reasoning"].(map[string]any)["effort"] != effort || body["text"].(map[string]any)["verbosity"] != "low" {
 			t.Error("incorrect Astra parameters", body)
 		}

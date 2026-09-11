@@ -56,7 +56,7 @@ func TestDreamUsesNormalBudgetAndSharesHistory(t *testing.T) {
 	calls := 0
 	e := singleFamilyEngine(t, modelFunc(func(ctx context.Context, _ string, msg []Message, _ []ToolSpec, _ func(string)) (Message, error) {
 		calls++
-		if ctx.Value(reasoningEffortKey{}) != "high" {
+		if ctx.Value(reasoningEffortKey{}) != "low" {
 			return Message{}, errors.New("missing dream effort")
 		}
 		if calls < 8 {

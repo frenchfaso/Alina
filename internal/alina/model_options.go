@@ -16,7 +16,7 @@ func (p *Provider) reasoningEffort(ctx context.Context) string {
 	if p.Config.ReasoningEffort != "" {
 		return p.Config.ReasoningEffort
 	}
-	return "medium"
+	return "low"
 }
 
 func (p *Provider) modelClient() *http.Client {

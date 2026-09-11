@@ -178,3 +178,7 @@ that Telegram identity, including pending approvals. It does not cancel other
 people's jobs or disable future schedules/global dream. Cancellation does not
 require a model response. Telegram `/resume` has been removed; the user can send
 a new instruction. Explicit local recovery and self-restart continuations remain.
+
+Default model: GPT-6 Astra, with low reasoning for chat, scheduled work, dreams,
+checkpoints and hosted search; verbosity is low. Existing explicit configuration
+and personal model/effort choices remain in effect until changed.

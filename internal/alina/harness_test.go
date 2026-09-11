@@ -43,7 +43,7 @@ func TestHarnessConfigurationAndPrivacy(t *testing.T) {
 		t.Fatal(out, err)
 	}
 	after, _ := os.ReadFile(filepath.Join(e.Dir, "config.json"))
-	if !bytes.Equal(before, after) || e.Config.ReasoningEffort != "medium" {
+	if !bytes.Equal(before, after) || e.Config.ReasoningEffort != "low" {
 		t.Fatal("staging changed active/saved config")
 	}
 	tx, err := readRestart(e.Dir)
@@ -225,7 +225,7 @@ func TestSelfRestartAndRollback(t *testing.T) {
 			}
 			expected := "high"
 			if fail {
-				expected = "medium"
+				expected = "low"
 			}
 			if saved.ReasoningEffort != expected || saved.Model != c.Model {
 				t.Fatal("wrong saved config", saved.ReasoningEffort, saved.Model)
@@ -261,7 +261,7 @@ func TestRestartRejectsConcurrentConfigWrite(t *testing.T) {
 		t.Fatal("overwrote intervening configuration")
 	}
 	saved, _ := LoadConfig(dir)
-	if saved.Verbosity != "high" || saved.ReasoningEffort != "medium" {
+	if saved.Verbosity != "high" || saved.ReasoningEffort != "low" {
 		t.Fatal("intervening edit lost")
 	}
 }

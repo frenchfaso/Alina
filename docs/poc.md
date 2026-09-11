@@ -42,7 +42,7 @@ Files are private plaintext, not encrypted. Configuration updates are atomic.
 
 - **ChatGPT Plus/Pro:** `alina setup login` runs a dedicated OAuth device login.
   The default model is `gpt-6-astra`, with a 272,000-token working window.
-  Chat uses medium reasoning, dream uses high, checkpoints and hosted search
+  Chat, dream, checkpoints and hosted search
   use low. See [Astra defaults and verification](astra.md).
   Enable device login in ChatGPT security settings if required. The fallback
   `alina setup login browser` uses PKCE and validates OAuth state. Its callback binds

@@ -1,6 +1,6 @@
 # Astra configuration
 
-These are the current global defaults. The provider capability figures below
+These are the current global defaults (low effort for all work since 0.15.2). The provider capability figures below
 were checked on 2026-09-08 against the official model/Responses documentation
 and the local Codex 0.153.4 catalog fetched that day. The subscription backend
 is not interchangeable with the public API.
@@ -10,8 +10,8 @@ is not interchangeable with the public API.
 | `model` | `gpt-6-astra` |
 | `context_tokens` | `272000` |
 | Compaction trigger | strictly above 95%, or 258400 tokens |
-| `reasoning_effort` | `medium` |
-| `dream_reasoning_effort` | `high` |
+| `reasoning_effort` | `low` |
+| `dream_reasoning_effort` | `low` |
 | `checkpoint_reasoning_effort` | `low` |
 | Hosted search effort | `low` |
 | `verbosity` | `low` |

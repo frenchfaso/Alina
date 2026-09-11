@@ -4,6 +4,24 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Astra low defaults — 0.15.2 (2026-09-11)
+
+- Default chat, scheduled work and dream reasoning now use low, matching
+  checkpoints and hosted search. The provider fallback is also low. Model remains
+  GPT-6 Astra; context remains 272000 with compaction above 95%.
+- Full macOS `go test -race ./...` and `go vet ./...` passed. Request fixtures
+  verify low effort for chat/checkpoints/search, reasoning/phase replay and usage
+  accounting; dream and personal-default reset tests also passed.
+- Android arm64 binary cross-built successfully. No native run or live provider
+  benchmark was performed for this release: the Galaxy A15 SSH endpoint timed
+  out on three connection attempts. Deployment and resetting its saved global
+  and personal model/effort settings are still pending; last verified device
+  version remains 0.15.1.
+- Token-efficiency audit checked the existing stable-prefix, stateless reasoning
+  replay, bounded context and lazy documentation design against official OpenAI
+  guidance. No backend-unverified API cache parameters were added. See
+  [token efficiency](operations.md#token-efficiency) for limits.
+
 ## Validation status at 0.15.1
 
 - The full macOS race suite passed for 0.15.0; final dream/harness/progress

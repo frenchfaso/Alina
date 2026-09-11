@@ -123,7 +123,7 @@ func TestPersonalModelAndReasoningReachProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, effort := e.selectedModel(e.ctx, "telegram:2", c)
-	if m.ID != defaultModel || effort != "medium" {
+	if m.ID != defaultModel || effort != "low" {
 		t.Fatal("preferences crossed people", m, effort)
 	}
 	j, err := e.Submit("personal", "telegram:1", "Hello")
@@ -159,14 +159,14 @@ func TestPersonalModelAndReasoningReachProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, effort = e.selectedModel(e.ctx, "telegram:1", c)
-	if m.ID != defaultModel || effort != "medium" {
+	if m.ID != defaultModel || effort != "low" {
 		t.Fatal("default did not reset model and reasoning")
 	}
 	e.refreshJobModel(r)
 	if r.Model != defaultModel || !r.model.Vision || e.contextBudget(r) != e.Config.ContextTokens {
 		t.Fatal("running job did not refresh capabilities")
 	}
-	// Background inference retains its own model and high effort.
+	// Background inference retains global settings, independent of personal preferences.
 	dream := &runningJob{Job: Job{Kind: "dream", Owner: "alina", Session: "dream", ID: "dream"}, ctx: e.ctx}
 	e.refreshJobModel(dream)
 	if dream.model != nil {

@@ -29,8 +29,8 @@ func TestDreamReflectsWithoutAgeTiers(t *testing.T) {
 	calls := 0
 	e := newTestEngine(t, modelFunc(func(ctx context.Context, _ string, msg []Message, tools []ToolSpec, _ func(string)) (Message, error) {
 		calls++
-		if ctx.Value(reasoningEffortKey{}) != "high" {
-			t.Fatal("reflection did not use high effort")
+		if ctx.Value(reasoningEffortKey{}) != "low" {
+			t.Fatal("reflection did not use low effort")
 		}
 		if len(tools) != 5 || !strings.Contains(msg[0].Content, systemPrompt) {
 			t.Fatal("reflection did not use shared prompt/tools")

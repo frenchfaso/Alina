@@ -13,7 +13,7 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.15.1-poc"
+const Version = "0.15.2-poc"
 
 // Codex ChatGPT model catalog, 2026-09-08. These are backend limits, not
 // the larger public API window. ContextTokens remains user configurable.
@@ -90,7 +90,7 @@ func DefaultConfig() Config {
 	d, _ := os.UserHomeDir()
 	return Config{
 		Version: 1, Provider: "chatgpt", Model: defaultModel,
-		ReasoningEffort: "medium", DreamEffort: "high", CheckpointEffort: "low", Verbosity: "low",
+		ReasoningEffort: "low", DreamEffort: "low", CheckpointEffort: "low", Verbosity: "low",
 		ContextTokens: astraContextTokens, ModelTimeout: 600, MaxSteps: 20, CommandTimeout: 120,
 		WorkDir: d, Timezone: "Local", NetworkPolicy: "strict", OpenCodeAPI: "chat",
 		Search:   SearchConfig{Default: "openai"},

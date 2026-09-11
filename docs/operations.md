@@ -355,3 +355,28 @@ to the current person and catalog. These controls do not call the LLM.
 Sources: [official Codex catalog client](https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/endpoint/models.rs),
 [OpenAI Astra capabilities](https://developers.openai.com/api/docs/models/gpt-6-astra),
 [OpenCode Go catalog](https://opencode.ai/v2/docs/console/go).
+
+## Token efficiency
+
+Fresh installations use GPT-6 Astra with low reasoning for chat, scheduled work,
+dreams, checkpoints and hosted search, and low verbosity. Upgrades preserve
+explicit saved settings and personal `/model` and `/think` choices. To follow
+the global defaults again, use `/model default` (which also clears effort).
+
+Alina keeps system instructions and tool schemas stable, appends changing runtime
+snapshots to conversation history, and replays encrypted reasoning and assistant
+phase with `store: false`. Stable per-conversation cache keys support reuse.
+Long tool results, memory retrieval and dream overviews are bounded; the harness
+manual is read on demand. Idle scheduling and Telegram typing/progress do not
+call the model. Compaction remains at 95% of the configured context budget.
+Changing the soul, tools, model, effort or compacted history can reduce cache reuse.
+
+Usage records distinguish input, cached input, cache writes, output and reasoning
+tokens. Cache hits reduce repeated processing; they do not make input disappear.
+OpenAI API prices do not establish how ChatGPT Plus/Pro quota is charged. Avoid
+adding API-only cache options to the subscription backend without verifying its
+support. Low effort reduces the reasoning budget, with a possible quality tradeoff
+on harder tasks; users can still choose another supported level with `/think`.
+
+References: [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching)
+and [reasoning](https://developers.openai.com/api/docs/guides/reasoning).
