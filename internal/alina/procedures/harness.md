@@ -182,3 +182,7 @@ a new instruction. Explicit local recovery and self-restart continuations remain
 Default model: GPT-6 Astra, with low reasoning for chat, scheduled work, dreams,
 checkpoints and hosted search; verbosity is low. Existing explicit configuration
 and personal model/effort choices remain in effect until changed.
+
+ChatGPT HTTP 401 triggers one credential renewal and retry for chat, hosted
+search and catalog loading. If authentication still fails, ask the user to run
+`alina setup login`. Offline doctor cannot prove provider acceptance of a token.

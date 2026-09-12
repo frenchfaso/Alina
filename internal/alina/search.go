@@ -75,24 +75,18 @@ func (s *Search) complete(ctx context.Context, session, provider, query string) 
 		if s.Provider == nil {
 			return Message{}, errors.New("OpenAI search provider is not initialized")
 		}
-		key := s.Config.OpenAIKey
-		account := ""
-		endpoint := "https://api.openai.com/v1/responses"
-		model := s.openAIModel()
-		if key == "" {
+		ctx = context.WithValue(ctx, reasoningEffortKey{}, "low")
+		messages := []Message{{Role: "system", Content: searchPrompt}, {Role: "user", Content: query}}
+		var m Message
+		var e error
+		if s.Config.OpenAIKey == "" {
 			if s.Provider.Auth == nil {
 				return Message{}, errors.New("OpenAI search requires ChatGPT login: alina setup login")
 			}
-			c, e := s.Provider.Auth.Get(ctx)
-			if e != nil {
-				return Message{}, errors.New("OpenAI search requires ChatGPT login or a separate OpenAI API key")
-			}
-			key = c.Access
-			account = c.AccountID
-			endpoint = "https://chatgpt.com/backend-api/codex/responses"
+			m, e = s.Provider.chatGPTResponses(ctx, s.openAIModel(), "search-"+session, messages, nil, true, nil)
+		} else {
+			m, e = s.Provider.responses(ctx, s.Provider.endpoint("https://api.openai.com/v1/responses"), s.openAIModel(), s.Config.OpenAIKey, "", "search-"+session, messages, nil, true, nil)
 		}
-		ctx = context.WithValue(ctx, reasoningEffortKey{}, "low")
-		m, e := s.Provider.responses(ctx, s.Provider.endpoint(endpoint), model, key, account, "search-"+session, []Message{{Role: "system", Content: searchPrompt}, {Role: "user", Content: query}}, nil, true, nil)
 		if e != nil {
 			return Message{}, fmt.Errorf("OpenAI web search: %w; availability depends on account/model; configure Tavily or Brave if unavailable", e)
 		}

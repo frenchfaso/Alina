@@ -86,6 +86,11 @@ func (a *Auth) token(ctx context.Context, form url.Values) (Credential, error) {
 	return c, nil
 }
 func (a *Auth) Get(ctx context.Context) (Credential, error) {
+	return a.get(ctx, "")
+}
+
+// Serialize refreshes and reuse a token already renewed by another request.
+func (a *Auth) get(ctx context.Context, rejected string) (Credential, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	var c Credential
@@ -96,7 +101,7 @@ func (a *Auth) Get(ctx context.Context) (Credential, error) {
 	if e = json.Unmarshal(b, &c); e != nil {
 		return c, e
 	}
-	if c.Expires > time.Now().Unix()+60 && c.Access != "" && c.AccountID != "" {
+	if c.Expires > time.Now().Unix()+60 && c.Access != "" && c.AccountID != "" && c.Access != rejected {
 		return c, nil
 	}
 	if c.Refresh == "" {
@@ -232,4 +237,31 @@ func (a *Auth) LoginBrowser(ctx context.Context, in *bufio.Reader, w io.Writer) 
 		return e
 	}
 	return writeJSON(filepath.Join(a.Dir, "chatgpt.json"), c)
+}
+
+// Retry only an HTTP authentication rejection, never an interrupted stream or
+// an ambiguous network failure. A rejected request has produced no tool work.
+func authenticatedRequest[T any](ctx context.Context, a *Auth, call func(Credential) (T, error)) (T, error) {
+	var zero T
+	c, err := a.Get(ctx)
+	if err != nil {
+		return zero, err
+	}
+	out, err := call(c)
+	var remote *remoteHTTPError
+	if !errors.As(err, &remote) || remote.Status != http.StatusUnauthorized {
+		return out, err
+	}
+	next, err := a.get(ctx, c.Access)
+	if err != nil {
+		return zero, fmt.Errorf("ChatGPT credential renewal failed; run alina setup login if access remains unavailable: %w", err)
+	}
+	if next.AccountID != c.AccountID {
+		return zero, errors.New("ChatGPT account changed; retry the request with the current account")
+	}
+	out, err = call(next)
+	if errors.As(err, &remote) && remote.Status == http.StatusUnauthorized {
+		return zero, fmt.Errorf("ChatGPT login rejected after renewal: alina setup login: %w", err)
+	}
+	return out, err
 }

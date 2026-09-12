@@ -208,10 +208,12 @@ func (e *Engine) models(ctx context.Context, refresh bool) (modelCatalog, error)
 	}
 }
 func (p *Provider) fetchModelCatalog(ctx context.Context) (modelCatalog, error) {
-	credential, err := p.Auth.Get(ctx)
-	if err != nil {
-		return modelCatalog{}, err
-	}
+	return authenticatedRequest(ctx, p.Auth, func(c Credential) (modelCatalog, error) {
+		return p.fetchModelCatalogWithCredential(ctx, c)
+	})
+}
+
+func (p *Provider) fetchModelCatalogWithCredential(ctx context.Context, credential Credential) (modelCatalog, error) {
 	endpoint := "https://chatgpt.com/backend-api/codex/models"
 	if p.BaseURL != "" {
 		endpoint = strings.TrimSuffix(p.BaseURL, "/responses") + "/models"

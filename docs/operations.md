@@ -380,3 +380,12 @@ on harder tasks; users can still choose another supported level with `/think`.
 
 References: [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching)
 and [reasoning](https://developers.openai.com/api/docs/guides/reasoning).
+
+## ChatGPT authentication recovery
+
+A token can be rejected before its locally recorded expiry. On HTTP 401, chat,
+OpenAI hosted search and catalog loading renew Alina's own credentials and retry
+once. Concurrent callers reuse an already renewed token. Other HTTP errors and
+interrupted streams are not replayed by this recovery. A failed renewal or a
+second 401 requires checking access with `alina setup login`; no API-key fallback
+is used. Offline `doctor` checks local credentials, not provider acceptance.

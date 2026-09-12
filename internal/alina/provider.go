@@ -65,11 +65,7 @@ func (p *Provider) Complete(ctx context.Context, session string, msg []Message, 
 		ctx = context.WithValue(ctx, reasoningEffortKey{}, effort)
 	}
 	if p.Config.Provider == "chatgpt" {
-		c, e := p.Auth.Get(ctx)
-		if e != nil {
-			return Message{}, e
-		}
-		return p.responses(ctx, p.endpoint("https://chatgpt.com/backend-api/codex/responses"), p.Config.Model, c.Access, c.AccountID, session, msg, tools, false, delta)
+		return p.chatGPTResponses(ctx, p.Config.Model, session, msg, tools, false, delta)
 	}
 	if p.Config.OpenCodeKey == "" {
 		return Message{}, errors.New("OpenCode Go key missing: alina setup")
@@ -518,4 +514,10 @@ func readSSE(r io.Reader, fn func([]byte) error) error {
 		return e
 	}
 	return flush()
+}
+
+func (p *Provider) chatGPTResponses(ctx context.Context, model, session string, msg []Message, tools []ToolSpec, search bool, delta func(string)) (Message, error) {
+	return authenticatedRequest(ctx, p.Auth, func(c Credential) (Message, error) {
+		return p.responses(ctx, p.endpoint("https://chatgpt.com/backend-api/codex/responses"), model, c.Access, c.AccountID, session, msg, tools, search, delta)
+	})
 }

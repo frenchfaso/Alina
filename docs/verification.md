@@ -4,6 +4,22 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Early token rejection recovery — 0.15.3 (2026-09-12)
+
+- Galaxy diagnosis: the model returned HTTP 401; a read-only catalog check also
+  returned 401 with `token_expired`, although both stored and JWT expiry were
+  about seven days in the future. Offline doctor only checked local validity.
+- Chat, hosted search and catalog requests now renew dedicated ChatGPT credentials
+  once on HTTP 401 and retry once. Tests cover all three paths, a second rejection,
+  non-401 errors, account changes and reuse/persistence of renewed credentials.
+  Full macOS race suite and Go vet passed; Android arm64 cross-build passed.
+- Deployed 0.15.3 to the idle Galaxy. `doctor --live` passed model inference,
+  OpenAI search and Telegram access without another login. Model probe: 20 input
+  tokens, 7 output tokens, zero reasoning tokens. No Telegram messages were sent.
+  Daemon restarted successfully, preserving Astra low configuration and memory.
+- Android SHA-256:
+  `01af522ab5c6d540b62241841807313d7970c9b826508c43cd722b15df802915`.
+
 ## Astra low defaults — 0.15.2 (2026-09-11)
 
 - Default chat, scheduled work and dream reasoning now use low, matching
@@ -27,7 +43,7 @@ runs; they may since have changed.
   guidance. No backend-unverified API cache parameters were added. See
   [token efficiency](operations.md#token-efficiency) for limits.
 
-## Validation status at 0.15.2
+## Validation status at 0.15.3
 
 - The full macOS race suite passed for 0.15.0; final dream/harness/progress
   regressions and Go vet also passed after the last metadata changes. Earlier
@@ -39,7 +55,7 @@ runs; they may since have changed.
   additionally verified bot access and authenticated model-catalog loading.
   Automated delivery tests use fixtures. Actual typing visibility and model
   button rendering are not established by those tests.
-- The latest recorded Galaxy deployment is 0.15.2, with only the current
+- The latest recorded Galaxy deployment is 0.15.3, with only the current
   executable retained. Camera metadata and a temporary JPEG were verified
   in 0.14.3 through the corrected shell environment/filter. The image was not sent.
 - Live OpenCode Go, Tavily, Brave and remote embeddings remain unverified in
