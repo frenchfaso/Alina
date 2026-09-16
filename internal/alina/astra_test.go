@@ -110,7 +110,7 @@ func TestAstraConfigMigrationAndLimits(t *testing.T) {
 	}
 }
 
-func TestCompactionStartsOnlyAbove95Percent(t *testing.T) {
+func TestCompactionStartsOnlyAbove90Percent(t *testing.T) {
 	calls := 0
 	e := newTestEngine(t, modelFunc(func(ctx context.Context, _ string, m []Message, _ []ToolSpec, _ func(string)) (Message, error) {
 		calls++
@@ -122,7 +122,7 @@ func TestCompactionStartsOnlyAbove95Percent(t *testing.T) {
 	j := &runningJob{Job: Job{Session: "threshold"}, ctx: e.ctx}
 	path := filepath.Join(e.Dir, "sessions", "threshold.json")
 	const overhead = 2000
-	threshold := e.Config.ContextTokens * 95 / 100
+	threshold := e.Config.ContextTokens * 90 / 100
 	history := []Message{{Role: "user", Content: "Keep the original objective"}, {Role: "assistant", Content: "Checked", Raw: []json.RawMessage{json.RawMessage(`{"type":"reasoning","encrypted_content":"` + strings.Repeat("OPAQUE_SECRET", 90000) + `"}`)}, Context: &contextSample{Model: defaultModel, InputTokens: threshold - 100, OutputTokens: 100, PrefixTokens: overhead}}}
 	if _, err := e.compact(j, history, path, overhead); err != nil || calls != 0 {
 		t.Fatal("compacted at/below threshold", calls, err)

@@ -4,6 +4,29 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Live compaction recovery and 90% threshold — 0.15.5 (2026-09-16)
+
+- After explicit authorization, a maintenance probe compacted Clearpunch's actual
+  working context using the configured ChatGPT provider. It did not execute user
+  requests or tools and did not send Telegram messages. A first probe without
+  prompt/tool overhead did not compact or change the session; the corrected
+  probe included the previously recorded 3729-token overhead and the 90% trigger.
+- The model produced a valid 3694-byte checkpoint on the first call. The working
+  transcript shrank from 493 to 10 messages; an additional tool-free diagnostic
+  request confirmed that ChatGPT accepted the compacted context. Total probe
+  duration was 38.61 seconds. Frenchfaso's session hash remained unchanged.
+  The original prefix was verified against the archived JSON before cleanup.
+- This verifies live recovery with the revised prompt; the oversized-draft repair
+  branch is covered by regression tests rather than this live run.
+- Compaction now triggers strictly above 90% of the configured context including
+  prompt/tool overhead: 244800 tokens for the default 272000-token window. This
+  provides more headroom but does not itself fix malformed checkpoints.
+- Full macOS race suite, Go vet and Android arm64 build passed. Installed 0.15.5
+  on the Galaxy, restarted successfully and passed offline doctor. Temporary
+  maintenance binaries and backups were removed; normal session archives remain.
+- Binary SHA-256:
+  `2ac0a8cf7518691a389789da66941b8bdcbdf23eba2d90ca51118c7297c49400`.
+
 ## Checkpoint size recovery — 0.15.4 (2026-09-16)
 
 - Clearpunch's two latest requests failed with `invalid checkpoint; original
@@ -64,7 +87,7 @@ runs; they may since have changed.
   guidance. No backend-unverified API cache parameters were added. See
   [token efficiency](operations.md#token-efficiency) for limits.
 
-## Validation status at 0.15.4
+## Validation status at 0.15.5
 
 - The full macOS race suite passed for 0.15.0; final dream/harness/progress
   regressions and Go vet also passed after the last metadata changes. Earlier
@@ -76,7 +99,7 @@ runs; they may since have changed.
   additionally verified bot access and authenticated model-catalog loading.
   Automated delivery tests use fixtures. Actual typing visibility and model
   button rendering are not established by those tests.
-- The latest recorded Galaxy deployment is 0.15.4, with only the current
+- The latest recorded Galaxy deployment is 0.15.5, with only the current
   executable retained. Camera metadata and a temporary JPEG were verified
   in 0.14.3 through the corrected shell environment/filter. The image was not sent.
 - Live OpenCode Go, Tavily, Brave and remote embeddings remain unverified in

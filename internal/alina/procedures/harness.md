@@ -29,7 +29,7 @@ Without an embedding endpoint, local lexical retrieval works; remote embeddings
 are optional. There is no mandatory day/week/long-term migration pipeline.
 
 Compaction is automatic when the estimated/measured working context plus
-prompt/tool overhead exceeds 95% of the configured context budget. It saves
+prompt/tool overhead exceeds 90% of the configured context budget. It saves
 an English continuation checkpoint and preserves the earlier transcript.
 Compaction is separate from dream. Actual provider limits still apply.
 

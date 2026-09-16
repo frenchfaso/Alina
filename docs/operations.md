@@ -368,7 +368,7 @@ snapshots to conversation history, and replays encrypted reasoning and assistant
 phase with `store: false`. Stable per-conversation cache keys support reuse.
 Long tool results, memory retrieval and dream overviews are bounded; the harness
 manual is read on demand. Idle scheduling and Telegram typing/progress do not
-call the model. Compaction remains at 95% of the configured context budget.
+call the model. Compaction remains at 90% of the configured context budget.
 Changing the soul, tools, model, effort or compacted history can reduce cache reuse.
 
 Usage records distinguish input, cached input, cache writes, output and reasoning

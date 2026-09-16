@@ -180,7 +180,7 @@ func TestShortManyTurnsDoNotCompactAndOverheadCounts(t *testing.T) {
 		t.Fatal("message count caused compaction")
 	}
 	history = []Message{{Role: "user", Content: strings.Repeat("large context ", 1400)}, {Role: "assistant", Content: "done"}, {Role: "user", Content: "Continue with a new small request"}}
-	if _, err := e.compact(j, history, path, e.Config.ContextTokens*95/100-5000); err != nil {
+	if _, err := e.compact(j, history, path, e.Config.ContextTokens*90/100-5000); err != nil {
 		t.Fatal(err)
 	}
 	if calls == 0 {

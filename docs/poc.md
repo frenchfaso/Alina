@@ -283,8 +283,8 @@ operation's outcome unknown.
   backup of the state. Status `completed` means the turn finished; it is not
   independent proof of task success.
 - Working context is compacted at model-call boundaries when its size,
-  including prompts and tool schemas, exceeds 95% of `context_tokens` (default
-  272000 for Astra: the threshold is 258400). The most recent provider input/output
+  including prompts and tool schemas, exceeds 90% of `context_tokens` (default
+  272000 for Astra: the threshold is 244800). The most recent provider input/output
   usage anchors the count, plus estimates for new messages and changed prefix
   overhead. Without usage, Alina estimates visible serialized bytes / 3;
   opaque encrypted reasoning and internal metadata are not tokenized as text.

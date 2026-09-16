@@ -49,7 +49,7 @@ func SetupAdvanced(ctx context.Context, dir string, in *bufio.Reader, out io.Wri
 	}
 	c.Model = w.ask("Model ID (deve essere disponibile nel tuo account)", c.Model)
 	if c.Model == defaultModel {
-		fmt.Fprintf(out, "Astra: contesto %d token; compattazione oltre il 95%%.\n", c.ContextTokens)
+		fmt.Fprintf(out, "Astra: contesto %d token; compattazione oltre il 90%%.\n", c.ContextTokens)
 		c.ReasoningEffort = w.choice("Reasoning: low / medium / high / xhigh / max", c.ReasoningEffort, "low", "medium", "high", "xhigh", "max")
 		c.Verbosity = w.choice("Verbosity: low / medium / high", c.Verbosity, "low", "medium", "high")
 		tokens, err := strconv.Atoi(w.ask("Context window (token)", strconv.Itoa(c.ContextTokens)))

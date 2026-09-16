@@ -184,7 +184,7 @@ func estimatedTokens(v any, visual ...bool) int {
 // Keep a whole assistant/tool exchange together at the boundary. The preceding
 // transcript remains on disk, so a failed summary cannot destroy it.
 func (e *Engine) compact(j *runningJob, history []Message, path string, overhead ...int) ([]Message, error) {
-	budget := e.contextBudget(j) * 95 / 100
+	budget := e.contextBudget(j) * 90 / 100
 	estimate := func(messages []Message) int { return estimatedTokens(messages, e.jobVision(j)) }
 	if len(overhead) > 0 {
 		budget -= overhead[0]

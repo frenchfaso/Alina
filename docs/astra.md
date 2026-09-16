@@ -9,7 +9,7 @@ is not interchangeable with the public API.
 | --- | --- |
 | `model` | `gpt-6-astra` |
 | `context_tokens` | `272000` |
-| Compaction trigger | strictly above 95%, or 258400 tokens |
+| Compaction trigger | strictly above 90%, or 244800 tokens |
 | `reasoning_effort` | `low` |
 | `dream_reasoning_effort` | `low` |
 | `checkpoint_reasoning_effort` | `low` |
