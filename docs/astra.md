@@ -46,7 +46,11 @@ transcripts; the searchable SQLite archive stores readable events. Checkpoint
 input contains readable text, call arguments, results and source IDs, without
 opaque encrypted items. Chunk size scales with the configured budget up
 to 500000 bytes, avoiding the former fixed 48000-byte sequence of small calls.
-The final checkpoint remains bounded to 6000 bytes. A failed checkpoint does not
+The checkpoint targets 3500 UTF-8 bytes, with a hard limit of 6000. An oversized
+draft up to 48000 bytes gets one shortening request containing only the draft,
+not the full transcript; invalid or still oversized output retains the original
+session. This avoids repeatedly replaying a large transcript for a small format
+overshoot. A failed checkpoint does not
 replace the working transcript. Measurements are invalidated after compaction.
 
 `alina setup --advanced` exposes Astra effort, verbosity and context size.

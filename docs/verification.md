@@ -4,6 +4,27 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Checkpoint size recovery — 0.15.4 (2026-09-16)
+
+- Clearpunch's two latest requests failed with `invalid checkpoint; original
+  session retained`, while Frenchfaso completed normally. Both used Astra low
+  without personal overrides. Clearpunch's working transcript had 493 messages.
+  The old error did not distinguish oversized, empty or tool-bearing output;
+  the exact rejected draft size is therefore not established by those logs.
+- Checkpoints now target 3500 UTF-8 bytes within the existing 6000-byte limit.
+  Oversized drafts up to 48000 bytes receive one shortening call containing only
+  that draft. Still invalid output preserves the original session; errors include
+  byte and tool-call counts. The original prefix remains archived unchanged.
+- Full macOS race suite and Go vet passed with Go 1.27.1; Android arm64 cross-build
+  passed. Regression tests cover Unicode overshoot, successful shortening,
+  bounded retries and preservation of the session/archive after failed repair.
+- Installed 0.15.4 on the idle Galaxy and restarted the daemon; offline doctor
+  passed. No private conversation was submitted for an extra live compaction
+  probe and no sessions were reset. Recovery on the next real message remains
+  to be verified.
+- Binary SHA-256:
+  `aea806d35443aea7a02c277846f268f146680910ac9a55fcb7a397cea313a29b`.
+
 ## Early token rejection recovery — 0.15.3 (2026-09-12)
 
 - Galaxy diagnosis: the model returned HTTP 401; a read-only catalog check also
@@ -43,7 +64,7 @@ runs; they may since have changed.
   guidance. No backend-unverified API cache parameters were added. See
   [token efficiency](operations.md#token-efficiency) for limits.
 
-## Validation status at 0.15.3
+## Validation status at 0.15.4
 
 - The full macOS race suite passed for 0.15.0; final dream/harness/progress
   regressions and Go vet also passed after the last metadata changes. Earlier
@@ -55,7 +76,7 @@ runs; they may since have changed.
   additionally verified bot access and authenticated model-catalog loading.
   Automated delivery tests use fixtures. Actual typing visibility and model
   button rendering are not established by those tests.
-- The latest recorded Galaxy deployment is 0.15.3, with only the current
+- The latest recorded Galaxy deployment is 0.15.4, with only the current
   executable retained. Camera metadata and a temporary JPEG were verified
   in 0.14.3 through the corrected shell environment/filter. The image was not sent.
 - Live OpenCode Go, Tavily, Brave and remote embeddings remain unverified in

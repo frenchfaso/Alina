@@ -186,3 +186,7 @@ and personal model/effort choices remain in effect until changed.
 ChatGPT HTTP 401 triggers one credential renewal and retry for chat, hosted
 search and catalog loading. If authentication still fails, ask the user to run
 `alina setup login`. Offline doctor cannot prove provider acceptance of a token.
+
+Context compaction targets a 3500-byte checkpoint (6000-byte hard limit). An
+oversized draft gets one bounded shortening attempt; failures preserve the
+original session and archive. Do not reset a conversation to recover this error.

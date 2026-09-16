@@ -414,3 +414,54 @@ func TestExplicitInstallRequiresConsentInStrictMode(t *testing.T) {
 	}
 	awaitStatus(t, e, j.ID, "completed")
 }
+
+func TestOversizedCheckpointRepair(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			calls := 0
+			e := newTestEngine(t, modelFunc(func(ctx context.Context, s string, msg []Message, tools []ToolSpec, _ func(string)) (Message, error) {
+				calls++
+				if calls == 1 {
+					return Message{Role: "assistant", Content: strings.Repeat("é", 3100)}, nil
+				}
+				if calls != 2 || !strings.HasPrefix(s, "checkpoint-repair-") || len(tools) != 0 || strings.Contains(msg[1].Content, "original transcript marker") {
+					t.Fatal("repair replayed transcript or exceeded budget")
+				}
+				if fail {
+					return Message{Role: "assistant", Content: strings.Repeat("x", 6001)}, nil
+				}
+				return Message{Role: "assistant", Content: "Verified /backup. Next: check restore."}, nil
+			}))
+			e.Config.ContextTokens = 272000
+			history := []Message{}
+			for i := 0; i < 101; i++ {
+				history = append(history, Message{Role: "user", Content: "original transcript marker " + strings.Repeat("context ", 150)})
+			}
+			history[len(history)-1].Context = &contextSample{Model: defaultModel, InputTokens: 260000}
+			path := filepath.Join(e.Dir, "sessions", "repair.json")
+			if err := writeJSON(path, history); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := os.ReadFile(path)
+			j := &runningJob{Job: Job{Session: "repair"}, ctx: e.ctx}
+			next, err := e.compact(j, history, path)
+			after, _ := os.ReadFile(path)
+			if calls != 2 {
+				t.Fatal("expected one repair", calls)
+			}
+			if fail {
+				if err == nil || string(before) != string(after) {
+					t.Fatal("failed repair changed original", err)
+				}
+			} else {
+				if err != nil || !next[0].Checkpoint || !strings.Contains(next[0].Content, "Verified /backup") {
+					t.Fatal("repair failed", err)
+				}
+			}
+			files, _ := filepath.Glob(filepath.Join(e.Dir, "sessions", "repair", "*.json"))
+			if len(files) != 1 {
+				t.Fatal("archive missing")
+			}
+		})
+	}
+}
