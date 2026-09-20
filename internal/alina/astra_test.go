@@ -30,6 +30,9 @@ func TestAstraOAuthParametersSearchAndUsage(t *testing.T) {
 			t.Error(err)
 		}
 		effort := "low"
+		if count == 2 {
+			effort = "medium"
+		}
 		if body["model"] != defaultModel || body["reasoning"].(map[string]any)["effort"] != effort || body["text"].(map[string]any)["verbosity"] != "low" {
 			t.Error("incorrect Astra parameters", body)
 		}
@@ -114,7 +117,7 @@ func TestCompactionStartsOnlyAbove90Percent(t *testing.T) {
 	calls := 0
 	e := newTestEngine(t, modelFunc(func(ctx context.Context, _ string, m []Message, _ []ToolSpec, _ func(string)) (Message, error) {
 		calls++
-		if ctx.Value(reasoningEffortKey{}) != "low" || strings.Contains(jsonText(m), "OPAQUE_SECRET") {
+		if ctx.Value(reasoningEffortKey{}) != "medium" || strings.Contains(jsonText(m), "OPAQUE_SECRET") {
 			t.Error("checkpoint effort or transcript projection")
 		}
 		return Message{Role: "assistant", Content: "Continue the original request; earlier results remain in the archive."}, nil

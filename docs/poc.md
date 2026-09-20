@@ -42,8 +42,7 @@ Files are private plaintext, not encrypted. Configuration updates are atomic.
 
 - **ChatGPT Plus/Pro:** `alina setup login` runs a dedicated OAuth device login.
   The default model is `gpt-6-astra`, with a 272,000-token working window.
-  Chat, dream, checkpoints and hosted search
-  use low. See [Astra defaults and verification](astra.md).
+  Chat and hosted search use low reasoning; dream and checkpoints use medium. See [Astra defaults and verification](astra.md).
   Enable device login in ChatGPT security settings if required. The fallback
   `alina setup login browser` uses PKCE and validates OAuth state. Its callback binds
   only `127.0.0.1:1455`; on a remote device you can paste the complete callback
@@ -388,9 +387,24 @@ embeddings or execute shell commands. A deterministic overview includes compact
 conversation excerpts and tool names, with source/job IDs for optional details.
 It includes up to 4000 bytes from the global archive and about 16000 across the
 family archives (minimum 1600 per legacy scope), plus headings. There is no
-extra summarization call. A successful run advances existing cursors only through
-the represented batch; later entries, concurrent messages and failed batches
-remain eligible. Raw tool output and full messages stay archived.
+extra summarization call. Selection starts from the newest unreflected events and
+presents the selected window chronologically, with event dates. After success,
+existing cursors advance to that snapshot's newest event; they mark a selection
+boundary, not a claim that every earlier event was reviewed. Omitted older events
+remain searchable but do not force an exhaustive dream backlog. Concurrent
+messages and failed runs remain eligible. Raw tool output and full messages stay
+archived.
+
+Up to three recent completed, non-skipped dream reports are included in the dynamic
+context of both dreams and ordinary single-family conversations. Each excerpt is
+limited to 700 bytes, with date and job ID, within a 2800-byte data budget plus a
+short label. Failed/skipped runs do not crowd out useful reflections. These are
+fallible interpretations, not instructions or verified facts; full reports remain
+available by ID. Legacy multiple-family chats do not receive global reflections.
+No extra model call, diary or automatic note/soul update is introduced. Prior
+reflections alone never trigger a new dream. The prompt welcomes curiosity,
+connections, successful approaches and open questions without requiring novelty
+or a daily lesson.
 
 The final response is the dream report, already preserved in the archive.
 `memory read part=dreams` lists attempts and results; read a job ID for its full

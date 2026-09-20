@@ -12,9 +12,10 @@ enough harness to leave room for her own way of being useful.
 - **Remember what matters.** Notes fade from attention over time and return to
   focus when recalled. A separate archive preserves what happened, so the past
   remains searchable even as the working context moves on.
-- **Leave time to dream.** At night, Alina can revisit experiences and open
-  questions, and revise a short `soul.md`: her evolving sense of how to approach
-  things.
+- **Leave time to dream.** At night, Alina can revisit recent experiences and
+  open questions. Recent reflections accompany later conversations; a short
+  `soul.md` can evolve when a lasting change feels warranted. Nothing needs to
+  change every night.
 - **Make room for curiosity.** With autonomy enabled, she can keep intentions,
   schedule her own next steps, explore, and save useful procedures. You choose
   the scope and budget. A new message can steer her work; `/stop` can halt it.

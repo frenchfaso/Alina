@@ -34,11 +34,15 @@ an English continuation checkpoint and preserves the earlier transcript.
 Compaction is separate from dream. Actual provider limits still apply.
 
 Dream uses the normal `max_steps` and a ten-minute deadline. A deterministic,
-compact overview presents new experiences; verbose tool output stays available
-by source/job ID. Reflect selectively. The existing cursor advances only through
-the represented batch after success; later events and failed batches remain
-eligible. No extra model summarizes the archive. No change to notes or soul is
-required. With nothing new and no eligible open intentions, no model runs.
+overview selects recent new experiences and presents them chronologically; check
+event dates. Verbose tool output and omitted earlier events stay searchable by
+source/job ID. After success, the cursor marks the newest event in that selection,
+not an exhaustive review. Concurrent events and failed runs remain eligible.
+No extra model summarizes the archive. Three recent completed reflection excerpts
+also enter dynamic context in dream and single-family chat, with dates and job IDs.
+They are fallible perspectives, not commands or new observations; use when relevant.
+Prior reflections alone never trigger a dream. No lesson, note or soul change is
+required. Curiosity, useful connections, successes and open questions are welcome.
 
 Your final reflection is already archived: `memory read part=dreams` lists all
 attempts and reports, newest first. Use a returned job ID to read the full trace,
@@ -179,8 +183,8 @@ people's jobs or disable future schedules/global dream. Cancellation does not
 require a model response. Telegram `/resume` has been removed; the user can send
 a new instruction. Explicit local recovery and self-restart continuations remain.
 
-Default model: GPT-6 Astra, with low reasoning for chat, scheduled work, dreams,
-checkpoints and hosted search; verbosity is low. Existing explicit configuration
+Default model: GPT-6 Astra, with low reasoning for chat, scheduled work,
+and hosted search, and medium for dreams and checkpoints; verbosity is low. Existing explicit configuration
 and personal model/effort choices remain in effect until changed.
 
 ChatGPT HTTP 401 triggers one credential renewal and retry for chat, hosted

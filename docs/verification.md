@@ -4,6 +4,34 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Recent experience and reflection continuity — 0.16.0 (2026-09-20)
+
+- Diagnosis found the dream selection cursor still at September 14 despite
+  completed nightly reports through September 20. The oldest-first bounded queue
+  was revisiting older material while new conversations accumulated.
+- Dream now selects newest unseen experience within the existing overview budget,
+  presenting that selection chronologically. A successful run advances the cursor
+  to its newest selected event; omitted older events remain archived/searchable.
+  Failed runs and concurrent events retain their eligibility.
+- One bounded reader supplies up to three completed non-skipped reflection
+  excerpts to dream and single-family conversation runtime context, with dates
+  and job IDs. Legacy multiple-family privacy boundaries are preserved. Reports
+  are marked as fallible interpretations, and do not themselves wake a dream.
+- The dream prompt welcomes connections, successes, questions and reconsideration,
+  without requiring novelty, a lesson, task or soul update. Default and Galaxy
+  reasoning are medium for dream/checkpoints and low for chat/hosted search.
+- Full macOS race suite and Go vet passed. Android arm64 build and seven native
+  regression tests passed, covering the overview, cursors, shared reflection
+  context, legacy boundaries, idle behavior, request effort and context threshold.
+- Installed 0.16.0 on the idle Galaxy, restarted and passed offline doctor. The
+  existing September 18–20 completed reports are eligible for runtime excerpts.
+  No live dream was forced or additional model call made. These tests establish
+  context delivery, not the quality or novelty of future reflections.
+- Updated README, operating docs and embedded harness manual. Archives and
+  credentials were preserved; temporary deployment files were removed.
+- Binary SHA-256:
+  `73a4a21477fdd84e7510115564e710640cc2caff2e0f35bb38ccf304324bef58`.
+
 ## Live compaction recovery and 90% threshold — 0.15.5 (2026-09-16)
 
 - After explicit authorization, a maintenance probe compacted Clearpunch's actual
@@ -87,7 +115,7 @@ runs; they may since have changed.
   guidance. No backend-unverified API cache parameters were added. See
   [token efficiency](operations.md#token-efficiency) for limits.
 
-## Validation status at 0.15.5
+## Validation status at 0.16.0
 
 - The full macOS race suite passed for 0.15.0; final dream/harness/progress
   regressions and Go vet also passed after the last metadata changes. Earlier
@@ -99,7 +127,7 @@ runs; they may since have changed.
   additionally verified bot access and authenticated model-catalog loading.
   Automated delivery tests use fixtures. Actual typing visibility and model
   button rendering are not established by those tests.
-- The latest recorded Galaxy deployment is 0.15.5, with only the current
+- The latest recorded Galaxy deployment is 0.16.0, with only the current
   executable retained. Camera metadata and a temporary JPEG were verified
   in 0.14.3 through the corrected shell environment/filter. The image was not sent.
 - Live OpenCode Go, Tavily, Brave and remote embeddings remain unverified in

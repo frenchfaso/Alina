@@ -359,7 +359,7 @@ Sources: [official Codex catalog client](https://github.com/openai/codex/blob/ma
 ## Token efficiency
 
 Fresh installations use GPT-6 Astra with low reasoning for chat, scheduled work,
-dreams, checkpoints and hosted search, and low verbosity. Upgrades preserve
+and hosted search, medium for dreams and checkpoints, and low verbosity. Upgrades preserve
 explicit saved settings and personal `/model` and `/think` choices. To follow
 the global defaults again, use `/model default` (which also clears effort).
 

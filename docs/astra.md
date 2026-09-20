@@ -1,6 +1,6 @@
 # Astra configuration
 
-These are the current global defaults (low effort for all work since 0.15.2). The provider capability figures below
+These are the current global defaults (medium for dream/checkpoints; low for chat/search). The provider capability figures below
 were checked on 2026-09-08 against the official model/Responses documentation
 and the local Codex 0.153.4 catalog fetched that day. The subscription backend
 is not interchangeable with the public API.
@@ -11,8 +11,8 @@ is not interchangeable with the public API.
 | `context_tokens` | `272000` |
 | Compaction trigger | strictly above 90%, or 244800 tokens |
 | `reasoning_effort` | `low` |
-| `dream_reasoning_effort` | `low` |
-| `checkpoint_reasoning_effort` | `low` |
+| `dream_reasoning_effort` | `medium` |
+| `checkpoint_reasoning_effort` | `medium` |
 | Hosted search effort | `low` |
 | `verbosity` | `low` |
 | `model_timeout_seconds` | `600` |

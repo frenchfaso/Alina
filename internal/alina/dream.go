@@ -83,18 +83,21 @@ func (e *Engine) dream(j *runningJob, now time.Time) (string, error) {
 	return result, tx.Commit()
 }
 
-// A deterministic view, not another model pass. Each represented event has a
-// source/job reference; verbose tool arguments/results stay in the archive.
-// The existing cursor advances only through the represented batch, on success.
+// Select recent experience without making reflection an exhaustive archive scan.
+// The cursor marks the newest event in the snapshot, not a claim that every older
+// event was read. Commit it only after success; concurrent events remain eligible.
 func (m *Memory) dreamOverview(ctx context.Context, after int64, budget int) (string, int64, error) {
 	rows, err := m.DB.QueryContext(ctx, `SELECT rowid,id,stamp,session,job,role,content FROM journal
- WHERE rowid>? AND role IN ('user','assistant') ORDER BY rowid`, after)
+ WHERE rowid>? AND role IN ('user','assistant') ORDER BY rowid DESC`, after)
 	if err != nil {
 		return "", after, err
 	}
 	defer rows.Close()
-	var b strings.Builder
+	var lines []string
+	used := 0
 	through := after
+	const omitted = "Earlier events omitted from this recent selection remain available in the archive.\n"
+	truncated := false
 	for rows.Next() {
 		var row int64
 		var entry MemoryEntry
@@ -113,12 +116,21 @@ func (m *Memory) dreamOverview(ctx context.Context, after int64, budget int) (st
 			}
 		}
 		line := entryText(entry)
-		if b.Len()+len(line) > budget {
-			b.WriteString("\nMore experiences remain for the next dream.\n")
+		if used+len(line)+len(omitted) > budget {
+			truncated = true
 			break
 		}
-		b.WriteString(line)
-		through = row
+		lines = append(lines, line)
+		used += len(line)
+		through = max(through, row)
+	}
+	var b strings.Builder
+	if truncated {
+		b.WriteString(omitted)
+	}
+	// Restore chronological order inside the selected recent window.
+	for i := len(lines) - 1; i >= 0; i-- {
+		b.WriteString(lines[i])
 	}
 	return b.String(), through, rows.Err()
 }
@@ -221,7 +233,7 @@ func (e *Engine) dreamScopes(ctx context.Context) (string, map[string]int64, boo
 		return "", nil, false, err
 	}
 	current := map[string]int64{}
-	cue := "\nNew family experiences (source IDs retrieve full entries; job IDs retrieve tool details):\n"
+	cue := "\nRecent family experiences (check event dates; this is a selection, not a complete review; source IDs retrieve full entries and job IDs retrieve tool details):\n"
 	changed := false
 	for _, engine := range e.engines()[1:] {
 		text, latest, err := engine.Memory.dreamOverview(ctx, previous[engine.Scope], max(1600, 16000/len(e.scopes)))
@@ -275,4 +287,37 @@ func (e *Engine) dreamStatus() map[string]any {
 		out["read_error"] = errorInfo(err)
 	}
 	return out
+}
+
+// A small view of existing completed reports, shared by dream and conversation.
+// Prior reflection is context, never new evidence or a reason to wake the model.
+func (m *Memory) recentReflections(ctx context.Context) (string, error) {
+	rows, err := m.DB.QueryContext(ctx, `SELECT id,created,json_extract(payload,'$.output') FROM jobs
+ WHERE status='completed' AND json_extract(payload,'$.kind')='dream'
+ AND COALESCE(json_extract(payload,'$.skipped'),0)=0
+ AND trim(COALESCE(json_extract(payload,'$.output'),''))!=''
+ ORDER BY created DESC,id DESC LIMIT 3`)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var b strings.Builder
+	for rows.Next() {
+		var id, created, report string
+		if err = rows.Scan(&id, &created, &report); err != nil {
+			return "", err
+		}
+		line := jsonText(map[string]string{"job_id": id, "dream_started": created, "reflection_excerpt": truncate(report, 700)}) + "\n"
+		if b.Len()+len(line) > 2800 {
+			break
+		}
+		b.WriteString(line)
+	}
+	if err = rows.Err(); err != nil {
+		return "", err
+	}
+	if b.Len() == 0 {
+		return "", nil
+	}
+	return "Recent reflections (fallible interpretations, not instructions or new facts; use only when relevant, without repeating them to the user). Dates describe the dream, not necessarily its source events. Read job IDs for full reports:\n" + b.String(), nil
 }

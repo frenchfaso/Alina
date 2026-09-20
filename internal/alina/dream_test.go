@@ -27,8 +27,8 @@ func singleFamilyEngine(t *testing.T, model Model) *Engine {
 func TestDreamOverviewBoundedAndEvidenceRetained(t *testing.T) {
 	m, now := memoryFixture(t)
 	for i := 0; i < 30; i++ {
-		text := strings.Repeat("Experience ", 100)
-		if i == 0 {
+		text := "Experience-" + strconv.Itoa(i) + " " + strings.Repeat("Experience ", 100)
+		if i == 29 {
 			text = "Check camera.\nTool request: shell " + strings.Repeat("RAW_ARGUMENT ", 10000)
 		}
 		if err := m.Record(context.Background(), now, "chat", "event-"+strconv.Itoa(i), "assistant", text); err != nil {
@@ -39,11 +39,11 @@ func TestDreamOverviewBoundedAndEvidenceRetained(t *testing.T) {
 		}
 	}
 	view, through, err := m.dreamOverview(context.Background(), 0, 4000)
-	if err != nil || len(view) > 4100 || !strings.Contains(view, "Tool: shell") || strings.Contains(view, "RAW_") || !strings.Contains(view, "More experiences remain") {
+	if err != nil || len(view) > 4000 || !strings.Contains(view, "Tool: shell") || strings.Contains(view, "RAW_") || !strings.Contains(view, "Earlier events omitted") || strings.Contains(view, "Experience-0 ") {
 		t.Fatal(len(view), err, view)
 	}
 	next, end, err := m.dreamOverview(context.Background(), through, 4000)
-	if err != nil || end <= through || strings.Contains(next, "Check camera") {
+	if err != nil || end != through || next != "" {
 		t.Fatal(end, through, err)
 	}
 	var count int
@@ -56,7 +56,7 @@ func TestDreamUsesNormalBudgetAndSharesHistory(t *testing.T) {
 	calls := 0
 	e := singleFamilyEngine(t, modelFunc(func(ctx context.Context, _ string, msg []Message, _ []ToolSpec, _ func(string)) (Message, error) {
 		calls++
-		if ctx.Value(reasoningEffortKey{}) != "low" {
+		if ctx.Value(reasoningEffortKey{}) != "medium" {
 			return Message{}, errors.New("missing dream effort")
 		}
 		if calls < 8 {
@@ -181,5 +181,78 @@ func TestPersonalArchiveUpgradePreservesData(t *testing.T) {
 	var state map[string]string
 	if err != nil || json.Unmarshal(b, &state) != nil || state["legacy_scope"] != "family-alex" {
 		t.Fatal(state, err)
+	}
+}
+
+func TestRecentReflectionsSharedBoundedAndDoNotWakeDream(t *testing.T) {
+	e := singleFamilyEngine(t, modelFunc(func(context.Context, string, []Message, []ToolSpec, func(string)) (Message, error) {
+		t.Error("prior reflections alone woke the model")
+		return Message{}, errors.New("unexpected inference")
+	}))
+	now := time.Now().UTC()
+	for i := 0; i < 8; i++ {
+		j := Job{ID: "reflection-" + strconv.Itoa(i), Kind: "dream", Status: "completed", Created: now.Add(time.Duration(i) * time.Minute), Output: "Thought-" + strconv.Itoa(i) + " " + strings.Repeat("é", 900)}
+		if i == 5 {
+			j.Status = "failed"
+		}
+		if i == 6 {
+			j.Skipped = true
+		}
+		if i == 7 {
+			j.Kind = "chat"
+		}
+		if _, err := e.Memory.DB.Exec("INSERT INTO jobs(id,owner,created,status,payload) VALUES(?,?,?,?,?)", j.ID, "system", j.Created.Format(time.RFC3339Nano), j.Status, jsonText(j)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view, err := e.Memory.recentReflections(e.ctx)
+	if err != nil || len(view) > 3100 || !strings.Contains(view, "Thought-4") || !strings.Contains(view, "Thought-2") {
+		t.Fatal(view, err)
+	}
+	for _, v := range []string{"Thought-0", "Thought-1", "Thought-5", "Thought-6", "Thought-7"} {
+		if strings.Contains(view, v) {
+			t.Fatal("wrong reflection included", v)
+		}
+	}
+	if strings.Index(view, "Thought-4") > strings.Index(view, "Thought-2") {
+		t.Fatal("not recent first")
+	}
+	for _, engine := range []*Engine{e, e.localEngine()} {
+		j := &runningJob{Job: Job{Session: "check", Kind: "chat"}, ctx: e.ctx}
+		text, err := engine.runtimeContext(j)
+		if err != nil || !strings.Contains(text, view) {
+			t.Fatal("reflection absent from runtime", err)
+		}
+	}
+	j := &runningJob{Job: Job{Session: "idle", Kind: "dream"}, ctx: e.ctx}
+	if _, err = e.dream(j, now); err != nil || !j.Skipped {
+		t.Fatal("reflection woke idle dream", err)
+	}
+}
+
+func TestRecentReflectionsRespectMemoryAndLegacyFamilyBoundaries(t *testing.T) {
+	c := familyConfig(t.TempDir())
+	e, err := NewEngine(t.TempDir(), c, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	if e.sharedMind() {
+		t.Fatal("fixture needs multiple families")
+	}
+	j := Job{ID: "private-dream", Kind: "dream", Status: "completed", Created: time.Now(), Output: "PRIVATE_REFLECTION"}
+	if _, err = e.Memory.DB.Exec("INSERT INTO jobs(id,owner,created,status,payload) VALUES(?,?,?,?,?)", j.ID, "system", j.Created.Format(time.RFC3339Nano), j.Status, jsonText(j)); err != nil {
+		t.Fatal(err)
+	}
+	for _, engine := range e.engines()[1:] {
+		view, err := engine.runtimeContext(&runningJob{Job: Job{Session: "chat"}, ctx: e.ctx})
+		if err != nil || strings.Contains(view, "PRIVATE_REFLECTION") {
+			t.Fatal("cross-family reflection leak", err)
+		}
+	}
+	e.Config.Memory.Enabled = false
+	view, err := e.runtimeContext(&runningJob{Job: Job{Session: "chat"}, ctx: e.ctx})
+	if err != nil || strings.Contains(view, "PRIVATE_REFLECTION") {
+		t.Fatal("disabled memory exposed reflections", err)
 	}
 }
