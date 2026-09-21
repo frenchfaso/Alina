@@ -389,3 +389,24 @@ once. Concurrent callers reuse an already renewed token. Other HTTP errors and
 interrupted streams are not replayed by this recovery. A failed renewal or a
 second 401 requires checking access with `alina setup login`; no API-key fallback
 is used. Offline `doctor` checks local credentials, not provider acceptance.
+
+## Galaxy A15 autostart
+
+The test Galaxy has opt-in autostart configured outside the Alina executable:
+`~/.termux/boot/start-alina` acquires the Termux wake lock and calls the installed
+`~/alina-poc/bin/alina serve`. Its output goes to
+`~/.config/alina/logs/autostart.log` (replaced on each invocation). Termux:Boot is
+installed and its launcher activity has been opened once, as required by the
+[official instructions](https://github.com/termux/termux-boot#how-to-use).
+
+The interactive hook in `~/.bashrc` invokes the same script in the background.
+The installed Termux profile sources that file for interactive login shells too.
+Opening another shell does not start a duplicate daemon. Non-interactive shell
+commands do not trigger the hook. Existing boot scripts and services are unchanged.
+
+To disable this device-specific autostart, remove the Alina block in `.bashrc`
+and move `start-alina` outside the boot directory; `alina serve stop` then stops
+Alina normally. Stopping the daemon alone does not disable subsequent autostart.
+An actual Android reboot is a separate end-to-end check; OEM background limits
+can still affect boot delivery. This setup does not change `alina serve` behavior
+on other installations.

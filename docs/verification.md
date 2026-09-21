@@ -4,6 +4,21 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Galaxy autostart — configuration only (2026-09-21)
+
+- Alina 0.16.0 had not restarted after Termux was restarted. Started it and
+  verified status/doctor, then configured autostart at the user's request.
+- Termux:Boot was already installed. Opened its BootActivity successfully with
+  Termux's `am` wrapper. Added `~/.termux/boot/start-alina` and an interactive
+  `.bashrc` hook, both calling the existing daemon command. Kept the existing
+  `start-services` boot script unchanged.
+- Both scripts passed shell syntax validation. Invoking the boot hook while
+  running kept the same PID; stopping Alina and launching `bash -lic true`
+  restarted it successfully. Repeating the boot hook again kept the same PID.
+- No phone reboot or Android force-stop was performed. Automatic boot delivery
+  by Android remains to be confirmed at the next real reboot. No application
+  binary or provider configuration was changed.
+
 ## Recent experience and reflection continuity — 0.16.0 (2026-09-20)
 
 - Diagnosis found the dream selection cursor still at September 14 despite
