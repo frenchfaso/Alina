@@ -1,6 +1,6 @@
 # Astra configuration
 
-These are the current global defaults (medium for dream/checkpoints; low for chat/search). The provider capability figures below
+These are the current global defaults (medium for dream/checkpoints; low for chat; Sol 6 high for search). The provider capability figures below
 were checked on 2026-09-08 against the official model/Responses documentation
 and the local Codex 0.153.4 catalog fetched that day. The subscription backend
 is not interchangeable with the public API.
@@ -13,11 +13,11 @@ is not interchangeable with the public API.
 | `reasoning_effort` | `low` |
 | `dream_reasoning_effort` | `medium` |
 | `checkpoint_reasoning_effort` | `medium` |
-| Hosted search effort | `low` |
+| Hosted search effort | `high` |
 | `verbosity` | `low` |
 | `model_timeout_seconds` | `600` |
 | `search.default` | `openai` |
-| `search.openai_model` | empty: follow the ChatGPT model, otherwise Astra |
+| `search.openai_model` | empty: `gpt-6-sol`, independent of chat |
 
 The Codex catalog reports `context_window=272000`, `max_context_window=872000`,
 `effective_context_window_percent=95`, default reasoning `medium` and verbosity

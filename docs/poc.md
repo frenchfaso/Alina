@@ -42,7 +42,7 @@ Files are private plaintext, not encrypted. Configuration updates are atomic.
 
 - **ChatGPT Plus/Pro:** `alina setup login` runs a dedicated OAuth device login.
   The default model is `gpt-6-astra`, with a 272,000-token working window.
-  Chat and hosted search use low reasoning; dream and checkpoints use medium. See [Astra defaults and verification](astra.md).
+  Chat uses low reasoning; dream and checkpoints use medium. Hosted search uses Sol 6 high. See [Astra defaults and verification](astra.md).
   Enable device login in ChatGPT security settings if required. The fallback
   `alina setup login browser` uses PKCE and validates OAuth state. Its callback binds
   only `127.0.0.1:1455`; on a remote device you can paste the complete callback
@@ -69,8 +69,10 @@ configured default. Results include source URLs and bounded snippets. It does
 not save arbitrary remote files. Telegram uploads use the separate inbox below.
 
 OpenAI is the default search provider and reuses Alina's dedicated ChatGPT login.
-An empty `search.openai_model` follows the main ChatGPT model (Astra if the main
-provider is OpenCode Go). No second key is required for the subscription route.
+An empty `search.openai_model` selects `gpt-6-sol`, independently of the chat model.
+Hosted search uses high reasoning. Alina can override the search model and reasoning
+for one direct call using the ChatGPT catalog; workers always use the configured defaults.
+Substantial research normally goes to a [bounded worker](delegation.md). No second key is required for the subscription route.
 OpenAI search uses Responses `web_search`. With an explicit OpenAI API key it
 uses the public API and **separate API billing**. Without that key it tries the
 ChatGPT Codex backend, whose hosted search availability depends on the backend,
@@ -166,7 +168,8 @@ send an image as a file when preserving the original matters. See the
 ## Native file tools
 
 The ordinary agent loop exposes `shell`, `read`, `write`, `edit`, `web_search`,
-`web_fetch`, `memory`, `schedule`, `view_image` and `harness`; Telegram user turns
+`web_fetch`, `memory`, `schedule`, `view_image`, `harness` and
+[`calendar`](calendar.md) for configured users; Telegram user turns
 also expose `send_file`. The file tools follow Pi's
 small interfaces, implemented directly in Go without additional dependencies:
 

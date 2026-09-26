@@ -33,7 +33,11 @@ func TestAstraOAuthParametersSearchAndUsage(t *testing.T) {
 		if count == 2 {
 			effort = "medium"
 		}
-		if body["model"] != defaultModel || body["reasoning"].(map[string]any)["effort"] != effort || body["text"].(map[string]any)["verbosity"] != "low" {
+		model := defaultModel
+		if count == 3 {
+			model, effort = defaultSearchModel, defaultSearchEffort
+		}
+		if body["model"] != model || body["reasoning"].(map[string]any)["effort"] != effort {
 			t.Error("incorrect Astra parameters", body)
 		}
 		for _, key := range []string{"temperature", "top_p", "max_output_tokens", "prompt_cache_retention"} {

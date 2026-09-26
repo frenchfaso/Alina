@@ -15,7 +15,10 @@ import (
 
 // Protocol compatibility version, not Alina's identity.
 // openai/codex: codex-rs/codex-api/src/endpoint/models.rs.
-const catalogClientVersion = "0.153.4"
+const catalogClientVersion = "0.156.0"
+
+// Keep account/preference identities stable when refreshing the wire protocol.
+const catalogIdentityVersion = "0.153.4"
 
 type reasoningCatalog struct {
 	mu      sync.Mutex
@@ -32,10 +35,11 @@ type catalogModel struct {
 	Vision  bool     `json:"vision"`
 }
 type modelCatalog struct {
-	Key     string         `json:"key"`
-	Models  []catalogModel `json:"models"`
-	Fetched time.Time      `json:"fetched"`
-	Stale   bool           `json:"-"`
+	ClientVersion string         `json:"client_version"`
+	Key           string         `json:"key"`
+	Models        []catalogModel `json:"models"`
+	Fetched       time.Time      `json:"fetched"`
+	Stale         bool           `json:"-"`
 }
 
 func (c modelCatalog) model(id string) (catalogModel, bool) {
@@ -70,7 +74,7 @@ func parseModelCatalog(raw []byte) (modelCatalog, error) {
 	if err := json.Unmarshal(raw, &response); err != nil {
 		return modelCatalog{}, errors.New("invalid model catalog")
 	}
-	c := modelCatalog{Models: []catalogModel{}}
+	c := modelCatalog{ClientVersion: catalogClientVersion, Models: []catalogModel{}}
 	for _, m := range response.Models {
 		if !validModelID(m.Slug) || m.Visibility == "hide" || m.Context < 8192 || m.Levels == nil {
 			continue
@@ -95,7 +99,7 @@ func parseModelCatalog(raw []byte) (modelCatalog, error) {
 	return c, nil
 }
 func (p *Provider) catalogKey(account string) string {
-	return contentID(p.Config.Provider + "\n" + p.BaseURL + "\n" + account + "\n" + catalogClientVersion)
+	return contentID(p.Config.Provider + "\n" + p.BaseURL + "\n" + account + "\n" + catalogIdentityVersion)
 }
 func (p *Provider) currentCatalogKey() (string, error) {
 	var credential Credential
@@ -121,7 +125,7 @@ func (c modelCatalog) available(err error) (modelCatalog, error) {
 func loadModelCatalog(path, key string) modelCatalog {
 	b, err := readSmallFile(path, 256<<10)
 	var saved modelCatalog
-	if err != nil || json.Unmarshal([]byte(b), &saved) != nil || saved.Key != key || len(saved.Models) == 0 || len(saved.Models) > 500 || saved.Fetched.IsZero() || saved.Fetched.After(time.Now().Add(time.Minute)) {
+	if err != nil || json.Unmarshal([]byte(b), &saved) != nil || saved.Key != key || saved.ClientVersion != catalogClientVersion || len(saved.Models) == 0 || len(saved.Models) > 500 || saved.Fetched.IsZero() || saved.Fetched.After(time.Now().Add(time.Minute)) {
 		return modelCatalog{}
 	}
 	seen := map[string]bool{}

@@ -4,6 +4,92 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Workers and Sol 6 research — 0.19.0 (2026-09-26)
+
+- Completed the [code review and fixes](review-2026-09-26.md), including catalog
+  protocol refresh without preference loss, bounded worker lifecycle and report
+  isolation, rooted file tools, and per-call search selection.
+- Full race suite and vet passed; targeted integration tests passed. Android,
+  Linux and three BSD target builds passed. macOS sandbox denied reads/writes
+  outside the worker workspace and network access to a listening test server.
+- A15 updated at idle; SHA-256:
+  `de4da08a8e1cf3725ecf344f936d95b5bb35716655c0fa13bd59003d1faa1608`.
+  Version 0.19.0-poc, restart and doctor verified. Worker shell is unavailable on
+  this device because the required Landlock capability is absent.
+- Live local job `verification-019-worker-1` and worker
+  `delegate-4700860a2d163eba84d51657` completed. Operational logs verify Astra low
+  for the parent, Sol 6 low for the worker, and Sol 6 high for the one hosted
+  research call. Source URLs and the concise report reached the parent;
+  no Telegram delivery or Calendar modification was requested.
+- After correcting withheld drafts, `verification-019-final-1` also completed
+  successfully on the final binary, without the false premature-reply claim.
+
+## Short Calendar onboarding — 0.18.2 (2026-09-25)
+
+- Replaced the long Calendar data-use disclaimer with one friendly explanation
+  and a natural invitation to connect. Instructions honor existing agreement
+  and avoid repeating confirmations; detailed behavior stays in documentation.
+- Permission checks and explicit consent requirements are unchanged. The
+  explanation still mentions AI processing and shared chat/family memory.
+- Existing Calendar tests and Android/arm64 build passed. Galaxy A15 updated
+  after an idle check and checksum verification; restart and doctor passed.
+
+## Family Calendar write delegation — 0.18.1 (2026-09-25)
+
+- Connection owners may grant/revoke writing for individual configured family
+  members in direct chat. New grants require explicit consent and are scoped to
+  calendar, recipient and original family; ordinary family sharing stays read-only.
+- Each read/write checks current membership; delegates cannot re-delegate,
+  disconnect another person's binding, bypass Google's read-only grants or write
+  during background tasks. Re-linking preserves explicit grants; repeated grants
+  and revocations are idempotent. Named delegates also gain reading access.
+- Tests cover delegated create/update, revocation, consent, same-family lookup,
+  cross-family denial, changes of family, owner-only permission management,
+  persistence across tool calls/re-linking and Google read-only enforcement.
+  Full `go test -race ./...`, `go vet ./...` and Android/arm64 build passed.
+- Galaxy A15 updated to 0.18.1 after an idle check and matching binary checksum.
+  Daemon restart, status and offline doctor passed. No real delegations were
+  granted, events modified or Google sharing permissions changed.
+
+## Calendar event creation and editing — 0.18.0 (2026-09-25)
+
+- Calendar accepts reader/writer/owner access and uses `calendar.events` scope.
+  Existing reader-only Google grants still prevent writes. Creation/editing is
+  limited to the connection owner in direct chat; family access remains reading.
+- Added bounded title/location/date changes, all-day events, exact-ETag updates
+  and deterministic creation IDs. No deletion, invitations or whole-series edits.
+- Tests cover read-only and family denials, scheduled/reflection restrictions,
+  writer linking, retry after a lost creation response without duplicates,
+  conflicting request reuse, stale ETags, server-side concurrent changes, field
+  preservation, invalid dates/timezones, guests and recurring/cancelled events.
+- `go test -race ./...` and `go vet ./...` passed on macOS. Focused Calendar tests
+  passed after narrowing the internal attendee metadata projection. Android/arm64
+  build succeeded and the transfer checksum matched.
+- Galaxy A15 updated to 0.18.0; daemon restart, status and offline doctor passed.
+  No actual event was created/modified and no Google sharing permission changed.
+  Real Google write behavior remains untested while the calendars are read-only.
+
+## Google Calendar — 0.17.0 (2026-09-25)
+
+- Added one native read-only Calendar tool with conversational setup, explicit
+  linking consent, owner bindings and optional family access. No new CLI command
+  or scheduled polling. Existing shared conversation archives remain shared.
+- Tests cover linking, consent, user/family visibility and membership changes,
+  owner-only disconnect, background restrictions, reader-only grants, bounded
+  dates, pagination, field minimization, credential permissions, fixed token
+  endpoint, JWT scope, token caching/renewal and redacted HTTP errors.
+- `go test ./...`, `go test -race ./...`, `go vet ./...` passed on macOS with
+  Go 1.27.1. Focused Calendar tests passed after reducing the result size cap
+  below the loop's tool-result truncation threshold. Android/arm64 cross-build
+  succeeded; transferred binary checksum verified before activation.
+- Galaxy A15 updated from 0.16.0 to 0.17.0 with no active jobs at the preflight
+  check. Daemon restart and offline `status`/`doctor` succeeded. Existing model,
+  Telegram, schedules and autostart configuration were preserved.
+- Service-account JSON is installed privately on the device. No real calendar
+  events have been fetched: Google sharing and user consent through Telegram
+  are still pending. Tests use synthetic credentials and mocked Google replies;
+  successful live authentication/event retrieval is not yet established.
+
 ## Galaxy autostart — configuration only (2026-09-21)
 
 - Alina 0.16.0 had not restarted after Termux was restarted. Started it and

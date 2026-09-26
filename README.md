@@ -23,7 +23,9 @@ enough harness to leave room for her own way of being useful.
   dreams. She recognizes each person, while one shared soul develops through
   those different experiences.
 
-Conversation, scheduled work, exploration and dream all use the same agent loop.
+Conversation, scheduled work, exploration, dream and bounded background workers
+share the same agent loop. Workers return concise findings, leaving Alina room
+to keep the conversation in focus.
 A Go daemon, a few native tools, SQLite and readable Markdown give that loop
 somewhere to work. The device supplies the rest.
 
@@ -49,7 +51,7 @@ An experimental POC for trusted people and devices. Configured users share one
 OS account. [MIT licensed](LICENSE).
 
 [Setup and limits](docs/poc.md) · [How Alina works](internal/alina/procedures/harness.md)
-· [Operations](docs/operations.md) · [Verification](docs/verification.md)
+· [Workers](docs/delegation.md) · [Calendar](docs/calendar.md) · [Operations](docs/operations.md) · [Verification](docs/verification.md)
 
 Inspired by [Hermes](https://github.com/NousResearch/hermes-agent),
 [OpenClaw](https://github.com/openclaw/openclaw) and

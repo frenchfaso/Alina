@@ -622,7 +622,7 @@ func (t *Telegram) pendingNotifications(ctx context.Context) ([]Job, error) {
 func pendingTelegramJobs(ctx context.Context, engine *Engine, owner string) ([]Job, error) {
 	rows, err := engine.Memory.DB.QueryContext(ctx, `SELECT j.payload FROM jobs j
  LEFT JOIN memory_state d ON d.key='telegram-delivered:'||j.id
- WHERE j.owner=? AND j.status IN ('approval','completed','failed','cancelled','interrupted')
+ WHERE COALESCE(json_extract(j.payload,'$.kind'),'')!='delegate' AND j.owner=? AND j.status IN ('approval','completed','failed','cancelled','interrupted')
  AND COALESCE(d.value,'') != CASE WHEN j.status='approval' THEN json_extract(j.payload,'$.approval.id') ELSE j.status END
  ORDER BY (j.status='approval') DESC,j.created,j.id LIMIT 50`, owner)
 	if err != nil {

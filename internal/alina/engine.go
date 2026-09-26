@@ -19,6 +19,7 @@ type Approval struct {
 	Expires time.Time `json:"expires"`
 }
 type Job struct {
+	ParentID        string       `json:"parent_id,omitempty"`
 	Model           string       `json:"model,omitempty"`
 	Reasoning       string       `json:"reasoning,omitempty"`
 	Continuation    string       `json:"continuation,omitempty"`
@@ -41,7 +42,9 @@ type Job struct {
 	PendingSteering int          `json:"pending_steering,omitempty"`
 }
 type runningJob struct {
-	model *catalogModel
+	model             *catalogModel
+	delegates         map[string]*runningJob
+	delegateDelivered map[string]bool
 	Job
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -53,33 +56,36 @@ type runningJob struct {
 	steerSignal chan struct{}
 }
 type Engine struct {
-	catalog     reasoningCatalog
-	restartMu   sync.Mutex
-	restarting  atomic.Bool
-	managed     bool
-	Events      *EventLog
-	Scope       string
-	AdminDir    string
-	global      *Engine
-	scopes      map[string]*Engine
-	mu          sync.Mutex
-	Dir         string
-	Config      Config
-	Model       Model
-	Search      *Search
-	Permissions *Permissions
-	jobs        map[string]*runningJob
-	jobChanged  *wakeSignal
-	gate        *modelGate
-	background  sync.Mutex
-	fileMu      *sync.Mutex
-	sessionTail map[string]<-chan struct{}
-	inFlight    int // Includes cancelled turns still holding a place in the queue.
-	Memory      *Memory
-	Scheduler   *Scheduler
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
+	catalog      reasoningCatalog
+	calendar     calendarState
+	delegateBusy atomic.Bool
+	delegateGate modelGate
+	restartMu    sync.Mutex
+	restarting   atomic.Bool
+	managed      bool
+	Events       *EventLog
+	Scope        string
+	AdminDir     string
+	global       *Engine
+	scopes       map[string]*Engine
+	mu           sync.Mutex
+	Dir          string
+	Config       Config
+	Model        Model
+	Search       *Search
+	Permissions  *Permissions
+	jobs         map[string]*runningJob
+	jobChanged   *wakeSignal
+	gate         *modelGate
+	background   sync.Mutex
+	fileMu       *sync.Mutex
+	sessionTail  map[string]<-chan struct{}
+	inFlight     int // Includes cancelled turns still holding a place in the queue.
+	Memory       *Memory
+	Scheduler    *Scheduler
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
 }
 
 func newEngine(dir, adminDir string, c Config, m Model, s *Search, global *Engine, events ...*EventLog) (*Engine, error) {
@@ -260,6 +266,9 @@ func (e *Engine) resumeKey(id, owner, key string) (Job, error) {
 	if !ok || owner != "" && old.Owner != owner {
 		return Job{}, errors.New("job not found")
 	}
+	if old.Kind == "delegate" {
+		return Job{}, errors.New("delegated tasks are bounded; start a new delegation with the needed findings instead of resuming")
+	}
 	if !terminalStatus(old.Status) {
 		return Job{}, errors.New("cancel or finish the active job before resuming")
 	}
@@ -375,7 +384,7 @@ func (e *Engine) allow(j *runningJob, a Action) error {
 }
 func (e *Engine) activity(j *runningJob, text string) { e.mu.Lock(); j.Activity = text; e.mu.Unlock() }
 func (e *Engine) commentary(j *runningJob, text string) {
-	if j.Kind == "dream" || j.Kind == "initiative" || strings.TrimSpace(text) == "" {
+	if j.Kind == "dream" || j.Kind == "initiative" || j.Kind == "delegate" || strings.TrimSpace(text) == "" {
 		return
 	}
 	e.mu.Lock()
@@ -384,6 +393,12 @@ func (e *Engine) commentary(j *runningJob, text string) {
 	e.jobChanged.wake()
 }
 func (e *Engine) finish(j *runningJob, output string, err error) {
+	if j.Kind == "delegate" {
+		output = truncate(output, 4000)
+		if err != nil && output == "" {
+			output = "Task incomplete. Inspect the saved trace before retrying; tool side effects may have occurred."
+		}
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if output == "" {
@@ -448,9 +463,9 @@ func (e *Engine) run(j *runningJob) {
 	e.finish(j, output, err)
 }
 func toolSpecs() []ToolSpec {
-	specs := []ToolSpec{{Name: "shell", Description: "Run an installed command with sh -c. Declare network=true for network access, download=true for arbitrary file downloads, install=true for installation. Strict network policy asks consent for any network access; declared policy asks for downloads/installation. Subprocesses are owned by this invocation and cleaned up on completion.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}, "directory": map[string]any{"type": "string"}, "network": map[string]any{"type": "boolean"}, "download": map[string]any{"type": "boolean"}, "install": map[string]any{"type": "boolean"}}, "required": []string{"command"}}}, {Name: "web_search", Description: "Search the web using openai, tavily or brave. Returns text and source URLs; no arbitrary file downloads.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}, "provider": map[string]any{"type": "string", "enum": []string{"openai", "tavily", "brave"}}}, "required": []string{"query"}}}}
+	specs := []ToolSpec{{Name: "shell", Description: "Run an installed command with sh -c. Declare network=true for network access, download=true for arbitrary file downloads, install=true for installation. Strict network policy asks consent for any network access; declared policy asks for downloads/installation. Subprocesses are owned by this invocation and cleaned up on completion.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}, "directory": map[string]any{"type": "string"}, "network": map[string]any{"type": "boolean"}, "download": map[string]any{"type": "boolean"}, "install": map[string]any{"type": "boolean"}}, "required": []string{"command"}}}, searchSpec(true)}
 	specs = append(specs, fileToolSpecs()...)
-	specs = append(specs, fetchToolSpec(), harnessSpec())
+	specs = append(specs, fetchToolSpec(), harnessSpec(), calendarSpec(), delegateSpec())
 	specs = append(specs, sendFileSpec())
 	return append(append(specs, stateToolSpecs()...), imageToolSpec())
 }
@@ -459,7 +474,17 @@ func imageToolSpec() ToolSpec {
 	return ToolSpec{Name: "view_image", Description: "Inspect a saved PNG, JPEG or WebP image inside your workspace. Use the path from an attachment, archive entry, or a locally created screenshot. The image is delivered as visual input; other file types are unsupported.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}}, "required": []string{"path"}}}
 }
 func (e *Engine) tool(j *runningJob, c ToolCall) (string, error) {
+	if j.Kind == "delegate" {
+		return e.delegateDispatch(j, c)
+	}
+	return e.toolShared(j, c)
+}
+func (e *Engine) toolShared(j *runningJob, c ToolCall) (string, error) {
 	switch c.Name {
+	case "delegate":
+		return e.delegateTool(j, c.Arguments)
+	case "calendar":
+		return e.calendarTool(j, c.Arguments)
 	case "harness":
 		return e.harnessTool(j, c.Arguments)
 	case "send_file":
@@ -525,26 +550,7 @@ func (e *Engine) tool(j *runningJob, c ToolCall) (string, error) {
 		}
 		return runShell(j.ctx, action, e.Config.CommandTimeout)
 	case "web_search":
-		var a struct{ Query, Provider string }
-		if err := json.Unmarshal([]byte(c.Arguments), &a); err != nil {
-			return "", err
-		}
-		if e.Search == nil {
-			return "", errors.New("search unavailable")
-		}
-		if j.Kind == "initiative" && !e.Config.Autonomy.Search {
-			return "", errors.New("web research for personal exploration is disabled")
-		}
-		if a.Provider == "" {
-			a.Provider = e.Search.Config.Default
-		}
-		if a.Provider == "openai" {
-			m, err := (jobModel{e: e, j: j}).infer(j.ctx, "search", func(ctx context.Context) (Message, error) {
-				return e.Search.complete(ctx, j.Session, a.Provider, a.Query)
-			})
-			return m.Content, err
-		}
-		return e.Search.Run(j.ctx, j.Session, a.Provider, a.Query)
+		return e.searchTool(j, c.Arguments)
 	default:
 		return "", fmt.Errorf("unknown tool %q", c.Name)
 	}

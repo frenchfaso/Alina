@@ -13,7 +13,7 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.16.0-poc"
+const Version = "0.19.0-poc"
 
 // Codex ChatGPT model catalog, 2026-09-08. These are backend limits, not
 // the larger public API window. ContextTokens remains user configurable.
@@ -174,6 +174,9 @@ func (c Config) Validate() error {
 	}
 	if c.ContextTokens < 8192 || c.ContextTokens > 2000000 {
 		return errors.New("context_tokens must be between 8192 and 2000000")
+	}
+	if c.Search.OpenAIModel != "" && !validModelID(c.Search.OpenAIModel) {
+		return errors.New("invalid OpenAI search model")
 	}
 	if c.Search.Default != "openai" && c.Search.Default != "tavily" && c.Search.Default != "brave" && c.Search.Default != "none" {
 		return errors.New("invalid search provider")

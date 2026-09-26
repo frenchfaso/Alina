@@ -79,7 +79,13 @@ func (m jobModel) Complete(ctx context.Context, session string, messages []Messa
 
 // Auxiliary OpenAI research uses the same gate, budget and usage accounting.
 func (m jobModel) infer(ctx context.Context, purpose string, call func(context.Context) (Message, error)) (Message, error) {
-	release, err := m.e.gate.acquire(ctx, m.j.Kind == "dream" || m.j.Kind == "initiative")
+	gate := m.e.gate
+	// One bounded worker may infer alongside the main loop, so long research
+	// cannot hold the conversation gate. The global delegate slot limits this to two calls.
+	if m.j.Kind == "delegate" {
+		gate = &m.e.global.delegateGate
+	}
+	release, err := gate.acquire(ctx, m.j.Kind == "dream" || m.j.Kind == "initiative")
 	if err != nil {
 		return Message{}, err
 	}
@@ -123,6 +129,9 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 			ctx = context.WithValue(ctx, reasoningEffortKey{}, m.j.model.Default)
 		}
 	}
+	if m.j.Kind == "delegate" && m.j.Usage.InputTokens+m.j.Usage.OutputTokens >= 200000 {
+		return Message{}, errors.New("delegate token budget reached; task incomplete")
+	}
 	started := time.Now()
 	callID := randomID()
 	provider, model := m.e.Config.Provider, m.e.Config.Model
@@ -135,8 +144,8 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 	}
 	if purpose == "search" {
 		provider = "openai"
-		model = m.e.Search.openAIModel()
-		effort = "low"
+		selection := m.e.Search.selection(ctx)
+		model, effort = selection.Model, selection.Effort
 	}
 	m.e.Events.emit("model.started", nil, "job_id", m.j.ID, "call_id", callID, "provider", provider, "model", model, "purpose", purpose, "reasoning", effort)
 	answer, err := call(ctx)

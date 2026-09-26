@@ -18,6 +18,9 @@ import (
 )
 
 func Main(args []string) error {
+	if len(args) > 0 && args[0] == "__delegate_shell" {
+		return delegateSandboxExec(args[1:])
+	}
 	if len(args) > 0 && args[0] == "__sandbox" {
 		return sandboxExec(args[1:])
 	}

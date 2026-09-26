@@ -19,6 +19,13 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "__delegate_shell" {
+		if err := delegateSandboxExec(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "__daemon" || os.Args[1] == "__restart") {
 		if os.Args[1] == "__daemon" && os.Getenv("ALINA_TEST_FAIL_START") == "1" {
 			if c, err := LoadConfig(Home()); err == nil && c.Model == "startup-failure-fixture" {

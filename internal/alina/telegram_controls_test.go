@@ -274,3 +274,27 @@ func TestTelegramStopRetryDoesNotCancelNewWork(t *testing.T) {
 		t.Fatal("retry cancelled later request", current.Status)
 	}
 }
+
+func TestCatalogProtocolUpgradeRefreshesWithoutResettingPreferences(t *testing.T) {
+	e, count, _, _, _ := controlEngine(t)
+	c, err := e.models(e.ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.setModelPreference(e.ctx, "local", "model", "small-fixture", c); err != nil {
+		t.Fatal(err)
+	}
+	c.ClientVersion = "0.153.4"
+	if err = writeJSON(filepath.Join(e.AdminDir, "model-catalog.json"), c); err != nil {
+		t.Fatal(err)
+	}
+	e.catalog = reasoningCatalog{}
+	next, err := e.models(e.ctx, true)
+	if err != nil || count.Load() != 2 || next.ClientVersion != catalogClientVersion {
+		t.Fatal("protocol cache not refreshed", next, err)
+	}
+	m, _ := e.selectedModel(e.ctx, "local", next)
+	if m.ID != "small-fixture" {
+		t.Fatal("protocol upgrade reset user preference", m)
+	}
+}

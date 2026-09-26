@@ -80,7 +80,7 @@ func TestPromptAndToolsMatchCapabilities(t *testing.T) {
 	e := newTestEngine(t, &scriptedModel{})
 	e.Search = &Search{Config: e.Config.Search}
 	chat := e.toolsFor(&runningJob{})
-	if len(chat) != 10 {
+	if !hasTool(chat, "delegate") || !hasTool(chat, "web_search") || !hasTool(chat, "shell") {
 		t.Fatal("default tools", len(chat))
 	}
 	dream := e.toolsFor(&runningJob{Job: Job{Kind: "dream"}})
@@ -137,7 +137,7 @@ func TestOpenAIResearchUsesInitiativeBudgetAndUsage(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
-		if body["reasoning"].(map[string]any)["effort"] != "low" {
+		if body["reasoning"].(map[string]any)["effort"] != defaultSearchEffort {
 			t.Error("research effort")
 		}
 		w.Header().Set("Content-Type", "application/json")

@@ -101,9 +101,12 @@ func runShell(ctx context.Context, a Action, timeout int) (string, error) {
 			return "", e
 		}
 	}
+	return executeShell(ctx, path, args, a.Directory, shellEnvironment())
+}
+func executeShell(ctx context.Context, path string, args []string, dir string, env []string) (string, error) {
 	cmd := exec.CommandContext(ctx, path, args...)
-	cmd.Dir = a.Directory
-	cmd.Env = shellEnvironment()
+	cmd.Dir = dir
+	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.WaitDelay = 2 * time.Second
 	cmd.Cancel = func() error {
@@ -115,7 +118,7 @@ func runShell(ctx context.Context, a Action, timeout int) (string, error) {
 	var out cappedBuffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
-	e = cmd.Start()
+	e := cmd.Start()
 	if e != nil {
 		return "", e
 	}

@@ -17,6 +17,10 @@ the protocol adapters and operating model:
   their existing dedicated tool. It does not port Pi's fuzzy matching or UI code.
 - [OpenAI authentication](https://learn.chatgpt.com/docs/auth): subscription
   versus API access, device login, refresh and credential handling.
+- [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) and
+  [Codex changelog](https://learn.chatgpt.com/docs/changelog), checked 2026-09-26.
+  Live catalog requests verified that client version 0.156.0 exposes Sol 6;
+  the previous 0.153.4 query did not.
 - [OpenAI web search](https://developers.openai.com/api/docs/guides/tools-web-search):
   Responses tool and citation annotations.
 - [OpenCode Go](https://opencode.ai/docs/go/): model endpoints, client identity

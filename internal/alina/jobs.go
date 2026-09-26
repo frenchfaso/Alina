@@ -56,6 +56,9 @@ func (e *Engine) loadJobs() error {
 		j.Status = "interrupted"
 		j.Approval = nil
 		j.Error = "Service restarted; use resume to recover the intention and verify the current state. No command was replayed."
+		if j.Kind == "delegate" {
+			j.Error = "Service restarted; delegate interrupted. Inspect its retained trace before starting fresh; no command was replayed."
+		}
 		if err = e.persist(&runningJob{Job: j}); err != nil {
 			return err
 		}

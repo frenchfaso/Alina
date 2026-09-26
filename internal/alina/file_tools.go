@@ -66,6 +66,21 @@ func canonicalFilePath(path string) (string, error) {
 }
 
 func (e *Engine) filePath(j *runningJob, path string, writing bool) (string, error) {
+	if j.Kind == "delegate" {
+		root := e.delegateWorkspace(j)
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		resolved, err := canonicalFilePath(path)
+		if err != nil {
+			return "", err
+		}
+		root, err = canonicalFilePath(root)
+		if err != nil || !within(root, resolved) {
+			return "", errors.New("delegate file access is limited to its workspace")
+		}
+		return resolved, nil
+	}
 	if strings.TrimSpace(path) == "" || len(path) > 4096 || strings.ContainsRune(path, 0) {
 		return "", errors.New("a valid file path is required")
 	}
@@ -153,8 +168,24 @@ func (e *Engine) fileTool(j *runningJob, call ToolCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	base, name := filepath.Dir(path), filepath.Base(path)
+	if j.Kind == "delegate" {
+		base, err = filepath.EvalSymlinks(e.delegateWorkspace(j))
+		if err != nil {
+			return "", err
+		}
+		name, err = filepath.Rel(base, path)
+		if err != nil {
+			return "", err
+		}
+	}
 	if call.Name == "read" {
-		return readTextPage(j.ctx, path, a.Offset, a.Limit)
+		root, err := os.OpenRoot(base)
+		if err != nil {
+			return "", err
+		}
+		defer root.Close()
+		return readTextPageRoot(j.ctx, root, name, path, a.Offset, a.Limit)
 	}
 	if call.Name == "write" && (a.Content == nil || !validFileText(*a.Content)) {
 		return "", errors.New("write requires UTF-8 content without NUL bytes, at most 8 MiB; an empty string creates an empty file")
@@ -165,17 +196,21 @@ func (e *Engine) fileTool(j *runningJob, call ToolCall) (string, error) {
 	if err = j.ctx.Err(); err != nil {
 		return "", err
 	}
-	if call.Name == "write" {
+	if call.Name == "write" && j.Kind != "delegate" {
 		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return "", err
 		}
 	}
-	root, err := os.OpenRoot(filepath.Dir(path))
+	root, err := os.OpenRoot(base)
 	if err != nil {
 		return "", err
 	}
 	defer root.Close()
-	name := filepath.Base(path)
+	if call.Name == "write" && j.Kind == "delegate" {
+		if err = root.MkdirAll(filepath.Dir(name), 0700); err != nil {
+			return "", err
+		}
+	}
 	previous, info, err := textSnapshot(root, name)
 	if err != nil && !(call.Name == "write" && os.IsNotExist(err)) {
 		return "", err
@@ -316,7 +351,7 @@ func replaceText(original string, edits []textEdit) (string, int, error) {
 	return out.String(), strings.Count(original[:spans[0].start], "\n") + 1, nil
 }
 
-func readTextPage(ctx context.Context, path string, offset, limit int) (string, error) {
+func readTextPageRoot(ctx context.Context, root *os.Root, name, path string, offset, limit int) (string, error) {
 	if offset < 0 || limit < 0 || limit > maxReadLines {
 		return "", errors.New("offset must be positive; limit must be 1-2000")
 	}
@@ -326,12 +361,7 @@ func readTextPage(ctx context.Context, path string, offset, limit int) (string, 
 	if limit == 0 {
 		limit = maxReadLines
 	}
-	root, err := os.OpenRoot(filepath.Dir(path))
-	if err != nil {
-		return "", err
-	}
-	defer root.Close()
-	f, info, err := openTextFile(root, filepath.Base(path), false)
+	f, info, err := openTextFile(root, name, false)
 	if err != nil {
 		return "", err
 	}

@@ -15,6 +15,9 @@ import (
 func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 	e.refreshJobModel(j)
 	path := filepath.Join(e.Dir, "sessions", j.Session+".json")
+	if j.Kind == "delegate" {
+		path = filepath.Join(e.Dir, "delegates", j.ID, "trace.json")
+	}
 	history := []Message{}
 	if b, err := os.ReadFile(path); err == nil {
 		if err = json.Unmarshal(b, &history); err != nil {
@@ -25,6 +28,9 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 	}
 	occurrences := map[string]int{}
 	for i := range history {
+		if j.Kind == "delegate" {
+			break
+		}
 		role, text := messageContent(history[i])
 		text = e.Memory.redact(text)
 		fingerprint := contentID(role + "\n" + text)
@@ -62,13 +68,16 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		}
 	}
 	appendMessage := func(msg Message) error {
-		if !syntheticMessage(msg) {
+		if j.Kind != "delegate" && !syntheticMessage(msg) {
 			if err := e.Memory.recordMessage(j.ctx, time.Now(), Job{Session: j.Session, ID: j.ID, Kind: j.Kind, Owner: j.Owner}, &msg); err != nil {
 				return err
 			}
 		}
 		if msg.Role == "tool" && len(msg.Content) > 48<<10 {
-			msg.Content = truncate(msg.Content, 48<<10) + "\nFull recorded result: memory read part=" + msg.ArchiveID
+			msg.Content = truncate(msg.Content, 48<<10)
+			if j.Kind != "delegate" {
+				msg.Content += "\nFull recorded result: memory read part=" + msg.ArchiveID
+			}
 		}
 		history = append(history, msg)
 		return writeJSON(path, history)
@@ -83,8 +92,15 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		input = cue[0]
 	}
 	specs, maxSteps := e.toolsFor(j), e.Config.MaxSteps
-	prompt := e.prompt(specs)
-	context, err := e.runtimeContext(j)
+	var prompt, context string
+	var err error
+	if j.Kind == "delegate" {
+		prompt = delegatePrompt + "\nWorkspace: " + e.delegateWorkspace(j) + "\nReturn no more than 4000 UTF-8 bytes in your final report."
+		maxSteps = min(maxSteps, 20)
+	} else {
+		prompt = e.prompt(specs)
+		context, err = e.runtimeContext(j)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -109,10 +125,18 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		if vision != e.jobVision(j) {
 			vision = e.jobVision(j)
 			specs = e.toolsFor(j)
-			prefix[0].Content = e.prompt(specs)
+			if j.Kind != "delegate" {
+				prefix[0].Content = e.prompt(specs)
+			}
 		}
 		e.activity(j, fmt.Sprintf("Model · step %d", step+1))
-		history, err = e.compact(j, history, path, estimatedTokens(prefix)+estimatedTokens(specs))
+		if j.Kind == "delegate" {
+			if e.historyTokens(history, j)+estimatedTokens(prefix)+estimatedTokens(specs) > min(e.contextBudget(j)*90/100, 64000) {
+				return "", errors.New("delegate context budget reached; trace retained")
+			}
+		} else {
+			history, err = e.compact(j, history, path, estimatedTokens(prefix)+estimatedTokens(specs))
+		}
 		if errors.Is(err, errRequestChanged) {
 			step--
 			continue
@@ -148,14 +172,28 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		if len(msg.Calls) > 8 {
 			return "", errors.New("model requested more than eight tools in one step")
 		}
+		if len(msg.Calls) == 0 {
+			if j.Kind != "delegate" {
+				more, er := e.collectDelegates(j, appendMessage)
+				if er != nil {
+					return "", er
+				}
+				if more {
+					continue
+				}
+			}
+			if !e.closeMailbox(j) {
+				continue
+			}
+			// A held-back draft is not a delivered answer. Record only the
+			// response that includes completed workers and latest steering.
+			if err = appendMessage(msg); err != nil {
+				return "", err
+			}
+			return msg.Content, nil
+		}
 		if err = appendMessage(msg); err != nil {
 			return "", err
-		}
-		if len(msg.Calls) == 0 {
-			if e.closeMailbox(j) {
-				return msg.Content, nil
-			}
-			continue
 		}
 		e.commentary(j, msg.Content)
 		for _, call := range msg.Calls {
@@ -209,6 +247,9 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 				return "", err
 			}
 		}
+	}
+	if j.Kind == "delegate" {
+		return "", errors.New("delegate step budget reached; task incomplete; inspect retained trace")
 	}
 	if j.Kind == "dream" {
 		return "", errors.New("step budget reached; reflection unfinished; experiences remain eligible for the next dream")

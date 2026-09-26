@@ -309,7 +309,7 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		ts = append(ts, map[string]any{"type": "web_search"})
 	}
 	body := map[string]any{"model": model, "instructions": system, "input": input, "store": false, "stream": true, "tools": ts}
-	if (model == defaultModel || ctx.Value(selectedModelKey{}) != nil) && p.reasoningEffort(ctx) != "" {
+	if (model == defaultModel || ctx.Value(selectedModelKey{}) != nil || search) && p.reasoningEffort(ctx) != "" {
 		body["reasoning"] = map[string]any{"effort": p.reasoningEffort(ctx)}
 	}
 	if model == defaultModel {

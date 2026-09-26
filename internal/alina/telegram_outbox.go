@@ -22,7 +22,7 @@ func sendFileSpec() ToolSpec {
 	return ToolSpec{Name: "send_file", Description: "Attach a local workspace file to your final Telegram reply to the current user. No recipient selection. Copy outside files into your workspace first. Up to 4 files, 20 MiB each; files are sent as documents, preserving originals. This queues a snapshot, not an immediate send. Do not claim delivery has already succeeded.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}}, "required": []string{"path"}}}
 }
 func (e *Engine) canSendFile(j *runningJob) bool {
-	if !e.Config.Telegram.Enabled || j.Kind == "dream" || j.Kind == "initiative" {
+	if !e.Config.Telegram.Enabled || j.Kind == "dream" || j.Kind == "initiative" || j.Kind == "delegate" {
 		return false
 	}
 	for _, u := range e.Config.Users {

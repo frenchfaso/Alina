@@ -37,12 +37,21 @@ func hasTool(specs []ToolSpec, name string) bool {
 }
 
 func (e *Engine) toolsFor(j *runningJob) []ToolSpec {
+	if j.Kind == "delegate" {
+		return e.delegateSpecs(j)
+	}
 	specs := toolSpecs()
 	if j.Kind == "dream" {
 		specs = reflectionSpecs()
 	}
 	visible := specs[:0]
 	for _, s := range specs {
+		if s.Name == "delegate" && j.Kind != "chat" && j.Kind != "" {
+			continue
+		}
+		if s.Name == "calendar" && (j.Kind == "dream" || j.Kind == "initiative" || len(e.Config.Users) == 0) {
+			continue
+		}
 		if s.Name == "view_image" && j.model != nil && !j.model.Vision {
 			continue
 		}

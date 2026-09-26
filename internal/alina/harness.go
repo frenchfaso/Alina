@@ -67,7 +67,7 @@ func patchHarnessConfig(base Config, patch map[string]any) (Config, error) {
 
 func (e *Engine) harnessStatus() map[string]any {
 	binary, _ := os.Executable()
-	return map[string]any{"version": Version, "pid": os.Getpid(), "executable": binary, "self_restart_available": e.global.managed, "scope": e.Scope, "provider": e.Config.Provider, "model": e.Config.Model, "jobs": jobSummaries(e.Jobs("")), "dream": e.global.dreamStatus(), "logging": e.Events.health(), "network_sandbox": sandboxAvailable()}
+	return map[string]any{"version": Version, "pid": os.Getpid(), "executable": binary, "self_restart_available": e.global.managed, "scope": e.Scope, "provider": e.Config.Provider, "model": e.Config.Model, "jobs": jobSummaries(e.Jobs("")), "dream": e.global.dreamStatus(), "logging": e.Events.health(), "network_sandbox": sandboxAvailable(), "delegate_shell_sandbox": delegateSandboxAvailable()}
 }
 func (e *Engine) harnessTool(j *runningJob, raw string) (string, error) {
 	if len(raw) > 65536 {
