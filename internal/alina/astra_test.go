@@ -29,7 +29,7 @@ func TestAstraOAuthParametersSearchAndUsage(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
-		effort := "low"
+		effort := "medium"
 		if count == 2 {
 			effort = "medium"
 		}
@@ -114,6 +114,45 @@ func TestAstraConfigMigrationAndLimits(t *testing.T) {
 	c.ReasoningEffort = "none"
 	if c.Validate() == nil {
 		t.Fatal("unsupported effort accepted")
+	}
+	// Upgrading defaults never replaces a saved Astra selection.
+	c = DefaultConfig()
+	c.Model, c.ReasoningEffort, c.DreamEffort = "gpt-6-astra", "low", "medium"
+	if err = SaveConfig(dir, c); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := LoadConfig(dir)
+	if err != nil || saved.Model != c.Model || saved.ReasoningEffort != "low" || saved.DreamEffort != "medium" {
+		t.Fatal("saved choices changed during upgrade", saved, err)
+	}
+}
+
+func TestGPT6DreamParametersWithoutPersonalSelection(t *testing.T) {
+	for _, model := range []string{"gpt-6.1-sol", "gpt-6-astra"} {
+		t.Run(model, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+					return
+				}
+				reasoning, _ := body["reasoning"].(map[string]any)
+				text, _ := body["text"].(map[string]any)
+				if body["model"] != model || reasoning["effort"] != "xhigh" || text["verbosity"] != "low" || body["prompt_cache_key"] != "alina-dream" {
+					t.Error("lost background model parameters", body)
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Done\"}]}]}}\n\n")
+			}))
+			defer srv.Close()
+			c := DefaultConfig()
+			c.Model = model
+			p := Provider{Config: c, Client: srv.Client()}
+			ctx := context.WithValue(context.Background(), reasoningEffortKey{}, c.DreamEffort)
+			if _, err := p.responses(ctx, srv.URL, model, "fixture", "", "dream", []Message{{Role: "user", Content: "Reflect briefly."}}, nil, false, nil); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

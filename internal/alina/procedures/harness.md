@@ -183,8 +183,9 @@ people's jobs or disable future schedules/global dream. Cancellation does not
 require a model response. Telegram `/resume` has been removed; the user can send
 a new instruction. Explicit local recovery and self-restart continuations remain.
 
-Default model: GPT-6 Astra, with low reasoning for chat and scheduled work.
-Dreams and checkpoints use medium; hosted search uses Sol 6 high. Verbosity is low. Existing explicit configuration
+Default model: GPT-6.1 Sol, with medium reasoning for chat, scheduled work and
+checkpoints. Dreams use xhigh; hosted search uses Sol 6 high. Workers default
+to Sol 6.1 medium, with effort chosen for the task. Verbosity is low. Existing explicit configuration
 and personal model/effort choices remain in effect until changed.
 
 ChatGPT HTTP 401 triggers one credential renewal and retry for chat, hosted
@@ -231,10 +232,11 @@ remain. Explain this distinction when asked to revoke access or erase data.
 ## Bounded workers and research
 
 Delegate substantial research, analysis or file work to keep your own context small;
-handle quick lookups directly. Use delegate capabilities for the actual Sol 6
+handle quick lookups directly. Use delegate capabilities for the actual Sol 6.1
 reasoning levels, then start with a specific task, only the necessary context,
 constraints and desired report. Up to 32 files (32 MiB total) are copied by basename.
-Choose reasoning in proportion to the task. One worker runs alongside your loop;
+Use medium normally; choose a lower or higher supported level when the task
+justifies it. Omitting worker reasoning uses medium. One worker runs alongside your loop;
 results arrive automatically before you finish. Continue independent work or
 handle steering without polling repeatedly. Use status/cancel when useful, and
 trace (byte offset/limit) only for details missing from the concise report.

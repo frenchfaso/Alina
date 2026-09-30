@@ -21,6 +21,10 @@ the protocol adapters and operating model:
   [Codex changelog](https://learn.chatgpt.com/docs/changelog), checked 2026-09-26.
   Live catalog requests verified that client version 0.156.0 exposes Sol 6;
   the previous 0.153.4 query did not.
+- [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
+  checked 2026-09-30. Live A15 catalog queries with 0.159.2 expose Sol 6.1
+  and low/medium/high/xhigh/max; the previous 0.156.0 query hides the model.
+  Catalog account/preference identity stays unchanged.
 - [OpenAI web search](https://developers.openai.com/api/docs/guides/tools-web-search):
   Responses tool and citation annotations.
 - [OpenCode Go](https://opencode.ai/docs/go/): model endpoints, client identity

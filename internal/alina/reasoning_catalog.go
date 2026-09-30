@@ -15,7 +15,7 @@ import (
 
 // Protocol compatibility version, not Alina's identity.
 // openai/codex: codex-rs/codex-api/src/endpoint/models.rs.
-const catalogClientVersion = "0.156.0"
+const catalogClientVersion = "0.159.2"
 
 // Keep account/preference identities stable when refreshing the wire protocol.
 const catalogIdentityVersion = "0.153.4"

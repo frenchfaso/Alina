@@ -4,6 +4,26 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Sol 6.1 defaults — 0.19.1 (2026-09-30)
+
+- Fresh installations use Sol 6.1 medium for chat and checkpoints, xhigh for
+  dreams, and Sol 6.1 medium for workers. Alina may choose a different supported
+  worker effort per task. Hosted search remains Sol 6 high.
+- Refreshed the ChatGPT catalog protocol to 0.159.2: the live A15 account exposes
+  Sol 6.1 with low/medium/high/xhigh/max, vision and a 272000-token default window.
+  Account/preference identities and explicit saved model choices are preserved.
+- Full `go test -race ./...`, `go vet ./...` and Android/arm64 build passed.
+  Regression tests verify worker default/override selection and explicit xhigh
+  dream parameters, low verbosity and stable cache keys without a personal
+  model selection, including saved Astra configurations.
+- A15 updated at idle to 0.19.1-poc with Sol 6.1 medium and dream xhigh. Restart,
+  checksum and offline doctor passed. SHA-256:
+  `2cbe85421a59d03d5b473fa2e225a9b1e6d5b6168ce6d8a9b425650c2c862755`.
+- Local job `verification-0191-worker-1` and worker
+  `delegate-16de18efcebdcadf397fcfac` completed with `VERIFIED`. Operational logs
+  confirm Sol 6.1 medium for both. No Telegram message was sent by the test and
+  no real dream was forced; xhigh applies to the next scheduled dream.
+
 ## Workers and Sol 6 research — 0.19.0 (2026-09-26)
 
 - Completed the [code review and fixes](review-2026-09-26.md), including catalog

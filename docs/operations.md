@@ -358,8 +358,10 @@ Sources: [official Codex catalog client](https://github.com/openai/codex/blob/ma
 
 ## Token efficiency
 
-Fresh installations use GPT-6 Astra with low reasoning for chat and scheduled work,
-medium for dreams and checkpoints, and low verbosity. Hosted search uses Sol 6 high. Upgrades preserve
+Fresh installations use GPT-6.1 Sol with medium reasoning for chat, scheduled
+work and checkpoints, xhigh for dreams, and low verbosity. Workers use Sol 6.1
+medium by default, with task-specific effort selected by Alina. Hosted search
+uses Sol 6 high. Upgrades preserve
 explicit saved settings and personal `/model` and `/think` choices. To follow
 the global defaults again, use `/model default` (which also clears effort).
 

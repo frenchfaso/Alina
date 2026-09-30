@@ -17,7 +17,7 @@ a boot/login service.
 
 New quick setups enable memory, the 03:00 dream, catch-up, personal exploration
 (12 model calls/day, five minutes/run, with search), and the declared network
-policy. Astra's existing model, reasoning and context defaults are retained.
+policy. Fresh setups use Sol 6.1 medium with a 272000-token context.
 The host timezone is detected, including Android's system timezone. Repeating
 setup preserves existing custom settings and explicitly disabled features.
 
@@ -41,8 +41,10 @@ Files are private plaintext, not encrypted. Configuration updates are atomic.
 ## Providers
 
 - **ChatGPT Plus/Pro:** `alina setup login` runs a dedicated OAuth device login.
-  The default model is `gpt-6-astra`, with a 272,000-token working window.
-  Chat uses low reasoning; dream and checkpoints use medium. Hosted search uses Sol 6 high. See [Astra defaults and verification](astra.md).
+  The default model is `gpt-6.1-sol`, with a 272,000-token working window.
+  Chat and checkpoints use medium; dream uses xhigh. Workers default to Sol 6.1
+  medium, with effort chosen by Alina. Hosted search uses Sol 6 high. See
+  [model defaults and verification](astra.md).
   Enable device login in ChatGPT security settings if required. The fallback
   `alina setup login browser` uses PKCE and validates OAuth state. Its callback binds
   only `127.0.0.1:1455`; on a remote device you can paste the complete callback
@@ -140,7 +142,7 @@ message. Telegram update IDs prevent repeated work; completed downloads are
 reused on retries and existing originals are never overwritten.
 
 Photos use the largest Telegram representation. PNG, JPEG and WebP images,
-including images sent as documents, are delivered directly to Astra through
+including images sent as documents, are delivered directly to the vision-capable model through
 Responses image input. `view_image` reopens saved workspace images, including
 ones recovered through memory after a context checkpoint or restart. Image bytes
 are read only for model requests; journals and job records store paths and hashes.
@@ -286,7 +288,7 @@ operation's outcome unknown.
   independent proof of task success.
 - Working context is compacted at model-call boundaries when its size,
   including prompts and tool schemas, exceeds 90% of `context_tokens` (default
-  272000 for Astra: the threshold is 244800). The most recent provider input/output
+  272000 by default: the threshold is 244800). The most recent provider input/output
   usage anchors the count, plus estimates for new messages and changed prefix
   overhead. Without usage, Alina estimates visible serialized bytes / 3;
   opaque encrypted reasoning and internal metadata are not tokenized as text.

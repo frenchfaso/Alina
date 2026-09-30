@@ -122,7 +122,7 @@ func TestQuickSetupFullOnboarding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Provider != "chatgpt" || c.Model != defaultModel || c.ContextTokens != astraContextTokens || c.ReasoningEffort != "low" || c.DreamEffort != "medium" {
+	if c.Provider != "chatgpt" || c.Model != defaultModel || c.ContextTokens != defaultContextTokens || c.ReasoningEffort != "medium" || c.DreamEffort != "xhigh" {
 		t.Fatal("model defaults changed")
 	}
 	if !c.Telegram.Enabled || c.Telegram.OwnerID != 42 || c.Telegram.Binding == "" || f.ack != 9 {

@@ -19,7 +19,11 @@ func delegateTestEngine(t *testing.T, model Model) *Engine {
 		t.Fatal(err)
 	}
 	root.catalog.mu.Lock()
-	root.catalog.cached.Models = append(root.catalog.cached.Models, catalogModel{ID: delegateModel, Levels: []string{"low", "high"}, Default: "low", Context: 272000})
+	for i := range root.catalog.cached.Models {
+		if root.catalog.cached.Models[i].ID == delegateModel {
+			root.catalog.cached.Models[i].Levels = []string{"low", "medium", "high"}
+		}
+	}
 	root.catalog.mu.Unlock()
 	e := newTestEngine(t, model)
 	e.global = root
@@ -28,6 +32,27 @@ func delegateTestEngine(t *testing.T, model Model) *Engine {
 func delegateParent(e *Engine) *runningJob {
 	ctx, cancel := context.WithCancel(e.ctx)
 	return &runningJob{Job: Job{ID: "parent", Owner: "local", Kind: "chat"}, ctx: ctx, cancel: cancel, steerSignal: make(chan struct{}, 1)}
+}
+func TestDelegateDefaultReasoningAndCapabilities(t *testing.T) {
+	e := delegateTestEngine(t, modelFunc(func(ctx context.Context, _ string, _ []Message, _ []ToolSpec, _ func(string)) (Message, error) {
+		choice, ok := ctx.Value(selectedModelKey{}).(catalogModel)
+		if !ok || choice.ID != "gpt-6.1-sol" || ctx.Value(reasoningEffortKey{}) != "medium" {
+			t.Error("worker did not use Sol 6.1 medium", choice, ctx.Value(reasoningEffortKey{}))
+		}
+		return Message{Role: "assistant", Content: "Verified."}, nil
+	}))
+	parent := delegateParent(e)
+	defer parent.cancel()
+	capabilities, err := e.delegateTool(parent, `{"action":"capabilities"}`)
+	if err != nil || !strings.Contains(capabilities, `"default_reasoning":"medium"`) {
+		t.Fatal(capabilities, err)
+	}
+	if _, err = e.delegateTool(parent, `{"action":"start","task":"Inspect the supplied task and report briefly."}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = e.collectDelegates(parent, func(Message) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
 }
 func TestDelegateReportIsolationAndDelivery(t *testing.T) {
 	e := delegateTestEngine(t, modelFunc(func(ctx context.Context, s string, m []Message, tools []ToolSpec, _ func(string)) (Message, error) {

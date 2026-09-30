@@ -298,6 +298,12 @@ type responseBody struct {
 	} `json:"error"`
 }
 
+// Preserve explicit reasoning and cache settings for Astra configurations too,
+// when the installation default changes to Sol 6.1.
+func defaultModelParameters(model string) bool {
+	return model == defaultModel || model == "gpt-6-astra"
+}
+
 func (p *Provider) responses(ctx context.Context, endpoint, model, key, account, session string, msg []Message, tools []ToolSpec, search bool, delta func(string)) (Message, error) {
 	started := time.Now()
 	system, input := responseInput(p.prepareImages(msg))
@@ -309,10 +315,10 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		ts = append(ts, map[string]any{"type": "web_search"})
 	}
 	body := map[string]any{"model": model, "instructions": system, "input": input, "store": false, "stream": true, "tools": ts}
-	if (model == defaultModel || ctx.Value(selectedModelKey{}) != nil || search) && p.reasoningEffort(ctx) != "" {
+	if (defaultModelParameters(model) || ctx.Value(selectedModelKey{}) != nil || search) && p.reasoningEffort(ctx) != "" {
 		body["reasoning"] = map[string]any{"effort": p.reasoningEffort(ctx)}
 	}
-	if model == defaultModel {
+	if defaultModelParameters(model) {
 		verbosity := p.Config.Verbosity
 		if verbosity == "" {
 			verbosity = "low"

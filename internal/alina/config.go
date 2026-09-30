@@ -13,13 +13,13 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.19.0-poc"
+const Version = "0.19.1-poc"
 
-// Codex ChatGPT model catalog, 2026-09-08. These are backend limits, not
+// Codex ChatGPT model catalog, 2026-09-30. These are backend limits, not
 // the larger public API window. ContextTokens remains user configurable.
-const defaultModel = "gpt-6-astra"
-const astraContextTokens = 272000
-const astraMaxContextTokens = 872000
+const defaultModel = "gpt-6.1-sol"
+const defaultContextTokens = 272000
+const chatGPTMaxContextTokens = 872000
 
 type Config struct {
 	Version          int            `json:"version"`
@@ -90,8 +90,8 @@ func DefaultConfig() Config {
 	d, _ := os.UserHomeDir()
 	return Config{
 		Version: 1, Provider: "chatgpt", Model: defaultModel,
-		ReasoningEffort: "low", DreamEffort: "medium", CheckpointEffort: "medium", Verbosity: "low",
-		ContextTokens: astraContextTokens, ModelTimeout: 600, MaxSteps: 20, CommandTimeout: 120,
+		ReasoningEffort: "medium", DreamEffort: "xhigh", CheckpointEffort: "medium", Verbosity: "low",
+		ContextTokens: defaultContextTokens, ModelTimeout: 600, MaxSteps: 20, CommandTimeout: 120,
 		WorkDir: d, Timezone: "Local", NetworkPolicy: "strict", OpenCodeAPI: "chat",
 		Search:   SearchConfig{Default: "openai"},
 		Memory:   MemoryConfig{Enabled: true, Dream: true, DreamCron: "0 3 * * *", CatchUp: true},
@@ -113,7 +113,7 @@ func LoadConfig(dir string) (Config, error) {
 	if c.Provider == "chatgpt" && c.Model == "gpt-5.4" {
 		c.Model = defaultModel
 		if c.ContextTokens == 32768 {
-			c.ContextTokens = astraContextTokens
+			c.ContextTokens = defaultContextTokens
 		}
 	}
 	if c.Search.OpenAIModel == "gpt-5.4" && c.Search.OpenAIKey == "" {
@@ -157,11 +157,11 @@ func (c Config) Validate() error {
 	if c.ModelTimeout < 30 || c.ModelTimeout > 3600 {
 		return errors.New("model_timeout_seconds must be between 30 and 3600")
 	}
-	if c.Model == defaultModel && c.Provider == "opencode-go" && c.OpenCodeAPI != "responses" {
-		return errors.New("GPT-6 Astra tool calling requires the responses protocol")
+	if defaultModelParameters(c.Model) && c.Provider == "opencode-go" && c.OpenCodeAPI != "responses" {
+		return errors.New("GPT-6 Astra/Sol 6.1 tool calling requires the responses protocol")
 	}
-	if c.Provider == "chatgpt" && c.Model == defaultModel && c.ContextTokens > astraMaxContextTokens {
-		return fmt.Errorf("ChatGPT Astra context_tokens must not exceed %d", astraMaxContextTokens)
+	if c.Provider == "chatgpt" && defaultModelParameters(c.Model) && c.ContextTokens > chatGPTMaxContextTokens {
+		return fmt.Errorf("ChatGPT context_tokens must not exceed %d for this model", chatGPTMaxContextTokens)
 	}
 	if c.OpenCodeAPI != "chat" && c.OpenCodeAPI != "responses" && c.OpenCodeAPI != "messages" {
 		return errors.New("invalid opencode_api")

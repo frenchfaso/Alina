@@ -15,7 +15,7 @@ import (
 )
 
 const controlCatalog = `{"models":[
- {"slug":"gpt-6-astra","visibility":"list","context_window":272000,"input_modalities":["text","image"],"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}]},
+ {"slug":"gpt-6.1-sol","visibility":"list","context_window":272000,"input_modalities":["text","image"],"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}]},
  {"slug":"small-fixture","visibility":"list","context_window":8192,"input_modalities":["text"],"default_reasoning_level":"high","supported_reasoning_levels":[{"effort":"none"},{"effort":"high"}]},
  {"slug":"hidden-fixture","visibility":"hide","context_window":8192,"supported_reasoning_levels":[]}
 ]}`
@@ -123,7 +123,7 @@ func TestPersonalModelAndReasoningReachProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, effort := e.selectedModel(e.ctx, "telegram:2", c)
-	if m.ID != defaultModel || effort != "low" {
+	if m.ID != defaultModel || effort != "medium" {
 		t.Fatal("preferences crossed people", m, effort)
 	}
 	j, err := e.Submit("personal", "telegram:1", "Hello")
@@ -159,7 +159,7 @@ func TestPersonalModelAndReasoningReachProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, effort = e.selectedModel(e.ctx, "telegram:1", c)
-	if m.ID != defaultModel || effort != "low" {
+	if m.ID != defaultModel || effort != "medium" {
 		t.Fatal("default did not reset model and reasoning")
 	}
 	e.refreshJobModel(r)

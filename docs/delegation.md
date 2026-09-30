@@ -5,10 +5,12 @@ without carrying every intermediate result in the conversation. Quick lookups
 and small operations stay with Alina. Calendar stays with Alina too.
 
 `delegate capabilities` reads the cached ChatGPT catalog. `start` takes a clear
-task, necessary context, a supported Sol 6 reasoning level and optionally files.
+task, necessary context, an optional supported Sol 6.1 reasoning level and optionally files.
 Only that material enters the worker's context: no conversation history, soul,
-memories or private harness state. Sol 6 must be available in the account;
-there is no silent model/provider substitution.
+memories or private harness state. Sol 6.1 must be available in the account;
+there is no silent model/provider substitution. Workers default to medium
+reasoning; Alina may choose a lower or higher supported level for the task.
+Capabilities include the default and the available levels.
 
 One worker may run at a time across the device, alongside the main inference
 loop. It uses the same agent loop with a smaller tool set and a separate trace.
