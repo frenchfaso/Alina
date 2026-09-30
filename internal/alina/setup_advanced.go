@@ -48,7 +48,7 @@ func SetupAdvanced(ctx context.Context, dir string, in *bufio.Reader, out io.Wri
 		c.Provider = "opencode-go"
 	}
 	c.Model = w.ask("Model ID (deve essere disponibile nel tuo account)", c.Model)
-	if defaultModelParameters(c.Model) {
+	if gpt6ResponsesModel(c.Model) {
 		fmt.Fprintf(out, "%s: contesto %d token; compattazione oltre il 90%%.\n", c.Model, c.ContextTokens)
 		c.ReasoningEffort = w.choice("Reasoning: low / medium / high / xhigh / max", c.ReasoningEffort, "low", "medium", "high", "xhigh", "max")
 		c.Verbosity = w.choice("Verbosity: low / medium / high", c.Verbosity, "low", "medium", "high")
@@ -76,7 +76,7 @@ func SetupAdvanced(ctx context.Context, dir string, in *bufio.Reader, out io.Wri
 	if w.yes("Configurare una API key OpenAI separata per search", c.Search.OpenAIKey != "") {
 		c.Search.OpenAIKey = w.secret("OpenAI API key", c.Search.OpenAIKey)
 	}
-	c.Search.OpenAIModel = w.ask("Modello OpenAI per search (vuoto = modello ChatGPT; - ripristina)", c.Search.OpenAIModel)
+	c.Search.OpenAIModel = w.ask("Modello OpenAI per search (vuoto = Sol 6 high; - ripristina)", c.Search.OpenAIModel)
 	if c.Search.OpenAIModel == "-" {
 		c.Search.OpenAIModel = ""
 	}

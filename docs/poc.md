@@ -425,6 +425,8 @@ notes and explicit search queries are sent there; ordinary prompt preparation
 makes no embedding call. Exact cosine search is linear in indexed notes; the full
 raw archive uses FTS5. Endpoint/model changes require reindexing; incompatible
 vectors are never compared. Network failures fall back to text search.
+Single-family recall reuses one query vector for family and global notes when
+their endpoint/model match; different embedding spaces remain separate.
 
 Migration is additive. Old notes, nuclei, summaries, cited evidence and original
 JSON files are retained. Old working transcripts and checkpoint files are imported

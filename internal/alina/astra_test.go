@@ -128,7 +128,7 @@ func TestAstraConfigMigrationAndLimits(t *testing.T) {
 }
 
 func TestGPT6DreamParametersWithoutPersonalSelection(t *testing.T) {
-	for _, model := range []string{"gpt-6.1-sol", "gpt-6-astra"} {
+	for _, model := range []string{"gpt-6.1-sol", "gpt-6-sol", "gpt-6-astra"} {
 		t.Run(model, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var body map[string]any

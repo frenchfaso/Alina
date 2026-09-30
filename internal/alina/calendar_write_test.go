@@ -62,13 +62,39 @@ func (f *calendarWriteFixture) roundTrip(r *http.Request) (*http.Response, error
 		if err := json.NewDecoder(r.Body).Decode(&changes); err != nil {
 			return nil, err
 		}
-		for key, value := range changes {
-			v[key] = value
+		var updated map[string]any
+		if err := json.Unmarshal([]byte(jsonText(v)), &updated); err != nil {
+			return nil, err
 		}
-		v["etag"] = `"v2"`
-		return reply(200, v)
+		mergeCalendarPatch(updated, changes)
+		for _, name := range []string{"start", "end"} {
+			date := updated[name].(map[string]any)
+			if date["date"] != nil && (date["dateTime"] != nil || date["timeZone"] != nil) {
+				return reply(400, map[string]string{"error": "incompatible date fields"})
+			}
+		}
+		updated["etag"] = `"v2"`
+		f.events[id] = updated
+		return reply(200, updated)
 	}
 	return nil, errors.New("unexpected method")
+}
+
+func mergeCalendarPatch(dst, patch map[string]any) {
+	for key, value := range patch {
+		if value == nil {
+			delete(dst, key)
+		} else if fields, ok := value.(map[string]any); ok {
+			old, ok := dst[key].(map[string]any)
+			if !ok {
+				old = map[string]any{}
+				dst[key] = old
+			}
+			mergeCalendarPatch(old, fields)
+		} else {
+			dst[key] = value
+		}
+	}
 }
 func calendarWriteEngine(t *testing.T) (*Engine, *runningJob, calendarBinding, *calendarWriteFixture) {
 	e, j, _ := calendarFixture(t)
@@ -162,6 +188,42 @@ func TestCalendarUpdatePreservesFieldsAndDetectsConflicts(t *testing.T) {
 		t.Fatal("race not detected", err)
 	}
 }
+
+func TestCalendarUpdateDateFormatsAndRemoveTimeZone(t *testing.T) {
+	for _, name := range []string{"all-day-to-timed", "timed-to-all-day", "remove-time-zone"} {
+		t.Run(name, func(t *testing.T) {
+			e, j, b, f := calendarWriteEngine(t)
+			create := calendarCreateArgs(b)
+			update := calendarCreateArgs(b).Event
+			update.Summary = nil
+			switch name {
+			case "all-day-to-timed":
+				create.Event.Start = &calendarTime{Date: "2026-10-01"}
+				create.Event.End = &calendarTime{Date: "2026-10-02"}
+			case "timed-to-all-day":
+				update.Start = &calendarTime{Date: "2026-10-01"}
+				update.End = &calendarTime{Date: "2026-10-02"}
+			case "remove-time-zone":
+				update.Start.TimeZone = ""
+				update.End.TimeZone = ""
+			}
+			calendarCall(t, e, j, create)
+			id := calendarCreationID(b, e.Config.Users[0], create.RequestID)
+			f.events[id]["description"] = "preserve this field"
+			calendarCall(t, e, j, calendarArgs{Action: "update", ID: b.ID, EventID: id, ETag: `"v1"`, Event: update})
+			v := f.events[id]
+			if v["description"] != "preserve this field" || v["summary"] != "Dentist" || f.patches != 1 {
+				t.Fatal("date update changed unrelated fields", v)
+			}
+			for field, want := range map[string]*calendarTime{"start": update.Start, "end": update.End} {
+				if jsonText(v[field]) != jsonText(want) {
+					t.Fatal("old date format or time zone retained", field, v[field], want)
+				}
+			}
+		})
+	}
+}
+
 func TestCalendarRefusesGuestsSeriesAndCancelledEvents(t *testing.T) {
 	for _, field := range []string{"attendees", "recurrence", "status", "eventType"} {
 		t.Run(field, func(t *testing.T) {

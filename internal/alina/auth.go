@@ -32,9 +32,10 @@ type Credential struct {
 	AccountID string `json:"account_id"`
 }
 type Auth struct {
-	mu     sync.Mutex
-	Dir    string
-	Client *http.Client
+	mu         sync.Mutex
+	refreshing chan struct{}
+	Dir        string
+	Client     *http.Client
 }
 
 func accountID(token string) string {
@@ -91,30 +92,58 @@ func (a *Auth) Get(ctx context.Context) (Credential, error) {
 
 // Serialize refreshes and reuse a token already renewed by another request.
 func (a *Auth) get(ctx context.Context, rejected string) (Credential, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	var c Credential
-	b, e := os.ReadFile(filepath.Join(a.Dir, "chatgpt.json"))
-	if e != nil {
-		return c, errors.New("ChatGPT login required: alina setup login")
+	for {
+		if err := ctx.Err(); err != nil {
+			return Credential{}, err
+		}
+		a.mu.Lock()
+		if done := a.refreshing; done != nil {
+			a.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return Credential{}, ctx.Err()
+			case <-done:
+				continue
+			}
+		}
+		var c Credential
+		b, err := os.ReadFile(filepath.Join(a.Dir, "chatgpt.json"))
+		if err != nil {
+			a.mu.Unlock()
+			return c, errors.New("ChatGPT login required: alina setup login")
+		}
+		if err = json.Unmarshal(b, &c); err != nil {
+			a.mu.Unlock()
+			return c, err
+		}
+		if c.Expires > time.Now().Unix()+60 && c.Access != "" && c.AccountID != "" && c.Access != rejected {
+			a.mu.Unlock()
+			return c, nil
+		}
+		if c.Refresh == "" {
+			a.mu.Unlock()
+			return c, errors.New("ChatGPT login expired: alina setup login")
+		}
+		done := make(chan struct{})
+		a.refreshing = done
+		a.mu.Unlock()
+		defer func() {
+			a.mu.Lock()
+			a.refreshing = nil
+			close(done)
+			a.mu.Unlock()
+		}()
+		// Keep one renewal active without making other callers' cancellation
+		// wait for its network request. Wake them only after the save finishes.
+		n, err := a.token(ctx, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {c.Refresh}, "client_id": {oauthClientID}})
+		if err != nil {
+			return c, err
+		}
+		if n.Refresh == "" {
+			n.Refresh = c.Refresh
+		}
+		return n, writeJSON(filepath.Join(a.Dir, "chatgpt.json"), n)
 	}
-	if e = json.Unmarshal(b, &c); e != nil {
-		return c, e
-	}
-	if c.Expires > time.Now().Unix()+60 && c.Access != "" && c.AccountID != "" && c.Access != rejected {
-		return c, nil
-	}
-	if c.Refresh == "" {
-		return c, errors.New("ChatGPT login expired: alina setup login")
-	}
-	n, e := a.token(ctx, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {c.Refresh}, "client_id": {oauthClientID}})
-	if e != nil {
-		return c, e
-	}
-	if n.Refresh == "" {
-		n.Refresh = c.Refresh
-	}
-	return n, writeJSON(filepath.Join(a.Dir, "chatgpt.json"), n)
 }
 func (a *Auth) LoginDevice(ctx context.Context, w io.Writer) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)

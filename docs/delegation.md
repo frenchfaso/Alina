@@ -37,6 +37,9 @@ Names must be unique. File tools stay inside it, including through symlinks.
 Alina reviews and applies resulting artifacts; the worker does not directly
 edit originals. Workspaces remain under `workspace/delegates/ID`, and traces
 under the memory scope's `delegates/ID/trace.json` for inspection.
+If a start fails before registering the worker, its newly created workspace is
+removed. Workspaces and traces for workers that started remain available,
+including unsuccessful or interrupted work.
 
 Offline shell is offered only with OS filesystem isolation: Landlock ABI 3+
 and seccomp on supported Linux/Android architectures, or sandbox-exec on macOS.

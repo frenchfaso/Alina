@@ -15,13 +15,11 @@ import (
 )
 
 type tgFile struct {
-	ID       string `json:"file_id"`
-	UniqueID string `json:"file_unique_id"`
-	Name     string `json:"file_name"`
-	MIME     string `json:"mime_type"`
-	Size     int64  `json:"file_size"`
-	Width    int64  `json:"width"`
-	Height   int64  `json:"height"`
+	ID     string `json:"file_id"`
+	Name   string `json:"file_name"`
+	Size   int64  `json:"file_size"`
+	Width  int64  `json:"width"`
+	Height int64  `json:"height"`
 }
 
 func (m *tgMessage) file() *tgFile {

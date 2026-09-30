@@ -169,8 +169,8 @@ func TestPersonalModelAndReasoningReachProvider(t *testing.T) {
 	// Background inference retains global settings, independent of personal preferences.
 	dream := &runningJob{Job: Job{Kind: "dream", Owner: "alina", Session: "dream", ID: "dream"}, ctx: e.ctx}
 	e.refreshJobModel(dream)
-	if dream.model != nil {
-		t.Fatal("personal preference applied to dream")
+	if dream.model == nil || dream.Model != e.Config.Model || dream.Reasoning != e.Config.DreamEffort {
+		t.Fatal("dream lost global capabilities or inherited personal preferences")
 	}
 	e.Config.Model = "explicit-model-outside-catalog"
 	e.refreshJobModel(r)

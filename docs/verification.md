@@ -4,6 +4,31 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Reliability and lean Go — 0.19.2 (2026-09-30)
+
+- Addressed all findings from the [deep review](review-2026-09-30.md): permanent
+  attachment delivery, cancellable OAuth renewal waits, global background
+  reasoning, Calendar date conversions, worker pre-start rollback and approval
+  form cleanup. Shared config decoding and query embedding remove duplicate work.
+- Cross-review caught and fixed two additional cases: repairing saved fields
+  with wrong JSON types, and reusing a persisted approval form when only its
+  outer delivery receipt is missing. Regression fixtures cover both.
+- Final full `go test -race ./...` passed in 56.763 seconds; `go vet ./...`,
+  gofmt and `git diff --check` passed. Android/arm64, Linux/arm64 and
+  FreeBSD/OpenBSD/NetBSD amd64 builds passed. No dependency or second loop added.
+- A15 updated at idle, with saved configuration unchanged. Checksum, daemon
+  restart, status and offline doctor passed; version 0.19.2-poc, PID 7222 at
+  verification time. SHA-256:
+  `20c50e77cffbf250bd5256c4207d4180c22883efeb447c6f829ef12e529cfa56`.
+- Local job `verification-0192-worker-1` completed with `VERIFIED`; worker
+  `delegate-11d456b2531372495b5b6be5` completed with `WORKER_VERIFIED`.
+  Both used Sol 6.1 medium. The test sent no Telegram message, made no Calendar
+  mutation and forced no dream. Worker shell remains disabled on the A15.
+- Telegram and Calendar mutation regressions use synthetic transports; real
+  calendars remain read-only. Forms created before this release lack recorded
+  message IDs and require a button click for cleanup. A crash between Telegram
+  acceptance and its first saved receipt can still duplicate delivery.
+
 ## Sol 6.1 defaults — 0.19.1 (2026-09-30)
 
 - Fresh installations use Sol 6.1 medium for chat and checkpoints, xhigh for

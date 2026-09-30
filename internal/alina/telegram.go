@@ -335,12 +335,7 @@ func (t *Telegram) process(ctx context.Context, u tgUpdate) error {
 		if dismiss && c.Message.ID > 0 {
 			// Deleting the form is independent of acknowledging its callback:
 			// expired callbacks must still be able to remove old forms.
-			removeErr := t.api(ctx, "deleteMessage", map[string]any{"chat_id": id, "message_id": c.Message.ID}, nil)
-			if errors.As(removeErr, &apiErr) && (apiErr.code == 400 || apiErr.code == 403) {
-				// Already removed, or Telegram no longer permits deletion.
-				engine.Events.emit("telegram.approval_dismiss_rejected", removeErr)
-				removeErr = nil
-			}
+			removeErr := t.deleteMessage(ctx, id, c.Message.ID)
 			err = errors.Join(err, removeErr)
 		}
 		return err
@@ -513,10 +508,11 @@ func (t *Telegram) deliverPending(ctx context.Context) (bool, error) {
 		t.Engine.Events.emit("telegram.delivery_checkpoint_failed", err)
 		return false, err
 	}
+	cleanupErr := t.dismissApprovalForms(ctx)
 	jobs, err := t.pendingNotifications(ctx)
 	if err != nil {
 		t.Engine.Events.emit("telegram.delivery_query_failed", err)
-		return false, err
+		return false, errors.Join(err, cleanupErr)
 	}
 	failed := map[int64]bool{}
 	var deliveryErr error
@@ -561,7 +557,7 @@ func (t *Telegram) deliverPending(ctx context.Context) (bool, error) {
 			if terminalStatus(j.Status) {
 				er = t.deliverReply(ctx, chatID, engine, j, text)
 			} else {
-				er = t.sendTo(ctx, chatID, text, keyboard)
+				er = t.sendApproval(ctx, chatID, engine, j, text, keyboard)
 			}
 			if er != nil {
 				t.Engine.Events.emit("telegram.delivery_failed", er, "job_id", j.ID)
@@ -572,10 +568,10 @@ func (t *Telegram) deliverPending(ctx context.Context) (bool, error) {
 		_, er := engine.Memory.DB.ExecContext(ctx, `INSERT INTO memory_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, "telegram-delivered:"+j.ID, stamp)
 		if er != nil {
 			t.Engine.Events.emit("telegram.delivery_checkpoint_failed", er, "job_id", j.ID)
-			return false, er
+			return false, errors.Join(er, cleanupErr)
 		}
 	}
-	return len(jobs) > 0, deliveryErr
+	return len(jobs) > 0, errors.Join(deliveryErr, cleanupErr)
 }
 
 // Delivery scans persisted jobs, not the 50-item interactive history window.

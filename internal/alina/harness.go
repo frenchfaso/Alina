@@ -98,7 +98,7 @@ func (e *Engine) harnessTool(j *runningJob, raw string) (string, error) {
 		e.global.restartMu.Lock()
 		defer e.global.restartMu.Unlock()
 		out := map[string]any{"active": harnessConfig(e.global.Config)}
-		saved, err := checkedConfig(e.AdminDir)
+		saved, err := LoadConfig(e.AdminDir)
 		if err != nil {
 			out["saved_error"] = errorInfo(err)
 		} else {
@@ -167,7 +167,7 @@ func (e *Engine) harnessTool(j *runningJob, raw string) (string, error) {
 				return "", errors.New("restart already requested; finish this turn")
 			}
 		} else {
-			saved, err := checkedConfig(e.AdminDir)
+			saved, err := LoadConfig(e.AdminDir)
 			if err != nil {
 				return "", err
 			}

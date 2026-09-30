@@ -14,15 +14,43 @@ import (
 func (e *Engine) sharedMind() bool { return len(e.global.scopes) <= 1 }
 
 func (e *Engine) recall(ctx context.Context, query string) (MemoryResults, error) {
-	r, err := e.Memory.Recall(ctx, query)
-	if err != nil || e == e.global || !e.sharedMind() {
+	if e == e.global || !e.sharedMind() {
+		return e.Memory.Recall(ctx, query)
+	}
+	// Lazy and local to this recall: invalid queries/text-only installations make
+	// no HTTP request, and matching stores reuse both the vector and any failure.
+	var vector []float32
+	var embeddingErr error
+	var embedded bool
+	embed := func() ([]float32, error) {
+		if !embedded {
+			vector, embeddingErr = e.Memory.embedding(ctx, query)
+			embedded = true
+		}
+		return vector, embeddingErr
+	}
+	r, err := e.Memory.recall(ctx, query, embed)
+	if err != nil {
 		return r, err
 	}
-	mind, err := e.global.Memory.Recall(ctx, query)
+	mindEmbed := embed
+	if e.Memory.embeddingSpace() != e.global.Memory.embeddingSpace() {
+		mindEmbed = func() ([]float32, error) { return e.global.Memory.embedding(ctx, query) }
+	}
+	mind, err := e.global.Memory.recall(ctx, query, mindEmbed)
 	if err != nil {
 		return r, err
 	}
 	r.Hits = append(r.Hits, mind.Hits...)
+	if mind.Mode == "semantic+text" {
+		r.Mode = mind.Mode
+	}
+	if r.Notice == "" {
+		r.Notice = mind.Notice
+	}
+	if r.Mode == "semantic+text" && r.Notice == noIndexedNotesNotice {
+		r.Notice = ""
+	}
 	sort.SliceStable(r.Hits, func(i, j int) bool { return r.Hits[i].Score > r.Hits[j].Score })
 	if len(r.Hits) > 8 {
 		r.Hits = r.Hits[:8]

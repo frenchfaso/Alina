@@ -171,7 +171,13 @@ type MemoryResults struct {
 	Notice string      `json:"notice,omitempty"`
 }
 
+const noIndexedNotesNotice = "No compatible indexed notes; use POST /v1/memory/jobs with kind=reindex through alina api."
+
 func (m *Memory) Recall(ctx context.Context, query string) (MemoryResults, error) {
+	return m.recall(ctx, query, func() ([]float32, error) { return m.embedding(ctx, query) })
+}
+
+func (m *Memory) recall(ctx context.Context, query string, embed func() ([]float32, error)) (MemoryResults, error) {
 	out := MemoryResults{Hits: []MemoryHit{}, Mode: "text"}
 	if strings.TrimSpace(query) == "" || len(query) > 4000 {
 		return out, errors.New("query must contain 1-4000 bytes")
@@ -219,7 +225,7 @@ func (m *Memory) Recall(ctx context.Context, query string) (MemoryResults, error
 	if err != nil {
 		return out, err
 	}
-	vec, err := m.embedding(ctx, query)
+	vec, err := embed()
 	if err != nil {
 		out.Notice = "Embedding unavailable; text search used."
 		vec = nil
@@ -281,7 +287,7 @@ func (m *Memory) Recall(ctx context.Context, query string) (MemoryResults, error
 	if compatible > 0 {
 		out.Mode = "semantic+text"
 	} else if len(vec) > 0 {
-		out.Notice = "No compatible indexed notes; use POST /v1/memory/jobs with kind=reindex through alina api."
+		out.Notice = noIndexedNotesNotice
 	}
 	return out, nil
 }

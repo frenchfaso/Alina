@@ -146,6 +146,12 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 		provider = "openai"
 		selection := m.e.Search.selection(ctx)
 		model, effort = selection.Model, selection.Effort
+	} else if p, ok := m.e.Model.(*Provider); ok {
+		if p.Config.Provider == "chatgpt" || p.Config.OpenCodeAPI == "responses" {
+			effort = p.responsesReasoning(ctx, model, false)
+		} else {
+			effort = "" // These adapters do not send an effort parameter.
+		}
 	}
 	m.e.Events.emit("model.started", nil, "job_id", m.j.ID, "call_id", callID, "provider", provider, "model", model, "purpose", purpose, "reasoning", effort)
 	answer, err := call(ctx)

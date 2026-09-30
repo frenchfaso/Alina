@@ -64,68 +64,82 @@ func (e *Engine) delegateTool(parent *runningJob, raw string) (string, error) {
 		if !e.global.delegateBusy.CompareAndSwap(false, true) {
 			return "", errors.New("one delegate is already active; wait for its report or cancel it")
 		}
-		started := false
-		defer func() {
-			if !started {
-				e.global.delegateBusy.Store(false)
-			}
-		}()
 		ctx, cancel := context.WithTimeout(e.ctx, 10*time.Minute)
 		unlink := context.AfterFunc(parent.ctx, cancel)
 		j := &runningJob{Job: Job{ID: "delegate-" + randomID(), ParentID: parent.ID, Owner: parent.Owner, Kind: "delegate", Input: a.Task, Status: "queued", Created: time.Now().UTC(), Model: model.ID, Reasoning: a.Reasoning}, ctx: ctx, cancel: cancel, done: make(chan struct{}), decision: make(chan string, 1), steerSignal: make(chan struct{}, 1), model: &model}
 		j.Session = j.ID
 		cleanup := func() { unlink(); cancel() }
 		work := e.delegateWorkspace(j)
-		if err = os.MkdirAll(work, 0700); err != nil {
-			cleanup()
+		started, created := false, false
+		var delegates *os.Root
+		defer func() {
+			if !started {
+				cleanup()
+				if created {
+					if er := delegates.RemoveAll(j.ID); er != nil {
+						e.Events.emit("delegate.rollback_failed", er, "job_id", j.ID)
+					}
+				}
+				e.global.delegateBusy.Store(false)
+			}
+			if delegates != nil {
+				delegates.Close()
+			}
+		}()
+		workspace, err := os.OpenRoot(e.Workspace())
+		if err != nil {
 			return "", err
 		}
+		defer workspace.Close()
+		if err = workspace.MkdirAll("delegates", 0700); err != nil {
+			return "", err
+		}
+		delegates, err = workspace.OpenRoot("delegates")
+		if err != nil {
+			return "", err
+		}
+		if err = delegates.Mkdir(j.ID, 0700); err != nil {
+			return "", err
+		}
+		created = true
 		total := int64(0)
 		for _, source := range a.Files {
 			source, err = e.filePath(parent, source, false)
 			if err != nil {
-				cleanup()
 				return "", err
 			}
 			// Reject administrative transcripts too, even where Alina can read them.
 			admin, _ := canonicalFilePath(e.AdminDir)
 			workspace, _ := canonicalFilePath(e.Workspace())
 			if within(admin, source) && !within(workspace, source) {
-				cleanup()
 				return "", errors.New("cannot pass private harness state to a delegate")
 			}
 			f, er := os.OpenFile(source, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 			if er != nil {
-				cleanup()
 				return "", er
 			}
 			info, er := f.Stat()
 			if er != nil || !info.Mode().IsRegular() {
 				f.Close()
-				cleanup()
 				return "", errors.New("delegate inputs must be regular files")
 			}
 			b, er := io.ReadAll(io.LimitReader(f, (32<<20)-total+1))
 			f.Close()
 			total += int64(len(b))
 			if er != nil || total > 32<<20 {
-				cleanup()
 				return "", errors.New("delegate input exceeds 32 MiB")
 			}
-			target, er := os.OpenFile(filepath.Join(work, filepath.Base(source)), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+			target, er := delegates.OpenFile(filepath.Join(j.ID, filepath.Base(source)), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 			if er != nil {
-				cleanup()
 				return "", errors.New("input basenames must be unique")
 			}
 			_, er = target.Write(b)
 			closeErr := target.Close()
 			if er != nil || closeErr != nil {
-				cleanup()
 				return "", errors.Join(er, closeErr)
 			}
 		}
 		if err = ctx.Err(); err != nil {
-			cleanup()
 			return "", err
 		}
 		e.mu.Lock()
@@ -134,7 +148,6 @@ func (e *Engine) delegateTool(parent *runningJob, raw string) (string, error) {
 		}
 		if err != nil {
 			e.mu.Unlock()
-			cleanup()
 			return "", err
 		}
 		e.jobs[j.ID] = j

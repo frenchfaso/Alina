@@ -107,6 +107,35 @@ func (v *calendarChange) validate(create bool) error {
 	}
 	return nil
 }
+
+// Google PATCH merges nested fields. Explicit nulls clear incompatible date
+// formats and an old time zone when the new timestamp provides only an offset.
+func (v *calendarChange) patch() map[string]any {
+	body := map[string]any{}
+	if v.Summary != nil {
+		body["summary"] = *v.Summary
+	}
+	if v.Location != nil {
+		body["location"] = *v.Location
+	}
+	for name, value := range map[string]*calendarTime{"start": v.Start, "end": v.End} {
+		if value == nil {
+			continue
+		}
+		fields := map[string]any{"date": nil, "dateTime": nil, "timeZone": nil}
+		if value.Date != "" {
+			fields["date"] = value.Date
+		} else {
+			fields["dateTime"] = value.DateTime
+			if value.TimeZone != "" {
+				fields["timeZone"] = value.TimeZone
+			}
+		}
+		body[name] = fields
+	}
+	return body
+}
+
 func calendarEventIDValid(id string) bool {
 	if len(id) == 0 || len(id) > 1024 {
 		return false
@@ -170,7 +199,7 @@ func (s *calendarState) eventAction(ctx context.Context, c calendarCredential, b
 		return "", errors.New("only active ordinary events without guests can be edited; select a single occurrence, not a recurring series")
 	}
 	var result calendarEvent
-	err = s.request(ctx, c, http.MethodPatch, path, url.Values{"fields": {"id,etag,status,summary,start,end,location,transparency,visibility"}}, a.Event, map[string]string{"If-Match": a.ETag}, &result)
+	err = s.request(ctx, c, http.MethodPatch, path, url.Values{"fields": {"id,etag,status,summary,start,end,location,transparency,visibility"}}, a.Event.patch(), map[string]string{"If-Match": a.ETag}, &result)
 	if calendarHTTPStatus(err, 412) {
 		return "", errors.New("event changed concurrently; get current event and reconsider the requested change")
 	}

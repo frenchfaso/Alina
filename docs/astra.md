@@ -68,7 +68,9 @@ default becomes Sol 6 high; explicit API-key search models are preserved.
 Loading does not rewrite the configuration file; setup/save persists it.
 
 OpenAI search reuses the exact same `Auth` object as chat, including refresh and
-account headers. A separately configured API key is an explicit public API
+account headers. Concurrent requests share one renewal; each waiting request can
+cancel independently, and renewed credentials are saved before waking waiters.
+A separately configured API key is an explicit public API
 override with separate billing; errors never trigger a paid fallback.
 
 ## Evidence and limits

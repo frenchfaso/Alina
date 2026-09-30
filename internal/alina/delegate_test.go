@@ -185,6 +185,65 @@ func TestDelegateFileAndToolBoundaries(t *testing.T) {
 		t.Fatal("private file modified")
 	}
 }
+
+func TestDelegateFailedStartRemovesOnlyNewWorkspace(t *testing.T) {
+	e := delegateTestEngine(t, nil)
+	parent := delegateParent(e)
+	defer parent.cancel()
+	input := filepath.Join(e.Workspace(), "input.txt")
+	if err := os.WriteFile(input, []byte("supplied input"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(e.Workspace(), "delegates")
+	retained := filepath.Join(root, "retained", "result.txt")
+	if err := os.MkdirAll(filepath.Dir(retained), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(retained, []byte("previous artifact"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "outside")); err != nil {
+		t.Fatal(err)
+	}
+	for _, files := range [][]string{{input, input}, {input, filepath.Join(e.Workspace(), "missing.txt")}} {
+		if _, err := e.delegateTool(parent, jsonText(map[string]any{"action": "start", "task": "Inspect input", "files": files})); err == nil {
+			t.Fatal("invalid start accepted")
+		}
+		entries, err := os.ReadDir(root)
+		if err != nil || len(entries) != 2 {
+			t.Fatal("failed start left an orphan or removed existing artifacts", entries, err)
+		}
+		if len(parent.delegates) != 0 || e.global.delegateBusy.Load() {
+			t.Fatal("failed start entered job lifecycle or retained worker slot")
+		}
+	}
+	if b, err := os.ReadFile(retained); err != nil || string(b) != "previous artifact" {
+		t.Fatal("existing artifact changed", string(b), err)
+	}
+}
+
+func TestDelegateRejectsWorkspaceParentSymlinkEscape(t *testing.T) {
+	e := delegateTestEngine(t, nil)
+	parent := delegateParent(e)
+	defer parent.cancel()
+	outside := t.TempDir()
+	marker := filepath.Join(outside, "keep.txt")
+	if err := os.WriteFile(marker, []byte("outside artifact"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(e.Workspace(), "delegates")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.delegateTool(parent, `{"action":"start","task":"Inspect input"}`); err == nil {
+		t.Fatal("delegate created outside its workspace")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "keep.txt" || e.global.delegateBusy.Load() {
+		t.Fatal("failed start changed escaped directory or retained worker slot", entries, err)
+	}
+}
+
 func TestDelegateShellIsolation(t *testing.T) {
 	if !delegateSandboxAvailable() {
 		t.Skip("OS sandbox unavailable")

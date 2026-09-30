@@ -298,10 +298,17 @@ type responseBody struct {
 	} `json:"error"`
 }
 
-// Preserve explicit reasoning and cache settings for Astra configurations too,
-// when the installation default changes to Sol 6.1.
-func defaultModelParameters(model string) bool {
-	return model == defaultModel || model == "gpt-6-astra"
+// Known Responses capabilities are independent of the installation default.
+// Cached catalog metadata supplies reasoning capabilities for other models.
+func gpt6ResponsesModel(model string) bool {
+	return model == "gpt-6.1-sol" || model == "gpt-6-sol" || model == "gpt-6-astra"
+}
+
+func (p *Provider) responsesReasoning(ctx context.Context, model string, search bool) string {
+	if gpt6ResponsesModel(model) || ctx.Value(selectedModelKey{}) != nil || search {
+		return p.reasoningEffort(ctx)
+	}
+	return ""
 }
 
 func (p *Provider) responses(ctx context.Context, endpoint, model, key, account, session string, msg []Message, tools []ToolSpec, search bool, delta func(string)) (Message, error) {
@@ -315,10 +322,10 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		ts = append(ts, map[string]any{"type": "web_search"})
 	}
 	body := map[string]any{"model": model, "instructions": system, "input": input, "store": false, "stream": true, "tools": ts}
-	if (defaultModelParameters(model) || ctx.Value(selectedModelKey{}) != nil || search) && p.reasoningEffort(ctx) != "" {
-		body["reasoning"] = map[string]any{"effort": p.reasoningEffort(ctx)}
+	if effort := p.responsesReasoning(ctx, model, search); effort != "" {
+		body["reasoning"] = map[string]any{"effort": effort}
 	}
-	if defaultModelParameters(model) {
+	if gpt6ResponsesModel(model) {
 		verbosity := p.Config.Verbosity
 		if verbosity == "" {
 			verbosity = "low"

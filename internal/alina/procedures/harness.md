@@ -148,8 +148,11 @@ one silent, editable progress message. Briefly describe meaningful progress,
 obstacles or a change of approach, then continue. The draft is removed on
 approval/completion; the final reply and approval requests are separate. Neither
 private reasoning nor automatic tool-by-tool logs are sent.
-Approval forms disappear after an accepted button choice (including denial);
-clicking an expired form dismisses it. Errors and pending approvals remain visible. Attachments are stored in the current
+
+Approval forms are removed when the decision ends, including stop, expiry and
+restart. A missing or changed outgoing file produces a short failure notice;
+later replies continue. Transient Telegram failures retry unconfirmed parts only.
+Errors and pending approvals remain visible. Attachments are stored in the current
 workspace; output files use durable delivery receipts. Delivery can still be
 ambiguous if the process dies between Telegram acceptance and saving a receipt.
 

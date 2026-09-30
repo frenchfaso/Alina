@@ -55,6 +55,8 @@ until explicitly granted. Delegations survive restart and re-linking.
   network outcome, including across restarts. Updates use the event's exact
   ETag with `If-Match`, rejecting stale/concurrent modifications. After a failed
   write, Alina must verify the result before claiming success or trying again.
+  Updates explicitly clear incompatible date/time fields when converting
+  all-day and timed events, including an obsolete explicit time zone.
 - Reads event title, dates, location, status and visibility for the requested
   interval. Recurrences are expanded by Google, with 50 events per page and a
   maximum 93-day interval. All-day end dates are exclusive. Descriptions,

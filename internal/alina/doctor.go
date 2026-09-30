@@ -95,7 +95,7 @@ func diagnose(ctx context.Context, dir string, live, fix bool, out io.Writer, cl
 			}
 		}
 	}
-	c, configErr := checkedConfig(dir)
+	c, configErr := LoadConfig(dir)
 	if configErr != nil {
 		add("config", "error", "alina config check; use alina config apply to repair fields, or alina setup for a new installation.", errorInfo(configErr))
 	} else {

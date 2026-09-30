@@ -92,8 +92,10 @@ provided through stdin rather than command arguments or shell history.
 Setup, login, configuration writes and live/repair diagnostics hold the same
 exclusive state lock as the daemon, including while it is still starting.
 
-An invalid field can be corrected with a patch. Syntactically damaged JSON is
-left untouched for explicit file repair. `setup --advanced` remains available
+Startup, setup and diagnostics use one strict configuration decoder; unknown
+fields fail consistently. An invalid field, including a wrong JSON type, can
+be corrected with a patch; remove a misspelled field using `null`. Syntactically
+damaged JSON is left untouched for explicit file repair. `setup --advanced` remains available
 for interactive preferences, and `setup telegram` for guided bot pairing and
 adding, renaming and removing people in the shared family. See [people and one global mind](people.md) for
 memory boundaries, shared introspection and administrative scope selectors.
@@ -147,10 +149,14 @@ alina api POST /v1/memory/jobs '{"kind":"dream"}'
 alina api GET /v1/tasks
 ```
 
-Telegram approval forms are deleted after a button choice is accepted, including
-denial. Clicking a stale/expired form also removes it; invalid choices or failed
-permission persistence keep a still-pending form usable. Cleanup retries never
-apply the original decision twice. Telegram may refuse deletion of old messages.
+Telegram approval forms are deleted after a choice, stop, expiry, steering,
+local approval or completion. Message IDs live in SQLite, so restart also cleans
+interrupted forms through the existing notification worker. Invalid choices or
+failed permission persistence keep a still-pending form usable. Cleanup retries
+never apply the original decision twice or prevent final replies. A persisted
+form is reused if its outer delivery checkpoint fails. Forms sent
+before 0.19.2 have no saved ID; clicking their stale buttons still removes them.
+Telegram may refuse deletion of old messages.
 
 Approval scopes remain `once`, `restart`, `always`, `deny`. Each approval requires
 its current approval ID; a pending approval is never consent. `chat "message"`
@@ -187,6 +193,9 @@ Telegram `/stop` updates retain their exact cancelled job set. Sending a message
 its receipt cannot be one transaction: a crash between them can still duplicate
 a reply. Individual text chunks and files have separate receipts, so a later
 failure does not repeat confirmed parts.
+Missing or modified outbox snapshots receive a short notice and a persistent
+`failed` part receipt, allowing later files and replies to continue. They are
+never recorded as sent. Network/429/5xx failures retain ordinary retry behavior.
 
 Delivery runs on pending approvals and completed jobs, drains the startup
 backlog, then waits for an internal state-change signal instead of polling every
@@ -327,6 +336,10 @@ Refresh failures
 use the same account's previous cache with its date displayed and a five-minute
 retry backoff. Without metadata, menus report unavailability rather than invent
 models or effort levels. Model selection reads the chosen entry from this cache.
+Dream and personal initiatives resolve the configured global model's cached
+capabilities without applying a person's preferences. Unsupported dream or
+checkpoint efforts fall back to that model's catalog default. Fixed worker
+selections remain independent. Provider logs report the effort sent by the adapter.
 A model removed from a refreshed catalog falls back to the configured global
 model; `/status` shows the effective preference. Provider/account changes cannot
 reuse another account's cache or preferences.

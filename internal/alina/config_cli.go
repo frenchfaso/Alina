@@ -1,7 +1,6 @@
 package alina
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -61,7 +60,7 @@ func mergeConfig(dst, patch map[string]any) {
 }
 func configCLI(ctx context.Context, dir string, args []string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 || len(args) == 1 && args[0] == "check" {
-		c, err := checkedConfig(dir)
+		c, err := LoadConfig(dir)
 		if err != nil {
 			return configError(err)
 		}
@@ -117,44 +116,27 @@ func configCLI(ctx context.Context, dir string, args []string, in io.Reader, out
 			delete(parent, key)
 		}
 	}
+	// Preserve the old channel identity even when an unknown/invalid field is
+	// being repaired. This deliberately does not validate the old object.
+	var previous TelegramConfig
+	_ = json.Unmarshal([]byte(jsonText(base["telegram"])), &previous)
 	mergeConfig(base, patch)
 	encoded, err := json.Marshal(base)
 	if err != nil {
 		return err
 	}
-	c := DefaultConfig()
-	decoder := json.NewDecoder(bytes.NewReader(encoded))
-	decoder.DisallowUnknownFields()
-	if err = decoder.Decode(&c); err != nil {
+	c, err := decodeConfig(encoded)
+	if err != nil {
 		return err
 	}
 	if err = c.Validate(); err != nil {
 		return err
 	}
-	previous, _ := LoadConfig(dir)
-	if c.Telegram.Token != previous.Telegram.Token || len(c.Users) == 0 && c.Telegram.OwnerID != previous.Telegram.OwnerID {
+	if c.Telegram.Token != previous.Token || len(c.Users) == 0 && c.Telegram.OwnerID != previous.OwnerID {
 		c.Telegram.Binding = randomID()
 	}
 	if err = SaveConfig(dir, c); err != nil {
 		return err
 	}
 	return printJSON(out, map[string]any{"ok": true, "config": redactedConfig(c), "next": "alina serve"})
-}
-
-func checkedConfig(dir string) (Config, error) {
-	c, err := LoadConfig(dir)
-	if err != nil {
-		return c, err
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
-	if err != nil {
-		return c, err
-	}
-	var shape Config
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err = decoder.Decode(&shape); err != nil {
-		return c, err
-	}
-	return c, nil
 }

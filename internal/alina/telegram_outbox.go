@@ -104,14 +104,22 @@ func (e *Engine) queueFile(j *runningJob, args string) (string, error) {
 	return "File attached to the final reply: " + name, nil
 }
 
+// A lost or changed snapshot cannot recover by retrying Telegram. Keep this
+// distinct from transport/API errors so it cannot block newer replies.
+type outgoingFileUnavailable struct{ name string }
+
+func (e *outgoingFileUnavailable) Error() string {
+	return "outgoing attachment is unavailable or changed"
+}
+
 func (t *Telegram) sendDocument(ctx context.Context, id int64, e *Engine, a Attachment) error {
 	b, err := readAttachment(e.Workspace(), a.Path)
 	if err != nil {
-		return err
+		return &outgoingFileUnavailable{name: a.Name}
 	}
 	hash := sha256.Sum256(b)
 	if int64(len(b)) != a.Size || hex.EncodeToString(hash[:]) != a.SHA256 {
-		return errors.New("outgoing file changed; delivery stopped")
+		return &outgoingFileUnavailable{name: a.Name}
 	}
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
@@ -159,6 +167,13 @@ func (t *Telegram) sendDocument(ctx context.Context, id int64, e *Engine, a Atta
 }
 
 func (t *Telegram) sendChunks(ctx context.Context, id int64, chunks []tgText, keyboard any) error {
+	_, err := t.sendChunksID(ctx, id, chunks, keyboard)
+	return err
+}
+
+// Return the last message ID, where a multi-part approval's buttons live.
+func (t *Telegram) sendChunksID(ctx context.Context, id int64, chunks []tgText, keyboard any) (int64, error) {
+	var last int64
 	for i, c := range chunks {
 		body := map[string]any{"chat_id": id, "text": c.Text, "link_preview_options": map[string]bool{"is_disabled": true}}
 		if len(c.Entities) > 0 {
@@ -175,11 +190,17 @@ func (t *Telegram) sendChunks(ctx context.Context, id int64, chunks []tgText, ke
 			err = t.api(ctx, "sendMessage", body, &sent)
 		}
 		if err != nil {
-			return err
+			return 0, err
 		}
 		t.rememberSentMessage(ctx, id, sent, c.Text)
+		var message struct {
+			ID int64 `json:"message_id"`
+		}
+		if err := json.Unmarshal(sent, &message); err == nil {
+			last = message.ID
+		}
 	}
-	return nil
+	return last, nil
 }
 
 // Checkpoint each confirmed part so a later upload failure does not replay the
@@ -199,10 +220,20 @@ func (t *Telegram) deliverReply(ctx context.Context, id int64, e *Engine, j Job,
 		if exists > 0 {
 			return nil
 		}
+		outcome := "sent"
 		if err := send(); err != nil {
-			return err
+			var unavailable *outgoingFileUnavailable
+			if !errors.As(err, &unavailable) {
+				return err
+			}
+			notice := fmt.Sprintf("Non riesco a inviare «%s»: il file non è più disponibile o è cambiato.", unavailable.name)
+			if err := t.sendTo(ctx, id, notice, nil); err != nil {
+				return err
+			}
+			e.Events.emit("telegram.attachment_unavailable", err, "job_id", j.ID)
+			outcome = "failed"
 		}
-		_, err := e.Memory.DB.ExecContext(ctx, "INSERT OR IGNORE INTO memory_state VALUES(?,?)", key, "sent")
+		_, err := e.Memory.DB.ExecContext(ctx, "INSERT OR IGNORE INTO memory_state VALUES(?,?)", key, outcome)
 		return err
 	}
 	for i, c := range chunks {

@@ -106,9 +106,7 @@ func (t *Telegram) updateProgress(ctx context.Context, key telegramDraftKey, d *
 	receipt := "telegram-progress:" + key.job
 	if !active {
 		if d.message > 0 {
-			err := t.api(ctx, "deleteMessage", map[string]any{"chat_id": chat, "message_id": d.message}, nil)
-			var rejected *telegramAPIError
-			if err != nil && !(errors.As(err, &rejected) && (rejected.code == 400 || rejected.code == 403)) {
+			if err := t.deleteMessage(ctx, chat, d.message); err != nil {
 				return err
 			}
 		}

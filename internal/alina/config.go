@@ -1,11 +1,13 @@
 package alina
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +15,7 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.19.1-poc"
+const Version = "0.19.2-poc"
 
 // Codex ChatGPT model catalog, 2026-09-30. These are backend limits, not
 // the larger public API window. ContextTokens remains user configurable.
@@ -99,12 +101,11 @@ func DefaultConfig() Config {
 	}
 }
 func LoadConfig(dir string) (Config, error) {
-	c := DefaultConfig()
 	b, e := os.ReadFile(filepath.Join(dir, "config.json"))
 	if e != nil {
-		return c, e
+		return DefaultConfig(), e
 	}
-	e = json.Unmarshal(b, &c)
+	c, e := decodeConfig(b)
 	if e != nil {
 		return c, e
 	}
@@ -123,6 +124,28 @@ func LoadConfig(dir string) (Config, error) {
 		return c, err
 	}
 	return c, c.Validate()
+}
+
+// Startup, setup and diagnostics interpret the same shape. Applying a repair
+// still reads the old file as a raw object before decoding the merged result.
+func decodeConfig(raw []byte) (Config, error) {
+	c := DefaultConfig()
+	if raw = bytes.TrimSpace(raw); len(raw) == 0 || raw[0] != '{' {
+		return c, errors.New("config must be a JSON object")
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&c); err != nil {
+		return c, err
+	}
+	var extra any
+	if err := d.Decode(&extra); err != io.EOF {
+		if err == nil {
+			err = errors.New("config must contain one JSON object")
+		}
+		return c, err
+	}
+	return c, nil
 }
 func (c Config) Validate() error {
 	if err := c.validatePeople(); err != nil {
@@ -157,10 +180,10 @@ func (c Config) Validate() error {
 	if c.ModelTimeout < 30 || c.ModelTimeout > 3600 {
 		return errors.New("model_timeout_seconds must be between 30 and 3600")
 	}
-	if defaultModelParameters(c.Model) && c.Provider == "opencode-go" && c.OpenCodeAPI != "responses" {
-		return errors.New("GPT-6 Astra/Sol 6.1 tool calling requires the responses protocol")
+	if gpt6ResponsesModel(c.Model) && c.Provider == "opencode-go" && c.OpenCodeAPI != "responses" {
+		return errors.New("GPT-6 tool calling requires the responses protocol")
 	}
-	if c.Provider == "chatgpt" && defaultModelParameters(c.Model) && c.ContextTokens > chatGPTMaxContextTokens {
+	if c.Provider == "chatgpt" && gpt6ResponsesModel(c.Model) && c.ContextTokens > chatGPTMaxContextTokens {
 		return fmt.Errorf("ChatGPT context_tokens must not exceed %d for this model", chatGPTMaxContextTokens)
 	}
 	if c.OpenCodeAPI != "chat" && c.OpenCodeAPI != "responses" && c.OpenCodeAPI != "messages" {

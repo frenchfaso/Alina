@@ -197,7 +197,9 @@ func TestTelegramDocumentCanBeUsedByShell(t *testing.T) {
 	tg.BaseURL = srv.URL
 	u := photoUpdate()
 	u.Message.Photo = nil
-	u.Message.Document = &tgFile{ID: "doc", Name: "../../outside;$(touch bad).json", MIME: "image/png", Size: int64(len(payload))}
+	if err := json.Unmarshal([]byte(fmt.Sprintf(`{"file_id":"doc","file_name":"../../outside;$(touch bad).json","mime_type":"image/png","file_size":%d}`, len(payload))), &u.Message.Document); err != nil {
+		t.Fatal(err)
+	}
 	u.Message.Caption = "Leggi il documento"
 	a, err := tg.receiveFile(context.Background(), u.ID, *u.Message.Document)
 	if err != nil {

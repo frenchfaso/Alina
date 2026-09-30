@@ -321,14 +321,23 @@ type selectedModelKey struct{}
 // Only the job goroutine updates its selection. A changed selection invalidates
 // prepared tools, context and model parameters together, before dispatch.
 func (e *Engine) refreshJobModel(j *runningJob) bool {
-	if j.Kind != "" && j.Kind != "chat" {
+	personal := j.Kind == "" || j.Kind == "chat"
+	if !personal && j.Kind != "dream" && j.Kind != "initiative" {
 		return false
 	}
 	var selected *catalogModel
 	model, effort := e.Config.Model, e.Config.ReasoningEffort
+	if j.Kind == "dream" {
+		effort = e.Config.DreamEffort
+	}
 	if c, err := e.models(j.ctx, false); err == nil {
-		m, r := e.selectedModel(j.ctx, j.Owner, c)
-		model, effort = m.ID, r
+		m, known := c.model(model)
+		if personal {
+			m, effort = e.selectedModel(j.ctx, j.Owner, c)
+			model = m.ID
+		} else if known && !slices.Contains(m.Levels, effort) {
+			effort = m.Default
+		}
 		if _, known := c.model(m.ID); known {
 			selected = &m
 		}
