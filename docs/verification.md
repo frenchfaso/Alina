@@ -13,19 +13,25 @@ runs; they may since have changed.
 - Cross-review caught and fixed two additional cases: repairing saved fields
   with wrong JSON types, and reusing a persisted approval form when only its
   outer delivery receipt is missing. Regression fixtures cover both.
-- Final full `go test -race ./...` passed in 56.763 seconds; `go vet ./...`,
+- Linux CI exposed the existing compaction fixture's eight-second deadline:
+  481 legacy message imports exceeded it despite unchanged production paths.
+  The fixture now retains the same 192000 bytes of repeated context in 81
+  messages, with stronger checkpoint/latest-request assertions. Three local
+  race runs took 0.80–0.82 seconds rather than 3.20–3.22; the global timeout
+  and production compaction remain unchanged.
+- Final full `go test -race ./...` passed in 50.617 seconds; `go vet ./...`,
   gofmt and `git diff --check` passed. Android/arm64, Linux/arm64 and
   FreeBSD/OpenBSD/NetBSD amd64 builds passed. No dependency or second loop added.
 - A15 updated at idle, with saved configuration unchanged. Checksum, daemon
-  restart, status and offline doctor passed; version 0.19.2-poc, PID 7222 at
+  restart, status and offline doctor passed; version 0.19.2-poc, PID 8004 at
   verification time. SHA-256:
-  `20c50e77cffbf250bd5256c4207d4180c22883efeb447c6f829ef12e529cfa56`.
+  `3c42441e56b2f033b3da6175d7bc9099748027b89c1cb5512c610d5d387ff6b5`.
 - Local job `verification-0192-worker-1` completed with `VERIFIED`; worker
   `delegate-11d456b2531372495b5b6be5` completed with `WORKER_VERIFIED`.
   Both used Sol 6.1 medium. The test sent no Telegram message, made no Calendar
   mutation and forced no dream. Worker shell remains disabled on the A15.
-- Telegram and Calendar mutation regressions use synthetic transports; real
-  calendars remain read-only. Forms created before this release lack recorded
+- Telegram and Calendar mutation regressions use synthetic transports; no real
+  writable calendar was tested. Forms created before this release lack recorded
   message IDs and require a button click for cleanup. A crash between Telegram
   acceptance and its first saved receipt can still duplicate delivery.
 

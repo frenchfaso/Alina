@@ -2,8 +2,9 @@
 
 The single agent loop remains unchanged in shape: prepare context, ask the model,
 execute tools, repeat. Steering uses a bounded persistent mailbox at its safe
-boundaries; web_fetch uses a Go web reader. There is no second agent, browser
-runtime, MCP server, Python service or additional model request for these features.
+boundaries; web_fetch uses a Go web reader. These features need no separate
+browser runtime, MCP server, Python service or additional model request. Optional
+workers use the same loop; see [delegation](delegation.md).
 
 ## Public web pages
 

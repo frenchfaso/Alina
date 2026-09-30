@@ -10,7 +10,7 @@ other files and link them from `index.md`.
 One loop handles conversation, user schedules, personal initiatives and dream:
 load working conversation and runtime context, call the model, execute tools,
 record results, repeat until a reply or a limit. Tool schemas are authoritative
-for current availability. Inference is serialized across people; user work has
+for current availability. Main inference is serialized across people; user work has
 priority over background inference. Shell processes belong to their invocation
 and are cleaned up when it ends; never use shell to restart your daemon.
 

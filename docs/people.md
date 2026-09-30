@@ -3,7 +3,8 @@
 Alina recognizes each person and shares memory across the family, including her
 own dream history. Telegram accounts remain separate conversations with distinct
 reply destinations; a Telegram group is not required. One soul, one reflection
-schedule and one inference gate serve everyone.
+schedule and one main inference gate serve everyone. One bounded worker may
+infer alongside the conversation loop; it has its own context and gate.
 
 ## Setup
 

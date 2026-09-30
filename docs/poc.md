@@ -170,7 +170,7 @@ send an image as a file when preserving the original matters. See the
 ## Native file tools
 
 The ordinary agent loop exposes `shell`, `read`, `write`, `edit`, `web_search`,
-`web_fetch`, `memory`, `schedule`, `view_image`, `harness` and
+`web_fetch`, `memory`, `schedule`, `view_image`, `harness`, [`delegate`](delegation.md) and
 [`calendar`](calendar.md) for configured users; Telegram user turns
 also expose `send_file`. The file tools follow Pi's
 small interfaces, implemented directly in Go without additional dependencies:
@@ -276,8 +276,9 @@ operation's outcome unknown.
   POC's process-group guarantees.
 - Up to 16 jobs per memory scope can be active. Each session processes messages in order;
   independent sessions can progress while another waits for approval or a shell
-  process. One model request runs at a time, with foreground requests ahead of
+  process. One main model request runs at a time, with foreground requests ahead of
   waiting dream/initiative calls. An in-flight model request is not preempted.
+  A bounded worker uses its own gate and may infer alongside the main loop.
   Use a separate session (`POST /v1/jobs` with a chosen session, or `/new`) for an independent request
   while the current conversation is waiting for consent.
 - Jobs are persisted in SQLite; status loads only active and 50 recent finished
@@ -288,7 +289,7 @@ operation's outcome unknown.
   independent proof of task success.
 - Working context is compacted at model-call boundaries when its size,
   including prompts and tool schemas, exceeds 90% of `context_tokens` (default
-  272000 by default: the threshold is 244800). The most recent provider input/output
+  272000: the threshold is 244800). The most recent provider input/output
   usage anchors the count, plus estimates for new messages and changed prefix
   overhead. Without usage, Alina estimates visible serialized bytes / 3;
   opaque encrypted reasoning and internal metadata are not tokenized as text.

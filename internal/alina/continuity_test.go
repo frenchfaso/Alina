@@ -91,13 +91,18 @@ func TestContinuationCompactsAndKeepsTranscript(t *testing.T) {
 		if !strings.Contains(text, marker) {
 			return Message{}, errors.New("lost checkpoint")
 		}
+		if m[len(m)-1].Content != "continue" {
+			return Message{}, errors.New("lost latest request")
+		}
 		return Message{Role: "assistant", Content: "continued"}, nil
 	})
 	e := newTestEngine(t, model)
 	e.Config.ContextTokens = 32768
 	history := []Message{{Role: "user", Content: marker}}
-	for i := 0; i < 240; i++ {
-		history = append(history, Message{Role: "user", Content: fmt.Sprintf("old %d %s", i, strings.Repeat("context ", 100))}, Message{Role: "assistant", Content: "done"})
+	// Keep the same 192000 bytes of repeated content with fewer exchanges.
+	// Exercise compaction without measuring hundreds of legacy imports.
+	for i := 0; i < 40; i++ {
+		history = append(history, Message{Role: "user", Content: fmt.Sprintf("old %d %s", i, strings.Repeat("context ", 600))}, Message{Role: "assistant", Content: "done"})
 	}
 	path := filepath.Join(e.Dir, "sessions", "long.json")
 	if err := writeJSON(path, history); err != nil {
@@ -110,7 +115,7 @@ func TestContinuationCompactsAndKeepsTranscript(t *testing.T) {
 	awaitStatus(t, e, j.ID, "completed")
 	b, _ := os.ReadFile(path)
 	var saved []Message
-	if err = json.Unmarshal(b, &saved); err != nil || len(saved) > 100 {
+	if err = json.Unmarshal(b, &saved); err != nil || len(saved) == 0 || len(saved) >= len(history) || !saved[0].Checkpoint {
 		t.Fatal(len(saved), err)
 	}
 	files, _ := filepath.Glob(filepath.Join(e.Dir, "sessions", "long", "*.json"))

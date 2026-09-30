@@ -88,8 +88,9 @@ its JSON key locally at:
 $ALINA_HOME/integrations/google-calendar.json
 ```
 
-`ALINA_HOME` defaults to `~/.config/alina`. Keep the directory private and the
-key a regular file with mode `0600`. Never commit it. This setup is once per
+Here `$ALINA_HOME` denotes Alina's [state directory](operations.md#state-directory).
+Keep the directory private and the key a regular file with mode `0600`.
+Never commit it. This setup is once per
 installation; subsequent calendar connections happen through chat. Bindings
 are stored separately in `integrations/calendars.json`. Access tokens are held
 in memory and renewed when needed. Rotating the installed key takes effect on

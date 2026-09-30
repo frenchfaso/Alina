@@ -1,10 +1,12 @@
 # Prompt example
 
 Rendered by the actual Go builder with `DefaultConfig`, the seed soul and all
-ten non-Telegram chat tools. Paths and hostname are normalized; OS/architecture are from
+enabled local chat tools. Paths and hostname are normalized; OS/architecture are from
 the macOS build used for this example. The command shell is the runtime executor,
 not the login shell. The tool schemas are sent separately. Telegram additionally offers `send_file`.
-The harness manual is read on demand, not appended to this prompt.
+The harness manual is read on demand, not appended to this prompt. Tool schemas
+include bounded delegation; Calendar appears when native users are configured,
+which this default-only fixture does not do.
 
 This fixture uses strict network mode. First-time interactive setup defaults
 to declared mode; the prompt always reports the configured policy.

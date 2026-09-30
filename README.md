@@ -42,10 +42,10 @@ go build -trimpath -o alina .
 ./alina chat        # or talk through Telegram
 ```
 
-Guided setup connects your model and Telegram. Supports ChatGPT subscriptions,
-OpenCode Go, web search, photos and files. Quick setup asks consent for arbitrary
-downloads and package installation. The harness runs locally; model requests
-go to your configured provider.
+Guided setup connects your model and Telegram. Alina supports ChatGPT subscriptions,
+OpenCode Go, web search, photos and files. Connect Google Calendar or ask for
+reminders in chat. Downloads and package installation require consent by default.
+The harness runs locally; model requests go to your configured provider.
 
 An experimental POC for trusted people and devices. Configured users share one
 OS account. [MIT licensed](LICENSE).
