@@ -141,6 +141,16 @@ local checks; `doctor --live` tests integrations and `doctor --fix` performs
 limited local repairs, both while stopped. `logs` reads structured operational
 events; `api` lists the local administrative Unix-socket endpoints.
 
+Telegram polls for up to 50 seconds with a dedicated client, cancels a stalled
+request after 65 seconds and retries after five seconds. Two consecutive network
+failures/timeouts rebuild only its polling transport; API rejections do not.
+Logs record `telegram.poll_failed` with a redacted stage when known,
+`telegram.poll_transport_reset` and the next success as `telegram.poll_recovered`.
+No typing can be shown before an incoming message reaches the harness.
+On Android, a wake lock alone does not bypass Doze's network restrictions.
+Check battery optimization and Samsung's Never sleeping apps when relevant;
+do not claim these device settings are verified or infer a cause from a timeout.
+
 Logs omit conversation text, command bodies and credentials. Routine Telegram
 replies show content with formatting and typing, without job IDs/status headers.
 During longer work, your user-facing comments accompanying tool calls appear in

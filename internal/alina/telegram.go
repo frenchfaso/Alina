@@ -147,12 +147,15 @@ func (t *Telegram) endpoint(method string) string {
 	return base + "/bot" + t.Config.Token + "/" + method
 }
 func (t *Telegram) api(ctx context.Context, method string, body, out any) error {
+	return t.apiWithClient(ctx, t.Client, method, body, out)
+}
+func (t *Telegram) apiWithClient(ctx context.Context, client *http.Client, method string, body, out any) error {
 	var envelope struct {
 		OK        bool            `json:"ok"`
 		Result    json.RawMessage `json:"result"`
 		ErrorCode int             `json:"error_code"`
 	}
-	if e := requestJSON(ctx, t.Client, "POST", t.endpoint(method), body, nil, &envelope); e != nil {
+	if e := requestJSON(ctx, client, "POST", t.endpoint(method), body, nil, &envelope); e != nil {
 		var status *remoteHTTPError
 		if errors.As(e, &status) {
 			return &telegramAPIError{code: status.Status}
@@ -180,6 +183,8 @@ func (t *Telegram) Run(ctx context.Context) {
 		t.Engine.Events.emit("telegram.state_invalid", t.stateErr)
 		return
 	}
+	poller := newTelegramPoll(t.Client)
+	defer poller.close()
 	check, stopMenu := context.WithTimeout(ctx, 5*time.Second)
 	if err := t.api(check, "setMyCommands", map[string]any{"commands": telegramMenu, "scope": map[string]string{"type": "all_private_chats"}}, nil); err != nil {
 		t.Engine.Events.emit("telegram.menu_failed", err)
@@ -226,13 +231,19 @@ func (t *Telegram) Run(ctx context.Context) {
 		// Leave headroom above Telegram's 50-second long poll, without letting
 		// a broken mobile connection consume the shared client's 3-minute limit.
 		poll, stopPoll := context.WithTimeout(ctx, 65*time.Second)
-		e := t.api(poll, "getUpdates", map[string]any{"offset": offset, "timeout": 50, "allowed_updates": telegramUpdates}, &updates)
+		trace := newNetworkTrace()
+		e := t.apiWithClient(trace.context(poll), poller.client, "getUpdates", map[string]any{"offset": offset, "timeout": 50, "allowed_updates": telegramUpdates}, &updates)
 		stopPoll()
+		if ctx.Err() != nil {
+			return
+		}
 		if e != nil {
-			if ctx.Err() != nil {
-				return
+			reset := poller.failed(e)
+			fields := append(trace.fields(), "consecutive_failures", poller.failures)
+			t.Engine.Events.emit("telegram.poll_failed", e, fields...)
+			if reset {
+				t.Engine.Events.emit("telegram.poll_transport_reset", nil, "consecutive_failures", poller.failures)
 			}
-			t.Engine.Events.emit("telegram.poll_failed", e)
 			select {
 			case <-ctx.Done():
 				return
@@ -240,6 +251,11 @@ func (t *Telegram) Run(ctx context.Context) {
 			}
 			continue
 		}
+		if poller.failures > 0 {
+			fields := append(trace.fields(), "consecutive_failures", poller.failures)
+			t.Engine.Events.emit("telegram.poll_recovered", nil, fields...)
+		}
+		poller.succeeded()
 		for _, u := range updates {
 			if e = t.processUpdate(ctx, u); e != nil {
 				t.Engine.Events.emit("telegram.update_failed", e)

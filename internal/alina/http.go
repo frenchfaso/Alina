@@ -61,7 +61,7 @@ func requestJSON(ctx context.Context, client *http.Client, method, url string, b
 func decodeLimited(r io.Reader, out any) error {
 	b, e := io.ReadAll(io.LimitReader(r, 8<<20+1))
 	if e != nil {
-		return e
+		return &networkFailure{cause: e}
 	}
 	if len(b) > 8<<20 {
 		return fmt.Errorf("response exceeds 8 MiB")

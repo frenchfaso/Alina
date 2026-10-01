@@ -46,13 +46,23 @@ local service/log health, credential-file permissions, state JSON, SQLite
 `quick_check` in read-only mode, and the soul. Its checks include status, stable
 names and a suggested next action. A stopped daemon is reported explicitly.
 
-Telegram waits up to 50 seconds for incoming updates; a stalled connection is
-cancelled after 65 seconds and retried after 5 seconds. Typing starts for queued
+Telegram waits up to 50 seconds for incoming updates on a dedicated polling
+client; a stalled request is cancelled after 65 seconds and retried after
+5 seconds. After two consecutive network failures or timeouts, Alina rebuilds
+only the polling transport; sending replies and typing use their separate client.
+A successful poll clears the failure streak. Telegram API rejections do not
+trigger transport resets.
+
+Typing starts for queued
 or running chat work, renews every 4 seconds, and stops during approval waits
 or after completion. Transient typing failures retry after 4 seconds; API
 rejections retain a 30-second cooldown. No typing requests run while idle.
 If Telegram has not yet delivered a message, Alina cannot show typing for it.
 Look for `telegram.poll_failed` and `telegram.typing_failed` in the logs.
+Poll failures include timing and a redacted network stage when known, without
+addresses, URLs or raw errors. `telegram.poll_transport_reset` records the
+targeted reset; `telegram.poll_recovered` records the first successful poll after
+failures. These events help locate an interruption without proving its cause.
 
 For Termux device APIs, `socket(): Operation not permitted` from a local shell
 on older Alina versions can come from the harness filter rather than Android
@@ -425,3 +435,13 @@ Alina normally. Stopping the daemon alone does not disable subsequent autostart.
 An actual Android reboot is a separate end-to-end check; OEM background limits
 can still affect boot delivery. This setup does not change `alina serve` behavior
 on other installations.
+
+A wake lock alone does not ensure background network access: Android Doze can
+suspend networking and ignore wake locks for apps without an optimization
+exemption. If messages arrive only after waking the phone, check Termux's battery
+optimization exemption and Samsung's Battery → Background usage limits →
+Never sleeping apps for both Termux and Tailscale; menu names vary. These
+settings are checks for the device owner, not a diagnosis or a claim that
+Alina has verified them. See
+[Android Doze](https://developer.android.com/training/monitoring-device-state/doze-standby)
+and [Samsung sleeping apps](https://www.samsung.com/ca/support/mobile-devices/galaxy-phone-sleeping-apps/).

@@ -4,6 +4,29 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Telegram connection recovery — 0.19.3 (2026-10-01)
+
+- Isolated long polling from delivery, typing and provider connections. Two
+  consecutive network failures rebuild only the polling transport, preserving
+  DNS/TLS/proxy settings. HTTP/API/schema errors do not reset it; cancellation
+  shuts down quietly. The 50-second poll, 65-second deadline, five-second retry
+  and persisted update offsets are unchanged.
+- TLS HTTP/2 fixtures verify two interrupted responses on the same connection,
+  recovery on a new connection, unchanged shared-client connections and offsets
+  `[0 41 41 41 42]`. Trace tests verify concurrent callbacks and log redaction;
+  custom injected transports remain intact. No dependency or new loop added.
+- Full `go test -race ./...` passed in 62.052 seconds; `go vet ./...`, gofmt,
+  `git diff --check` and the Android/arm64 build passed.
+- A15 updated at idle with configuration unchanged. Checksum, daemon readiness,
+  offline doctor, Telegram `getMe` and `getWebhookInfo` passed. Version
+  0.19.3-poc, PID 17223 at verification time; no pending Telegram updates.
+  SHA-256: `08bb5522cf12bb16a50164be934f6ce2607fc730c90ae98427add2299c62ff3d`.
+- Local job `verification-0193-health-20261001T102239Z` completed with `ALINA_OK`.
+  No polling errors appeared during 76 seconds after readiness. This test sent
+  no Telegram message and made no Calendar mutation. Android battery exemptions
+  remain a manual device check; neither Doze nor the connection pool is claimed
+  as the proven cause of the earlier interruption.
+
 ## Reliability and lean Go — 0.19.2 (2026-09-30)
 
 - Addressed all findings from the [deep review](review-2026-09-30.md): permanent

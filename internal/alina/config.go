@@ -15,7 +15,7 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.19.2-poc"
+const Version = "0.19.3-poc"
 
 // Codex ChatGPT model catalog, 2026-09-30. These are backend limits, not
 // the larger public API window. ContextTokens remains user configurable.
