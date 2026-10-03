@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -175,7 +174,7 @@ func TestSteeringFinalReplyRaceAndQueueBound(t *testing.T) {
 			}
 			return Message{Role: "assistant", Content: "stale final"}, nil
 		}
-		return Message{Role: "assistant", Content: m[len(m)-1].Content}, nil
+		return Message{Role: "assistant", Content: lastInteraction(m).Content}, nil
 	}))
 	j, err := e.Receive("final-steer", "local", "start", "final-start")
 	if err != nil {
@@ -247,7 +246,7 @@ func TestSteeringSurvivesRestartAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	awaitStatus(t, e, resumed.ID, "completed")
-	if captured[len(captured)-1].Content != "do not overwrite the backup" {
+	if lastInteraction(captured).Content != "do not overwrite the backup" {
 		t.Fatal("pending correction lost on resume", captured)
 	}
 	if receipt, err := e.Steer(j.ID, "local", "do not overwrite the backup", "recover-update"); err != nil || receipt.ID != resumed.ID {
@@ -308,7 +307,7 @@ func TestChatAcceptsSteeringWhileWaiting(t *testing.T) {
 			}
 			return Message{Role: "assistant", Content: "first"}, nil
 		}
-		return Message{Role: "assistant", Content: "received: " + m[len(m)-1].Content}, nil
+		return Message{Role: "assistant", Content: "received: " + lastInteraction(m).Content}, nil
 	}))
 	socketDir, err := os.MkdirTemp("", "ac-")
 	if err != nil {
@@ -356,7 +355,15 @@ func TestChatAcceptsSteeringWhileWaiting(t *testing.T) {
 
 func TestSteeringBudgetDoesNotReset(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
-	e := newTestEngine(t, modelFunc(func(ctx context.Context, _ string, _ []Message, _ []ToolSpec, _ func(string)) (Message, error) {
+	calls := 0
+	e := newTestEngine(t, modelFunc(func(ctx context.Context, _ string, m []Message, tools []ToolSpec, _ func(string)) (Message, error) {
+		calls++
+		if calls == 2 {
+			if len(tools) != 0 || lastInteraction(m).Content != "new constraint" {
+				t.Error("closing request lost steering or allowed more work", m, tools)
+			}
+			return Message{Role: "assistant", Content: "Partial report incorporating new constraint."}, nil
+		}
 		close(started)
 		select {
 		case <-release:
@@ -375,17 +382,9 @@ func TestSteeringBudgetDoesNotReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	close(release)
-	done := awaitStatus(t, e, j.ID, "failed")
-	if !strings.Contains(done.Error, "step budget") || done.PendingSteering != 1 {
-		t.Fatal(done)
-	}
-	var payload string
-	if err = e.Memory.DB.QueryRow("SELECT payload FROM steering WHERE id='budget-update' AND applied=0").Scan(&payload); err != nil {
-		t.Fatal(err)
-	}
-	var pending steeringInput
-	if err = json.Unmarshal([]byte(payload), &pending); err != nil || pending.Message.Content != "new constraint" {
-		t.Fatal(pending, err)
+	done := awaitStatus(t, e, j.ID, "completed")
+	if calls != 2 || !done.Partial || done.PendingSteering != 0 || !strings.Contains(done.Output, "new constraint") {
+		t.Fatal(done, calls)
 	}
 }
 
@@ -403,7 +402,7 @@ func TestTelegramAttachmentSteersAndDeduplicates(t *testing.T) {
 			}
 			return Message{Role: "assistant", Content: "old response"}, nil
 		}
-		last := m[len(m)-1]
+		last := lastInteraction(m)
 		if last.Content != "Considera anche questo" || len(last.Attachments) != 1 {
 			return Message{}, fmt.Errorf("steering attachment missing: %+v", last)
 		}

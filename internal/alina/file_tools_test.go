@@ -36,7 +36,7 @@ func TestFileToolsThroughAgentLoop(t *testing.T) {
 		if names["web_search"] || !names["read"] || !names["write"] || !names["edit"] || !strings.Contains(messages[0].Content, "prefer read") {
 			return Message{}, errors.New("file tools or prompt guidance missing")
 		}
-		last := messages[len(messages)-1]
+		last := lastInteraction(messages)
 		name := ""
 		var args any
 		switch step {

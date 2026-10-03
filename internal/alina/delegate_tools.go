@@ -45,7 +45,7 @@ func (e *Engine) delegateDispatch(j *runningJob, c ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		ctx, cancel := context.WithTimeout(j.ctx, time.Duration(min(e.Config.CommandTimeout, 120))*time.Second)
+		ctx, cancel := context.WithTimeout(j.operationContext(), time.Duration(min(e.Config.CommandTimeout, 120))*time.Second)
 		defer cancel()
 		// Build a fresh environment; no account directories, secrets or app launchers.
 		env := []string{"HOME=" + root, "TMPDIR=" + root, "PATH=" + os.Getenv("PATH"), "LANG=C.UTF-8", "GODEBUG=asyncpreemptoff=1"}

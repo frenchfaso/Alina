@@ -70,7 +70,8 @@ func TestTelegramPhotoReachesAstraAndSurvivesRestart(t *testing.T) {
 				w.WriteHeader(400)
 				return
 			}
-			last := input[len(input)-1].(map[string]any)
+			// The last wire item is the ephemeral budget snapshot.
+			last := input[len(input)-2].(map[string]any)
 			field := "content"
 			if n == 2 || n == 4 {
 				field = "output"
@@ -172,7 +173,7 @@ func TestTelegramPhotoReachesAstraAndSurvivesRestart(t *testing.T) {
 func TestTelegramDocumentCanBeUsedByShell(t *testing.T) {
 	payload := []byte("ORCHID_DOCUMENT\n")
 	e := newTestEngine(t, modelFunc(func(_ context.Context, _ string, messages []Message, _ []ToolSpec, _ func(string)) (Message, error) {
-		last := messages[len(messages)-1]
+		last := lastInteraction(messages)
 		if last.Role == "tool" {
 			return Message{Role: "assistant", Content: last.Content}, nil
 		}

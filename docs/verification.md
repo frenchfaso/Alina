@@ -4,6 +4,41 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Research budgets and graceful conclusions — 0.20.0 (2026-10-03)
+
+- Default work requests increased to 40 for the shared loop. Workers use the
+  configured/model context window with 90% compaction; the special 64k context
+  ceiling and cumulative 200k input/output cutoff are removed. Usage stays logged.
+- One additional tool-free request can report verified partial results, recorded
+  as `partial: true`. Workers reserve the last minute of their ten-minute deadline
+  for reporting. Stop still cancels the whole job. Partial dreams do not advance
+  the experience cursor or enter the completed-dream table.
+- Explicit worker `wait` spends no model calls and wakes for steering or stop.
+  Reports are delivered once. Private compaction archives stay beside the worker
+  trace; its exchanges and budget snapshots never enter the shared journal.
+- Worker/tool prompts discourage duplicate research, preserve sources and label
+  unresolved work. Checkpoints preserve pending worker IDs. The fixed system
+  prompt is unchanged. Web reading prefers visible semantic main containers,
+  skips navigation, and keeps a conservative/full-page fallback.
+- Full local `go test -race ./...` passed in 62.653 seconds. Final focused race
+  regressions passed in 5.393 seconds, including 25 worker work requests with
+  2.5 million cumulative input tokens and more than 64k visible context, private
+  compaction, time reserve, cancellation, final-tool rejection, parent collection,
+  steering and incomplete reflection. Vet, gofmt and Android/arm64 build passed.
+- A15 was updated at idle. Only `max_steps` changed from 20 to 40; models,
+  credentials, people, calendars, schedules and startup hooks were preserved.
+  Local probes for Frenchfaso and Clearpunch both returned `ALINA_OK` with
+  Sol 6.1 medium. Job `verification-0200-worker-20261003T105210Z` returned
+  `ALINA_WORKER_OK`; worker `delegate-3357074ef420ae5b83de64ce` used Sol 6.1
+  medium, fetched one public page, and reported successfully without parent
+  research duplication. No Telegram message or Calendar mutation was sent.
+- Final binary SHA-256:
+  `79e3713d48a4b4c3b7b261e5133dc08942dba6def6a210bc2af2d05d1d7f6dd0`.
+  Version 0.20.0-poc, PID 32419 at verification time. Offline doctor, installed
+  manual, Telegram getMe/getWebhookInfo and final local job
+  `verification-0200-final-health-20261003T110136Z` passed (`ALINA_OK`).
+  Both Telegram metadata checks succeeded with no pending updates.
+
 ## Telegram connection recovery — 0.19.3 (2026-10-01)
 
 - Isolated long polling from delivery, typing and provider connections. Two

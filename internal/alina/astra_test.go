@@ -194,7 +194,8 @@ func TestRuntimeContextAppendsAndDoesNotBecomeMemory(t *testing.T) {
 	calls := 0
 	e := newTestEngine(t, modelFunc(func(_ context.Context, _ string, msg []Message, _ []ToolSpec, _ func(string)) (Message, error) {
 		calls++
-		system, input := responseInput(msg)
+		// Budget changes deliberately; prior conversation remains a stable prefix.
+		system, input := responseInput(msg[:len(msg)-1])
 		if calls == 1 {
 			firstSystem, firstInput = system, input
 		} else if system != firstSystem || len(input) <= len(firstInput) || jsonText(input[:len(firstInput)]) != jsonText(firstInput) {

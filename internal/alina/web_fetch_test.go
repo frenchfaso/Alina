@@ -83,7 +83,7 @@ func TestWebFetchExtractionAndPagination(t *testing.T) {
 		t.Fatal("non-readable HTML leaked", text)
 	}
 	base, _ := url.Parse("https://example.com")
-	if text, _, err := pageText(`<p>Hello<b> world</b> and<em> another</em> word.</p>`, base); err != nil || text != "Hello world and another word." {
+	if text, _, err := pageText(`<p>Hello<b> world</b> and<em> another</em> word.</p>`, base, false); err != nil || text != "Hello world and another word." {
 		t.Fatal(text, err)
 	}
 	for _, media := range []string{"text/plain", "application/json", "text/markdown"} {
@@ -118,7 +118,7 @@ func TestWebFetchRejectsFilesOversizeAndBadPages(t *testing.T) {
 		}
 	}
 	base, _ := url.Parse("https://example.com/" + strings.Repeat("x", 7000) + "/")
-	if _, _, err := pageText(strings.Repeat(`<a href="a">a</a>`, 1000), base); err == nil {
+	if _, _, err := pageText(strings.Repeat(`<a href="a">a</a>`, 1000), base, false); err == nil {
 		t.Fatal("link expansion exceeded extraction budget")
 	}
 }
@@ -164,5 +164,34 @@ func TestWebFetchPublicAddressAndRedirectPolicy(t *testing.T) {
 	cancel()
 	if _, err := webFetch(ctx, newFetchClient(), `{"url":"https://example.com"}`); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
+	}
+}
+
+func TestWebFetchPrincipalContentAndFullPageFallback(t *testing.T) {
+	for _, tc := range []struct {
+		body      string
+		principal bool
+	}{
+		{`<title>Events</title><nav>Outside menu</nav><main><nav>Inside menu</nav><article><header>First event</header><p>Verified date</p></article><article>Second event</article></main><footer>Site footer</footer>`, true},
+		{`<title>Events</title><nav>Outside menu</nav><div role="main">First event; Second event; Verified date</div>`, true},
+		{`<div hidden><main>HIDDEN_SECRET</main></div><nav>Outside menu</nav><p>First event; Second event; Verified date</p>`, false},
+		{`<main></main><nav>Outside menu</nav><article>First event</article><article>Second event; Verified date</article>`, false},
+	} {
+		for _, full := range []bool{false, true} {
+			out, err := webFetch(context.Background(), fetchFixture("text/html; charset=utf-8", tc.body), jsonText(map[string]any{"url": "https://example.com/events", "full_page": full}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var page struct{ Text string }
+			json.Unmarshal([]byte(out), &page)
+			for _, want := range []string{"First event", "Second event", "Verified date"} {
+				if !strings.Contains(page.Text, want) {
+					t.Fatal("lost principal evidence", page.Text)
+				}
+			}
+			if strings.Contains(page.Text, "HIDDEN_SECRET") || strings.Contains(page.Text, "Outside menu") != (full || !tc.principal) || !full && tc.principal && strings.Contains(page.Text, "Inside menu") {
+				t.Fatal(full, page.Text)
+			}
+		}
 	}
 }

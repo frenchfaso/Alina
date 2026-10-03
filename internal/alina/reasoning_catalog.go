@@ -355,7 +355,7 @@ func sameCatalogModel(a, b *catalogModel) bool {
 	return a.ID == b.ID && a.Default == b.Default && a.Context == b.Context && a.Vision == b.Vision && slices.Equal(a.Levels, b.Levels)
 }
 func (e *Engine) contextBudget(j *runningJob) int {
-	if j.model != nil && j.model.ID != e.Config.Model {
+	if j.model != nil && (j.Kind == "delegate" || j.model.ID != e.Config.Model) {
 		return min(e.Config.ContextTokens, j.model.Context)
 	}
 	return e.Config.ContextTokens

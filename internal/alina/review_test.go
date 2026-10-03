@@ -15,7 +15,7 @@ import (
 
 func TestCancelledQueuedTurnKeepsItsPredecessor(t *testing.T) {
 	e := newTestEngine(t, modelFunc(func(_ context.Context, _ string, m []Message, _ []ToolSpec, _ func(string)) (Message, error) {
-		if m[len(m)-1].Content == "first" {
+		if lastInteraction(m).Content == "first" {
 			return Message{Role: "assistant", Calls: []ToolCall{{ID: "pending", Name: "shell", Arguments: `{"command":"printf first","network":true}`}}}, nil
 		}
 		return Message{Role: "assistant", Content: "done"}, nil

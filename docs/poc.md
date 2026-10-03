@@ -387,7 +387,9 @@ are preserved and the reflection prompt guides faithful translation when needed.
 Dream defaults to `0 3 * * *`, with one catch-up after missed executions. It uses
 **the same agent loop and imprinting as chat**, with memory, scheduling, saved-image
 inspection, harness inspection and soul revision tools. It uses the normal
-`max_steps` (default 20) and a ten-minute deadline. No separate six-step or
+`max_steps` (default 40) and a ten-minute deadline. One extra tool-free
+request can record a partial reflection at the step limit; an unfinished dream
+does not advance the experience cursor. No separate six-step or
 12-call limit applies. It does not summarize days, archive old records, prepare
 embeddings or execute shell commands. A deterministic overview includes compact
 conversation excerpts and tool names, with source/job IDs for optional details.

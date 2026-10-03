@@ -31,6 +31,7 @@ type Job struct {
 	Input           string       `json:"input"`
 	Status          string       `json:"status"`
 	Skipped         bool         `json:"skipped,omitempty"`
+	Partial         bool         `json:"partial,omitempty"`
 	Output          string       `json:"output,omitempty"`
 	Error           string       `json:"error,omitempty"`
 	Activity        string       `json:"activity,omitempty"`
@@ -47,6 +48,8 @@ type runningJob struct {
 	delegateDelivered map[string]bool
 	Job
 	ctx         context.Context
+	workCtx     context.Context // Workers reserve the last minute for a report.
+	finishing   bool
 	cancel      context.CancelFunc
 	decision    chan string
 	done        chan struct{}
@@ -55,6 +58,14 @@ type runningJob struct {
 	accepting   bool
 	steerSignal chan struct{}
 }
+
+func (j *runningJob) operationContext() context.Context {
+	if j.workCtx != nil && !j.finishing {
+		return j.workCtx
+	}
+	return j.ctx
+}
+
 type Engine struct {
 	catalog      reasoningCatalog
 	calendar     calendarState
@@ -423,7 +434,7 @@ func (e *Engine) finish(j *runningJob, output string, err error) {
 		j.Error = "cannot persist job: " + er.Error()
 		e.Events.emit("job.persist_failed", er, "job_id", j.ID)
 	}
-	e.Events.emit("job.finished", err, "job_id", j.ID, "kind", j.Kind, "status", j.Status, "elapsed_ms", time.Since(j.Created).Milliseconds(), "usage", j.Usage)
+	e.Events.emit("job.finished", err, "job_id", j.ID, "kind", j.Kind, "status", j.Status, "partial", j.Partial, "elapsed_ms", time.Since(j.Created).Milliseconds(), "usage", j.Usage)
 	j.cancel()
 	j.cancel = nil
 	if persisted {
@@ -493,7 +504,7 @@ func (e *Engine) toolShared(j *runningJob, c ToolCall) (string, error) {
 		if j.Kind == "initiative" && !e.Config.Autonomy.Search {
 			return "", errors.New("web research for personal exploration is disabled")
 		}
-		return webFetch(j.ctx, newFetchClient(), c.Arguments)
+		return webFetch(j.operationContext(), newFetchClient(), c.Arguments)
 	case "read", "write", "edit":
 		return e.fileTool(j, c)
 	case "view_image":

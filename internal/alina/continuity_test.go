@@ -22,7 +22,7 @@ func (f modelFunc) Complete(c context.Context, s string, m []Message, t []ToolSp
 
 func TestApprovalLeavesOtherSessionsAvailable(t *testing.T) {
 	e := newTestEngine(t, modelFunc(func(ctx context.Context, s string, m []Message, _ []ToolSpec, _ func(string)) (Message, error) {
-		if s == "blocked" && m[len(m)-1].Role != "tool" {
+		if s == "blocked" && lastInteraction(m).Role != "tool" {
 			return Message{Role: "assistant", Calls: []ToolCall{{ID: "call", Name: "shell", Arguments: `{"command":"printf pending","network":true}`}}}, nil
 		}
 		return Message{Role: "assistant", Content: "ready"}, nil
@@ -91,7 +91,7 @@ func TestContinuationCompactsAndKeepsTranscript(t *testing.T) {
 		if !strings.Contains(text, marker) {
 			return Message{}, errors.New("lost checkpoint")
 		}
-		if m[len(m)-1].Content != "continue" {
+		if lastInteraction(m).Content != "continue" {
 			return Message{}, errors.New("lost latest request")
 		}
 		return Message{Role: "assistant", Content: "continued"}, nil
@@ -351,7 +351,7 @@ func TestDreamRetrievesEvidenceBeforeRevisingSoul(t *testing.T) {
 		case 1:
 			return Message{Role: "assistant", Calls: []ToolCall{{ID: "lookup", Name: "memory", Arguments: `{"action":"search","query":"unique_old"}`}}}, nil
 		case 2:
-			if !strings.Contains(msg[len(msg)-1].Content, "verification failed") {
+			if !strings.Contains(lastInteraction(msg).Content, "verification failed") {
 				return Message{}, errors.New("evidence missing")
 			}
 			return Message{Role: "assistant", Calls: []ToolCall{{ID: "soul", Name: "soul", Arguments: jsonText(map[string]string{"previous": old, "text": "# Alina\nPreferisco verificare le mie interpretazioni.", "reason": "Una procedura tentata non era riuscita."})}}}, nil
@@ -401,7 +401,7 @@ func TestInvalidCheckpointRetainsOriginalSession(t *testing.T) {
 
 func TestExplicitInstallRequiresConsentInStrictMode(t *testing.T) {
 	e := newTestEngine(t, modelFunc(func(ctx context.Context, s string, m []Message, _ []ToolSpec, _ func(string)) (Message, error) {
-		if m[len(m)-1].Role == "tool" {
+		if lastInteraction(m).Role == "tool" {
 			return Message{Role: "assistant", Content: "stopped"}, nil
 		}
 		return Message{Role: "assistant", Calls: []ToolCall{{ID: "install", Name: "shell", Arguments: `{"command":"printf local-installer","install":true}`}}}, nil

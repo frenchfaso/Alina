@@ -71,6 +71,8 @@ func (m jobModel) Complete(ctx context.Context, session string, messages []Messa
 	purpose := "turn"
 	if strings.HasPrefix(session, "checkpoint-") {
 		purpose = "checkpoint"
+	} else if m.j.finishing {
+		purpose = "finish"
 	}
 	return m.infer(ctx, purpose, func(ctx context.Context) (Message, error) {
 		return m.e.Model.Complete(ctx, session, messages, specs, delta)
@@ -79,6 +81,12 @@ func (m jobModel) Complete(ctx context.Context, session string, messages []Messa
 
 // Auxiliary OpenAI research uses the same gate, budget and usage accounting.
 func (m jobModel) infer(ctx context.Context, purpose string, call func(context.Context) (Message, error)) (Message, error) {
+	if m.j.workCtx != nil && !m.j.finishing {
+		deadline, _ := m.j.workCtx.Deadline()
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
 	gate := m.e.gate
 	// One bounded worker may infer alongside the main loop, so long research
 	// cannot hold the conversation gate. The global delegate slot limits this to two calls.
@@ -95,7 +103,7 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 	if purpose != "search" && m.j.Model != "" && m.e.refreshJobModel(m.j) {
 		return Message{}, errRequestChanged
 	}
-	if purpose == "turn" && m.e.hasSteering(m.j) {
+	if (purpose == "turn" || purpose == "finish") && m.e.hasSteering(m.j) {
 		return Message{}, errRequestChanged
 	}
 
@@ -128,9 +136,6 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 		if !slices.Contains(m.j.model.Levels, effort) {
 			ctx = context.WithValue(ctx, reasoningEffortKey{}, m.j.model.Default)
 		}
-	}
-	if m.j.Kind == "delegate" && m.j.Usage.InputTokens+m.j.Usage.OutputTokens >= 200000 {
-		return Message{}, errors.New("delegate token budget reached; task incomplete")
 	}
 	started := time.Now()
 	callID := randomID()
@@ -283,6 +288,9 @@ func (e *Engine) compact(j *runningJob, history []Message, path string, overhead
 	}
 	prefix := history[:cut]
 	archive := filepath.Join(e.Dir, "sessions", j.Session, contentID(jsonText(prefix))+".json")
+	if j.Kind == "delegate" {
+		archive = filepath.Join(e.Dir, "delegates", j.ID, "archives", contentID(jsonText(prefix))+".json")
+	}
 	if _, err := os.Stat(archive); os.IsNotExist(err) {
 		if err = writeJSON(archive, prefix); err != nil {
 			return nil, err
@@ -330,7 +338,11 @@ func (e *Engine) compact(j *runningJob, history []Message, path string, overhead
 		checkpoint = answer.Content
 		start = end
 	}
-	next := append([]Message{{Role: "user", Checkpoint: true, Content: checkpointHeader + checkpoint + "\nContinue the preserved request from this progress; do not start over.\nFull earlier transcript: " + archive}}, kept...)
+	archiveHint := "\nFull earlier transcript: " + archive
+	if j.Kind == "delegate" {
+		archiveHint = "\nEarlier exchanges retained for Alina at " + archive + "; outside your tool workspace. Report missing details to Alina when needed."
+	}
+	next := append([]Message{{Role: "user", Checkpoint: true, Content: checkpointHeader + checkpoint + "\nContinue the preserved request from this progress; do not start over." + archiveHint}}, kept...)
 	for i := range next {
 		next[i].Context = nil
 	}

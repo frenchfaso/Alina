@@ -15,7 +15,7 @@ import (
 	_ "time/tzdata"
 )
 
-const Version = "0.19.3-poc"
+const Version = "0.20.0-poc"
 
 // Codex ChatGPT model catalog, 2026-09-30. These are backend limits, not
 // the larger public API window. ContextTokens remains user configurable.
@@ -93,7 +93,7 @@ func DefaultConfig() Config {
 	return Config{
 		Version: 1, Provider: "chatgpt", Model: defaultModel,
 		ReasoningEffort: "medium", DreamEffort: "xhigh", CheckpointEffort: "medium", Verbosity: "low",
-		ContextTokens: defaultContextTokens, ModelTimeout: 600, MaxSteps: 20, CommandTimeout: 120,
+		ContextTokens: defaultContextTokens, ModelTimeout: 600, MaxSteps: 40, CommandTimeout: 120,
 		WorkDir: d, Timezone: "Local", NetworkPolicy: "strict", OpenCodeAPI: "chat",
 		Search:   SearchConfig{Default: "openai"},
 		Memory:   MemoryConfig{Enabled: true, Dream: true, DreamCron: "0 3 * * *", CatchUp: true},

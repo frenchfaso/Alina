@@ -96,6 +96,16 @@ func TestPermissionLifetimes(t *testing.T) {
 	}
 }
 
+// Budget snapshots are ephemeral harness context, not user/tool exchanges.
+func lastInteraction(messages []Message) Message {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if !strings.HasPrefix(messages[i].Content, "<execution_budget>") {
+			return messages[i]
+		}
+	}
+	return Message{}
+}
+
 type scriptedModel struct {
 	mu      sync.Mutex
 	calls   int
@@ -112,8 +122,8 @@ func (m *scriptedModel) Complete(ctx context.Context, s string, msg []Message, t
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls++
-	if msg[len(msg)-1].Role == "tool" {
-		return Message{Role: "assistant", Content: msg[len(msg)-1].Content}, nil
+	if lastInteraction(msg).Role == "tool" {
+		return Message{Role: "assistant", Content: lastInteraction(msg).Content}, nil
 	}
 	b, _ := json.Marshal(map[string]any{"command": m.Command, "network": m.Network})
 	return Message{Role: "assistant", Calls: []ToolCall{{ID: randomID(), Name: "shell", Arguments: string(b)}}}, nil

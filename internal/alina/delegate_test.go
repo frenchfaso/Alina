@@ -44,7 +44,7 @@ func TestDelegateDefaultReasoningAndCapabilities(t *testing.T) {
 	parent := delegateParent(e)
 	defer parent.cancel()
 	capabilities, err := e.delegateTool(parent, `{"action":"capabilities"}`)
-	if err != nil || !strings.Contains(capabilities, `"default_reasoning":"medium"`) {
+	if err != nil || !strings.Contains(capabilities, `"default_reasoning":"medium"`) || !strings.Contains(capabilities, `"steps":40`) || !strings.Contains(capabilities, `"context_tokens":272000`) || strings.Contains(capabilities, "token_budget") {
 		t.Fatal(capabilities, err)
 	}
 	if _, err = e.delegateTool(parent, `{"action":"start","task":"Inspect the supplied task and report briefly."}`); err != nil {
@@ -274,7 +274,7 @@ func TestDelegateShellIsolation(t *testing.T) {
 func TestDelegateThroughParentLoopKeepsOnlyReport(t *testing.T) {
 	e := delegateTestEngine(t, modelFunc(func(_ context.Context, session string, m []Message, _ []ToolSpec, _ func(string)) (Message, error) {
 		if strings.HasPrefix(session, "delegate-") {
-			if m[len(m)-1].Role == "tool" {
+			if lastInteraction(m).Role == "tool" {
 				return Message{Role: "assistant", Content: "Worker verified its artifact."}, nil
 			}
 			return Message{Role: "assistant", Content: "WORKER_PRIVATE_INTERMEDIATE", Calls: []ToolCall{{ID: "write-report", Name: "write", Arguments: `{"path":"result.md","content":"artifact"}`}}}, nil
@@ -286,7 +286,7 @@ func TestDelegateThroughParentLoopKeepsOnlyReport(t *testing.T) {
 		if strings.Contains(text, "Delegated work result") {
 			return Message{Role: "assistant", Content: "Report received and reviewed."}, nil
 		}
-		if strings.Contains(text, `\"status\":\"queued\"`) || m[len(m)-1].Role == "tool" {
+		if strings.Contains(text, `\"status\":\"queued\"`) || lastInteraction(m).Role == "tool" {
 			return Message{Role: "assistant", Content: "Tentative answer before report."}, nil
 		}
 		return Message{Role: "assistant", Calls: []ToolCall{{ID: "start-worker", Name: "delegate", Arguments: `{"action":"start","task":"Create a tiny artifact and report the result.","reasoning":"low"}`}}}, nil

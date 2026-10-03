@@ -11,7 +11,10 @@ workers use the same loop; see [delegation](delegation.md).
 `web_fetch` reads public HTTP(S) URLs without saving a file. It accepts HTML,
 XHTML, plain text, Markdown, JSON and XML. HTML extraction preserves document
 order, headings, lists and link destinations, and omits scripts, styles and
-explicitly hidden elements. It does not execute JavaScript or claim full browser
+explicitly hidden elements. Visible `main` or `role=main` containers take
+precedence, with navigation omitted; ambiguous or empty containers fall back
+to the complete readable page. Use `full_page=true` to inspect navigation or
+other omitted material, starting again at offset zero. It does not execute JavaScript or claim full browser
 rendering, article detection or exact Markdown table/layout conversion.
 
 Results contain the final URL, title, content type, external-content label and

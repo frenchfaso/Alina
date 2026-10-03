@@ -154,7 +154,7 @@ func (e *Engine) searchTool(j *runningJob, raw string) (string, error) {
 	if a.Provider == "" {
 		a.Provider = e.Search.Config.Default
 	}
-	ctx := j.ctx
+	ctx := j.operationContext()
 	if a.Model != "" || a.Reasoning != "" {
 		if j.Kind != "chat" && j.Kind != "" {
 			return "", errors.New("only Alina in a user conversation can override the search model or reasoning; use the configured defaults")

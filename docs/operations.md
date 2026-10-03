@@ -329,6 +329,12 @@ selection rebuilds tools and context before dispatch, including changes made
 during checkpoints. Text-only context estimates omit visual cost while keeping
 attachment metadata and the original files.
 
+`max_steps` bounds tool-capable work requests (default 40). One additional
+tool-free request may conclude with verified partial results; job JSON and
+`job.finished` logs then include `partial: true`. Stop still cancels the whole
+turn. Workers share the 90% context compaction policy; see
+[delegation](delegation.md) for deadlines and isolated traces.
+
 Alina fetches the authenticated ChatGPT Codex model catalog, selecting visible
 entries with usable capability metadata. Effort choices are the intersection
 of that model's declared levels and the adapter's wire efforts. `ultra` is not

@@ -96,7 +96,6 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 	var err error
 	if j.Kind == "delegate" {
 		prompt = delegatePrompt + "\nWorkspace: " + e.delegateWorkspace(j) + "\nReturn no more than 4000 UTF-8 bytes in your final report."
-		maxSteps = min(maxSteps, 20)
 	} else {
 		prompt = e.prompt(specs)
 		context, err = e.runtimeContext(j)
@@ -114,12 +113,31 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		return "", err
 	}
 	vision := e.jobVision(j)
-	for step := 0; step < maxSteps; step++ {
+	// max_steps bounds work requests. One additional, tool-free request can
+	// report verified progress instead of abandoning it at the boundary.
+	for step := 0; step <= maxSteps; step++ {
 		if err = j.ctx.Err(); err != nil {
 			return "", err
 		}
+		if j.workCtx != nil && j.workCtx.Err() != nil {
+			step = maxSteps
+		}
+		j.finishing = step == maxSteps
 		if err = e.drainSteering(j, &history, appendMessage); err != nil {
 			return "", err
+		}
+		if j.finishing && j.Kind != "delegate" {
+			for {
+				if _, err = e.collectDelegates(j, appendMessage); err != nil {
+					return "", err
+				}
+				if !e.hasSteering(j) {
+					break
+				}
+				if err = e.drainSteering(j, &history, appendMessage); err != nil {
+					return "", err
+				}
+			}
 		}
 		e.refreshJobModel(j)
 		if vision != e.jobVision(j) {
@@ -130,18 +148,16 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			}
 		}
 		e.activity(j, fmt.Sprintf("Model · step %d", step+1))
-		if j.Kind == "delegate" {
-			if e.historyTokens(history, j)+estimatedTokens(prefix)+estimatedTokens(specs) > min(e.contextBudget(j)*90/100, 64000) {
-				return "", errors.New("delegate context budget reached; trace retained")
-			}
-		} else {
-			history, err = e.compact(j, history, path, estimatedTokens(prefix)+estimatedTokens(specs))
-		}
+		history, err = e.compact(j, history, path, estimatedTokens(prefix)+estimatedTokens(specs)+150)
 		if errors.Is(err, errRequestChanged) {
 			step--
 			continue
 		}
 		if err != nil {
+			if j.workCtx != nil && j.workCtx.Err() != nil && j.ctx.Err() == nil && !j.finishing {
+				step = maxSteps - 1
+				continue
+			}
 			return "", err
 		}
 		// Compaction can take time. Incorporate newly arrived corrections and
@@ -150,12 +166,28 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			step--
 			continue
 		}
-		msg, err := (jobModel{e: e, j: j}).Complete(j.ctx, j.Session, append(append([]Message{}, prefix...), history...), specs, nil)
+		request := append(append([]Message{}, prefix...), history...)
+		budget := fmt.Sprintf("<execution_budget>Work requests remaining: %d. Finish once the task is sufficiently verified; keep the final report concise.</execution_budget>", maxSteps-step)
+		if j.workCtx != nil {
+			deadline, _ := j.workCtx.Deadline()
+			budget = fmt.Sprintf("<execution_budget>Work requests remaining: %d; working time remaining: %d seconds. The last minute is reserved for your concise report.</execution_budget>", maxSteps-step, max(0, int(time.Until(deadline).Seconds())))
+		}
+		request = append(request, Message{Role: "user", Runtime: true, Content: budget})
+		tools := specs
+		if j.finishing {
+			tools = nil
+			request[len(request)-1].Content = "<execution_budget>The work budget is exhausted. Use no tools. Return a concise partial report from verified results already available, with source/file references and what remains unresolved. Do not claim unfinished work is complete. Respond in the user's language, or English for a worker/reflection.</execution_budget>"
+		}
+		msg, err := (jobModel{e: e, j: j}).Complete(j.ctx, j.Session, request, tools, nil)
 		if errors.Is(err, errRequestChanged) {
 			step--
 			continue
 		}
 		if err != nil {
+			if j.workCtx != nil && j.workCtx.Err() != nil && j.ctx.Err() == nil && !j.finishing {
+				step = maxSteps - 1
+				continue
+			}
 			return "", err
 		}
 		if err = validateAssistant(msg); err != nil {
@@ -171,6 +203,9 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 		}
 		if len(msg.Calls) > 8 {
 			return "", errors.New("model requested more than eight tools in one step")
+		}
+		if j.finishing && len(msg.Calls) != 0 {
+			return "", errors.New("model requested tools during the final tool-free report")
 		}
 		if len(msg.Calls) == 0 {
 			if j.Kind != "delegate" {
@@ -189,6 +224,14 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			// response that includes completed workers and latest steering.
 			if err = appendMessage(msg); err != nil {
 				return "", err
+			}
+			if j.finishing {
+				e.mu.Lock()
+				j.Partial = true
+				e.mu.Unlock()
+				if j.Kind == "dream" {
+					return msg.Content, errors.New("step budget reached; reflection unfinished; experiences remain eligible for the next dream")
+				}
 			}
 			return msg.Content, nil
 		}
@@ -210,7 +253,9 @@ func (e *Engine) turn(j *runningJob, cue ...string) (string, error) {
 			e.activity(j, toolName)
 			var result string
 			var toolErr error
-			if e.hasSteering(j) {
+			if j.workCtx != nil && j.workCtx.Err() != nil {
+				toolErr = errors.New("not executed: working time exhausted; finish with available evidence")
+			} else if e.hasSteering(j) {
 				toolErr = errors.New("not executed: new user steering is pending; reconsider after reading it")
 			} else if !hasTool(specs, call.Name) {
 				toolErr = fmt.Errorf("tool %q is not available in this turn", call.Name)
