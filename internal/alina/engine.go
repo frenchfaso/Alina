@@ -67,36 +67,35 @@ func (j *runningJob) operationContext() context.Context {
 }
 
 type Engine struct {
-	catalog      reasoningCatalog
-	calendar     calendarState
-	delegateBusy atomic.Bool
-	delegateGate modelGate
-	restartMu    sync.Mutex
-	restarting   atomic.Bool
-	managed      bool
-	Events       *EventLog
-	Scope        string
-	AdminDir     string
-	global       *Engine
-	scopes       map[string]*Engine
-	mu           sync.Mutex
-	Dir          string
-	Config       Config
-	Model        Model
-	Search       *Search
-	Permissions  *Permissions
-	jobs         map[string]*runningJob
-	jobChanged   *wakeSignal
-	gate         *modelGate
-	background   sync.Mutex
-	fileMu       *sync.Mutex
-	sessionTail  map[string]<-chan struct{}
-	inFlight     int // Includes cancelled turns still holding a place in the queue.
-	Memory       *Memory
-	Scheduler    *Scheduler
-	ctx          context.Context
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
+	catalog       reasoningCatalog
+	calendar      calendarState
+	delegateSlots chan struct{}
+	restartMu     sync.Mutex
+	restarting    atomic.Bool
+	managed       bool
+	Events        *EventLog
+	Scope         string
+	AdminDir      string
+	global        *Engine
+	scopes        map[string]*Engine
+	mu            sync.Mutex
+	Dir           string
+	Config        Config
+	Model         Model
+	Search        *Search
+	Permissions   *Permissions
+	jobs          map[string]*runningJob
+	jobChanged    *wakeSignal
+	gate          *modelGate
+	background    sync.Mutex
+	fileMu        *sync.Mutex
+	sessionTail   map[string]<-chan struct{}
+	inFlight      int // Includes cancelled turns still holding a place in the queue.
+	Memory        *Memory
+	Scheduler     *Scheduler
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
 }
 
 func newEngine(dir, adminDir string, c Config, m Model, s *Search, global *Engine, events ...*EventLog) (*Engine, error) {
@@ -111,6 +110,7 @@ func newEngine(dir, adminDir string, c Config, m Model, s *Search, global *Engin
 	en.jobChanged, en.gate, en.fileMu = &wakeSignal{}, &modelGate{}, &sync.Mutex{}
 	if global == nil {
 		en.global = en
+		en.delegateSlots = make(chan struct{}, maxActiveDelegates)
 	} else {
 		en.jobChanged, en.gate, en.fileMu = global.jobChanged, global.gate, global.fileMu
 	}

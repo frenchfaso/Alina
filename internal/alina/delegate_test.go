@@ -3,6 +3,7 @@ package alina
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -44,7 +45,7 @@ func TestDelegateDefaultReasoningAndCapabilities(t *testing.T) {
 	parent := delegateParent(e)
 	defer parent.cancel()
 	capabilities, err := e.delegateTool(parent, `{"action":"capabilities"}`)
-	if err != nil || !strings.Contains(capabilities, `"default_reasoning":"medium"`) || !strings.Contains(capabilities, `"steps":40`) || !strings.Contains(capabilities, `"context_tokens":272000`) || strings.Contains(capabilities, "token_budget") {
+	if err != nil || !strings.Contains(capabilities, `"max_active":4`) || !strings.Contains(capabilities, `"default_reasoning":"medium"`) || !strings.Contains(capabilities, `"steps":40`) || !strings.Contains(capabilities, `"context_tokens":272000`) || strings.Contains(capabilities, "token_budget") {
 		t.Fatal(capabilities, err)
 	}
 	if _, err = e.delegateTool(parent, `{"action":"start","task":"Inspect the supplied task and report briefly."}`); err != nil {
@@ -86,7 +87,7 @@ func TestDelegateReportIsolationAndDelivery(t *testing.T) {
 	if err != nil || !more || len(returned) != 1 || !strings.Contains(returned[0].Content, "Verified the requested fixture") {
 		t.Fatal(more, err, returned)
 	}
-	if e.global.delegateBusy.Load() {
+	if len(e.global.delegateSlots) != 0 {
 		t.Fatal("slot not released before delivery")
 	}
 	more, err = e.collectDelegates(parent, func(Message) error { t.Fatal("duplicate report"); return nil })
@@ -110,7 +111,7 @@ func TestDelegateReportIsolationAndDelivery(t *testing.T) {
 	}
 }
 func TestDelegateCancellationAndBounds(t *testing.T) {
-	entered := make(chan struct{}, 1)
+	entered := make(chan struct{}, maxActiveDelegates)
 	e := delegateTestEngine(t, modelFunc(func(ctx context.Context, session string, _ []Message, _ []ToolSpec, _ func(string)) (Message, error) {
 		if session == "foreground" {
 			return Message{Role: "assistant", Content: "ready"}, nil
@@ -124,13 +125,17 @@ func TestDelegateCancellationAndBounds(t *testing.T) {
 	if _, err := e.delegateTool(parent, `{"action":"start","task":"wait","reasoning":"ultra"}`); err == nil {
 		t.Fatal("unsupported effort accepted")
 	}
-	if _, err := e.delegateTool(parent, `{"action":"start","task":"wait","reasoning":"low"}`); err != nil {
-		t.Fatal(err)
+	for range maxActiveDelegates {
+		if _, err := e.delegateTool(parent, `{"action":"start","task":"wait","reasoning":"low"}`); err != nil {
+			t.Fatal(err)
+		}
 	}
-	select {
-	case <-entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("worker did not start")
+	for range maxActiveDelegates {
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("workers did not infer in parallel")
+		}
 	}
 	if _, err := e.delegateTool(parent, `{"action":"start","task":"second","reasoning":"low"}`); err == nil {
 		t.Fatal("unbounded workers")
@@ -153,8 +158,128 @@ func TestDelegateCancellationAndBounds(t *testing.T) {
 			t.Fatal(result)
 		}
 	}
-	if e.global.delegateBusy.Load() {
+	if len(e.global.delegateSlots) != 0 {
 		t.Fatal("worker slot leaked")
+	}
+}
+
+func TestDelegateGlobalSlotsAndReports(t *testing.T) {
+	entered := make(chan string, maxActiveDelegates)
+	release := make(chan struct{})
+	model := modelFunc(func(ctx context.Context, _ string, messages []Message, _ []ToolSpec, _ func(string)) (Message, error) {
+		task := lastInteraction(messages).Content
+		entered <- task
+		select {
+		case <-ctx.Done():
+			return Message{}, ctx.Err()
+		case <-release:
+			return Message{Role: "assistant", Content: "Verified " + task}, nil
+		}
+	})
+	first := delegateTestEngine(t, model)
+	dir := t.TempDir()
+	config := first.Config
+	config.WorkDir = dir
+	second, err := newEngine(dir, dir, config, model, nil, first.global)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(second.Close)
+	a, b := delegateParent(first), delegateParent(second)
+	b.ID = "second-parent"
+	b.Owner = "telegram:2"
+	defer a.cancel()
+	defer b.cancel()
+	start := func(e *Engine, parent *runningJob, task string) {
+		t.Helper()
+		if _, err := e.delegateTool(parent, jsonText(map[string]any{"action": "start", "task": task})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitEntered := func(n int) {
+		t.Helper()
+		for range n {
+			select {
+			case <-entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("workers serialized or did not start")
+			}
+		}
+	}
+	for i := range 2 {
+		start(first, a, fmt.Sprintf("first-%d", i))
+		start(second, b, fmt.Sprintf("second-%d", i))
+	}
+	waitEntered(4)
+	for _, pair := range []struct {
+		engine *Engine
+		parent *runningJob
+	}{{first, a}, {second, b}} {
+		if _, err = pair.engine.delegateTool(pair.parent, `{"action":"start","task":"fifth"}`); err == nil || !strings.Contains(err.Error(), "slots are occupied") {
+			t.Fatal("worker limit was not global", err)
+		}
+	}
+	// Stopping one person's parent frees its slots without cancelling anyone else.
+	a.cancel()
+	for _, child := range a.delegates {
+		select {
+		case <-child.done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("cancelled parent retained its worker")
+		}
+		job, _ := first.Get(child.ID)
+		if job.Status != "cancelled" {
+			t.Fatal(job)
+		}
+	}
+	for _, child := range b.delegates {
+		if child.ctx.Err() != nil {
+			t.Fatal("one person's stop cancelled another person's worker")
+		}
+	}
+	if _, err = second.delegateTool(b, `{"action":"start","task":"bad-input","files":["missing.txt"]}`); err == nil || len(first.global.delegateSlots) != 2 {
+		t.Fatal("failed start leaked a slot or released another worker's slot", err)
+	}
+	c := delegateParent(first)
+	c.ID = "replacement-parent"
+	defer c.cancel()
+	for i := range 2 {
+		start(first, c, fmt.Sprintf("replacement-%d", i))
+	}
+	waitEntered(2)
+	if _, err = second.delegateTool(b, `{"action":"start","task":"fifth-again"}`); err == nil {
+		t.Fatal("replacement workers escaped the bound")
+	}
+	close(release)
+	for _, pair := range []struct {
+		engine *Engine
+		parent *runningJob
+		prefix string
+	}{{second, b, "second-"}, {first, c, "replacement-"}} {
+		var reports []Message
+		more, err := pair.engine.collectDelegates(pair.parent, func(m Message) error { reports = append(reports, m); return nil })
+		if err != nil || !more || len(reports) != 2 {
+			t.Fatal("missing worker report", more, err, reports)
+		}
+		for i := range 2 {
+			needle := "Verified " + pair.prefix + fmt.Sprint(i)
+			matches := 0
+			for _, report := range reports {
+				if strings.Contains(report.Content, needle) {
+					matches++
+				}
+			}
+			if matches != 1 {
+				t.Fatal("report delivered to the wrong parent or more than once", needle, reports)
+			}
+		}
+		more, err = pair.engine.collectDelegates(pair.parent, func(Message) error { t.Fatal("duplicate report"); return nil })
+		if err != nil || more {
+			t.Fatal(more, err)
+		}
+	}
+	if len(first.global.delegateSlots) != 0 {
+		t.Fatal("completed workers leaked slots")
 	}
 }
 func TestDelegateFileAndToolBoundaries(t *testing.T) {
@@ -214,7 +339,7 @@ func TestDelegateFailedStartRemovesOnlyNewWorkspace(t *testing.T) {
 		if err != nil || len(entries) != 2 {
 			t.Fatal("failed start left an orphan or removed existing artifacts", entries, err)
 		}
-		if len(parent.delegates) != 0 || e.global.delegateBusy.Load() {
+		if len(parent.delegates) != 0 || len(e.global.delegateSlots) != 0 {
 			t.Fatal("failed start entered job lifecycle or retained worker slot")
 		}
 	}
@@ -239,7 +364,7 @@ func TestDelegateRejectsWorkspaceParentSymlinkEscape(t *testing.T) {
 		t.Fatal("delegate created outside its workspace")
 	}
 	entries, err := os.ReadDir(outside)
-	if err != nil || len(entries) != 1 || entries[0].Name() != "keep.txt" || e.global.delegateBusy.Load() {
+	if err != nil || len(entries) != 1 || entries[0].Name() != "keep.txt" || len(e.global.delegateSlots) != 0 {
 		t.Fatal("failed start changed escaped directory or retained worker slot", entries, err)
 	}
 }
@@ -271,11 +396,21 @@ func TestDelegateShellIsolation(t *testing.T) {
 	}
 }
 
-func TestDelegateThroughParentLoopKeepsOnlyReport(t *testing.T) {
-	e := delegateTestEngine(t, modelFunc(func(_ context.Context, session string, m []Message, _ []ToolSpec, _ func(string)) (Message, error) {
+func TestParallelDelegatesThroughParentLoopKeepsOnlyReports(t *testing.T) {
+	var entered atomic.Int32
+	allEntered := make(chan struct{})
+	e := delegateTestEngine(t, modelFunc(func(ctx context.Context, session string, m []Message, _ []ToolSpec, _ func(string)) (Message, error) {
 		if strings.HasPrefix(session, "delegate-") {
 			if lastInteraction(m).Role == "tool" {
-				return Message{Role: "assistant", Content: "Worker verified its artifact."}, nil
+				return Message{Role: "assistant", Content: "Worker verified its artifact: " + session}, nil
+			}
+			if entered.Add(1) == maxActiveDelegates {
+				close(allEntered)
+			}
+			select {
+			case <-allEntered:
+			case <-ctx.Done():
+				return Message{}, ctx.Err()
 			}
 			return Message{Role: "assistant", Content: "WORKER_PRIVATE_INTERMEDIATE", Calls: []ToolCall{{ID: "write-report", Name: "write", Arguments: `{"path":"result.md","content":"artifact"}`}}}, nil
 		}
@@ -284,23 +419,98 @@ func TestDelegateThroughParentLoopKeepsOnlyReport(t *testing.T) {
 			t.Error("worker exchange entered main context")
 		}
 		if strings.Contains(text, "Delegated work result") {
-			return Message{Role: "assistant", Content: "Report received and reviewed."}, nil
+			if strings.Count(text, "Delegated work result") != maxActiveDelegates {
+				t.Error("parent did not receive every worker report")
+			}
+			return Message{Role: "assistant", Content: "Four reports received and reviewed."}, nil
 		}
 		if strings.Contains(text, `\"status\":\"queued\"`) || lastInteraction(m).Role == "tool" {
 			return Message{Role: "assistant", Content: "Tentative answer before report."}, nil
 		}
-		return Message{Role: "assistant", Calls: []ToolCall{{ID: "start-worker", Name: "delegate", Arguments: `{"action":"start","task":"Create a tiny artifact and report the result.","reasoning":"low"}`}}}, nil
+		var calls []ToolCall
+		for i := range maxActiveDelegates {
+			calls = append(calls, ToolCall{ID: fmt.Sprintf("start-worker-%d", i), Name: "delegate", Arguments: `{"action":"start","task":"Create a tiny artifact and report the result.","reasoning":"low"}`})
+		}
+		return Message{Role: "assistant", Calls: calls}, nil
 	}))
 	j, err := e.Submit("integration", "local", "Delegate this bounded fixture")
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := awaitStatus(t, e, j.ID, "completed")
-	if result.Output != "Report received and reviewed." {
+	if result.Output != "Four reports received and reviewed." {
 		t.Fatal("parent finished before report", result)
 	}
 	var leaked int
 	if err = e.Memory.DB.QueryRow("SELECT count(*) FROM journal WHERE content LIKE '%WORKER_PRIVATE_INTERMEDIATE%' OR content LIKE '%Tentative answer before report.%'").Scan(&leaked); err != nil || leaked != 0 {
 		t.Fatal("worker trace leaked into memory", leaked, err)
+	}
+}
+
+func TestSteeringStartsIndependentWorker(t *testing.T) {
+	entered := make(chan string, 2)
+	release := make(chan struct{})
+	e := delegateTestEngine(t, modelFunc(func(ctx context.Context, session string, messages []Message, _ []ToolSpec, _ func(string)) (Message, error) {
+		if strings.HasPrefix(session, "delegate-") {
+			task := lastInteraction(messages).Content
+			entered <- task
+			select {
+			case <-ctx.Done():
+				return Message{}, ctx.Err()
+			case <-release:
+				return Message{Role: "assistant", Content: "Verified " + task}, nil
+			}
+		}
+		started := map[string]bool{}
+		second := false
+		reports := 0
+		for _, message := range messages {
+			second = second || message.Role == "user" && message.Content == "Research B"
+			if strings.Contains(message.Content, "Delegated work result") {
+				reports++
+			}
+			for _, call := range message.Calls {
+				var args struct{ Action, Task string }
+				if call.Name == "delegate" && json.Unmarshal([]byte(call.Arguments), &args) == nil && args.Action == "start" {
+					started[args.Task] = true
+				}
+			}
+		}
+		task := "Research A"
+		if second {
+			task = "Research B"
+		}
+		if !started[task] {
+			return Message{Role: "assistant", Calls: []ToolCall{{ID: task, Name: "delegate", Arguments: jsonText(map[string]any{"action": "start", "task": task})}}}, nil
+		}
+		if reports == 2 {
+			return Message{Role: "assistant", Content: "Both independent reports reviewed."}, nil
+		}
+		return Message{Role: "assistant", Content: "Tentative reply before reports."}, nil
+	}))
+	first, err := e.Receive("steered-research", "local", "Research A", "request-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitEntered := func(want string) {
+		t.Helper()
+		select {
+		case got := <-entered:
+			if got != want {
+				t.Fatal("wrong assignment", got, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("steering did not launch independent research alongside the first worker")
+		}
+	}
+	waitEntered("Research A")
+	second, err := e.Receive("steered-research", "local", "Research B", "request-b")
+	if err != nil || second.ID != first.ID {
+		t.Fatal("consecutive message did not steer the active turn", second, err)
+	}
+	waitEntered("Research B")
+	close(release)
+	if result := awaitStatus(t, e, first.ID, "completed"); result.Output != "Both independent reports reviewed." {
+		t.Fatal("parent lost one of the reports", result)
 	}
 }

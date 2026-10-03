@@ -4,6 +4,33 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Parallel workers — 0.20.1 (2026-10-03)
+
+- Up to four workers run concurrently across the device, alongside the main
+  conversation loop. A shared lifetime semaphore replaces the single slot and
+  worker inference gate. A fifth start fails immediately; no extra queue,
+  configuration field, dependency or agent loop is introduced.
+- Each worker retains its context, workspace, bounded trace and concise report.
+  Consecutive messages steer Alina; independent tasks can be delegated while
+  earlier workers continue. Stopping a parent cancels all its workers without
+  affecting another person's work. Reports are delivered once before completion.
+- Full local `go test -race ./...` passed in 63.097 seconds. Tests cover four
+  overlapping inference calls, the global limit across archive engines, slot
+  release after cancellation or failed setup, independent owners, automatic
+  report collection and a second request starting research via steering.
+  Vet, gofmt, diff checks and the Android/arm64 build passed.
+- A15 updated at idle to 0.20.1-poc; saved configuration is unchanged. Checksum,
+  daemon startup, offline doctor and installed worker instructions passed.
+  Binary SHA-256:
+  `26eab07809b8ef4a7d2e185d54dca49a12d7404b460646b272ad26d839bd2529`.
+- Local health probes for both people returned `ALINA_OK`. Four public page
+  reads completed, then job `verification-0201-parallel-search-20261003T112113Z`
+  returned `ALINA_PARALLEL_SEARCH_OK`. Logs confirm four overlapping worker
+  inference calls and four successful hosted searches, without parent research
+  duplication. Workers used Sol 6.1 medium; search remained Sol 6 high.
+  Telegram getMe/getWebhookInfo passed with no pending updates or polling errors
+  since restart. No Telegram message or Calendar mutation was sent by these tests.
+
 ## Research budgets and graceful conclusions — 0.20.0 (2026-10-03)
 
 - Default work requests increased to 40 for the shared loop. Workers use the

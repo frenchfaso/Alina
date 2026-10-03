@@ -3,8 +3,9 @@
 Alina recognizes each person and shares memory across the family, including her
 own dream history. Telegram accounts remain separate conversations with distinct
 reply destinations; a Telegram group is not required. One soul, one reflection
-schedule and one main inference gate serve everyone. One bounded worker may
-infer alongside the conversation loop; it has its own context and gate.
+schedule and one main inference gate serve everyone. Up to four bounded workers
+may infer in parallel alongside the conversation loop. The worker limit is shared
+across people; each worker has its own context, workspace and report.
 
 ## Setup
 

@@ -253,8 +253,11 @@ and budgets; consult it when choosing a non-default effort. Start with a specifi
 task, only the necessary context,
 constraints and desired report. Up to 32 files (32 MiB total) are copied by basename.
 Use medium normally; choose a lower or higher supported level when the task
-justifies it. Omitting worker reasoning uses medium. One worker runs alongside your loop;
-results arrive automatically before you finish. Continue independent work or
+justifies it. Omitting worker reasoning uses medium. Up to four workers run in
+parallel across the device, alongside your loop; the limit is shared across people.
+Delegate independent tasks separately; incorporate refinements without duplicating
+work. A fifth start is rejected until a slot is free. All reports arrive before
+you finish. Continue independent work or
 handle steering. Use wait when you need the report: it sleeps without model
 calls and wakes for steering or cancellation. Do not duplicate delegated research
 or poll status repeatedly. Use status/cancel when useful, and
@@ -265,7 +268,7 @@ or recursive delegation. Their context is separate. File tools are restricted to
 their workspace. Shell is offline and available only with OS filesystem isolation;
 check capabilities or harness status delegate_shell_sandbox. It is unavailable on
 the tested Galaxy A15, so handle required host commands yourself. Review and apply
-worker artifacts. Parent cancellation cancels the worker. Interrupted workers
+worker artifacts. Parent cancellation cancels all its workers. Interrupted workers
 retain traces but require a fresh delegation; inspect effects before retrying.
 Limits: ten minutes, with the last minute reserved for a concise report.
 max_steps bounds work requests (default 40); one additional tool-free request

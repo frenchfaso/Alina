@@ -87,17 +87,15 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 		ctx, cancel = context.WithDeadline(ctx, deadline)
 		defer cancel()
 	}
-	gate := m.e.gate
-	// One bounded worker may infer alongside the main loop, so long research
-	// cannot hold the conversation gate. The global delegate slot limits this to two calls.
-	if m.j.Kind == "delegate" {
-		gate = &m.e.global.delegateGate
+	// Each worker runs its loop sequentially and holds a global lifetime slot.
+	// Its inference need not hold the conversation gate or serialize other workers.
+	if m.j.Kind != "delegate" {
+		release, err := m.e.gate.acquire(ctx, m.j.Kind == "dream" || m.j.Kind == "initiative")
+		if err != nil {
+			return Message{}, err
+		}
+		defer release()
 	}
-	release, err := gate.acquire(ctx, m.j.Kind == "dream" || m.j.Kind == "initiative")
-	if err != nil {
-		return Message{}, err
-	}
-	defer release()
 	// The loop prepared tools/context before waiting. Revalidate after acquiring
 	// the gate; returning to that loop rebuilds the entire request coherently.
 	if purpose != "search" && m.j.Model != "" && m.e.refreshJobModel(m.j) {

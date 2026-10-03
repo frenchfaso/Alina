@@ -13,14 +13,17 @@ reasoning; Alina may choose a lower or higher supported level for the task.
 Capabilities include the default, available levels and budgets; consult them
 when selecting a non-default effort. A default delegation can start directly.
 
-One worker may run at a time across the device, alongside the main inference
-loop. It uses the same agent loop with a smaller tool set and a separate trace.
-The parent receives a report automatically before finishing its turn. Incoming
-user messages can still steer Alina. `wait` sleeps until the report without model
-calls; steering and cancellation wake it. Alina does independent work rather than
+Up to four workers may run in parallel across the device, alongside the main
+inference loop. The limit is shared across people; a fifth start is rejected until
+a slot is free. Each uses the same agent loop with a smaller tool set and a
+separate context, workspace and trace. Alina decides which tasks are independent;
+consecutive messages steer the active conversation rather than automatically
+creating workers. The parent receives every report before finishing its turn.
+Incoming user messages can still steer Alina. `wait` sleeps until the report
+without model calls; steering and cancellation wake it. Alina does independent work rather than
 repeating delegated research or polling status. She can also inspect status or
 cancel the worker.
-Stopping the parent also stops the worker. Restarted workers are marked
+Stopping the parent also stops all its workers. Restarted workers are marked
 interrupted and never replayed or resumed automatically.
 
 The configured `max_steps` bounds work requests (default 40). At the boundary,
