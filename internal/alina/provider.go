@@ -293,9 +293,10 @@ type responseBody struct {
 			ReasoningTokens int `json:"reasoning_tokens"`
 		} `json:"output_tokens_details"`
 	} `json:"usage"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error"`
+	Error             *providerErrorDetail `json:"error"`
+	IncompleteDetails *struct {
+		Reason string `json:"reason"`
+	} `json:"incomplete_details"`
 }
 
 // Known Responses capabilities are independent of the installation default.
@@ -370,6 +371,7 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 	if r.StatusCode != 200 {
 		return Message{}, fmt.Errorf("model request failed (check account, model and endpoint): %w", &remoteHTTPError{Status: r.StatusCode})
 	}
+	requestID := providerMetadata(r.Header.Get("x-request-id"))
 	var result responseBody
 	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
 		if e = decodeLimited(r.Body, &result); e != nil {
@@ -383,11 +385,14 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 				return nil
 			}
 			var ev struct {
-				Type        string          `json:"type"`
-				Delta       string          `json:"delta"`
-				Response    responseBody    `json:"response"`
-				OutputIndex int             `json:"output_index"`
-				Item        json.RawMessage `json:"item"`
+				Type        string               `json:"type"`
+				Delta       string               `json:"delta"`
+				Response    responseBody         `json:"response"`
+				OutputIndex int                  `json:"output_index"`
+				Item        json.RawMessage      `json:"item"`
+				Error       *providerErrorDetail `json:"error"`
+				Code        string               `json:"code"`
+				Param       string               `json:"param"`
 			}
 			if e := json.Unmarshal(data, &ev); e != nil {
 				return e
@@ -407,15 +412,27 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 				done = true
 				return io.EOF // Terminal event, even if the peer keeps the connection open.
 			case "response.failed", "response.incomplete", "error":
-				return errors.New("provider stream failed or incomplete")
+				detail := ev.Error
+				if detail == nil {
+					detail = &providerErrorDetail{Code: ev.Code, Param: ev.Param}
+				} else {
+					if detail.Code == "" {
+						detail.Code = ev.Code
+					}
+					if detail.Param == "" {
+						detail.Param = ev.Param
+					}
+				}
+				result = ev.Response
+				return responseFailure(ev.Type, result, detail, requestID)
 			}
 			return nil
 		})
 		if e != nil && !(done && errors.Is(e, io.EOF)) {
-			return Message{}, e
+			return Message{Usage: responseUsage(result, started)}, e
 		}
 		if !done {
-			return Message{}, errors.New("model stream ended before completion")
+			return Message{}, &providerResponseError{Event: "stream.interrupted", RequestID: requestID}
 		}
 		// The ChatGPT backend may omit output from the terminal envelope.
 		// Keep complete items (including tool calls and encrypted reasoning),
@@ -432,12 +449,10 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		}
 	}
 	if result.Error != nil || result.Status == "failed" || result.Status == "incomplete" {
-		return Message{}, errors.New("model response failed or incomplete")
+		return Message{Usage: responseUsage(result, started)}, responseFailure("response.failed", result, nil, requestID)
 	}
 	out, err := parseResponse(result.Output)
-	if u := result.Usage; u != nil {
-		out.Usage = &TokenUsage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedTokens: u.InputDetails.CachedTokens, CacheWriteTokens: u.InputDetails.CacheWriteTokens, ReasoningTokens: u.OutputDetails.ReasoningTokens, DurationMS: time.Since(started).Milliseconds()}
-	}
+	out.Usage = responseUsage(result, started)
 	return out, err
 }
 func parseResponse(raw []json.RawMessage) (Message, error) {

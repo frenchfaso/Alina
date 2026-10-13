@@ -175,6 +175,7 @@ func errorInfo(err error) map[string]any {
 	var path *os.PathError
 	var dns *net.DNSError
 	var syntax *json.SyntaxError
+	var provider *providerResponseError
 	status := 0
 	switch {
 	case errors.Is(err, errStateLocked):
@@ -213,6 +214,8 @@ func errorInfo(err error) map[string]any {
 		}
 	case errors.As(err, &syntax):
 		code = "invalid_json"
+	case errors.As(err, &provider):
+		code = "provider_response_error"
 	default:
 		text := strings.ToLower(err.Error())
 		for _, v := range []struct{ match, code string }{
@@ -241,6 +244,9 @@ func errorInfo(err error) map[string]any {
 	}
 	if status != 0 {
 		out["http_status"] = status
+	}
+	if provider != nil {
+		out["provider"] = provider.metadata()
 	}
 	return out
 }

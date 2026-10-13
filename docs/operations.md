@@ -131,7 +131,9 @@ include their exit code. Successful GET polling does not generate log entries.
 
 Logs exclude prompts, messages, documents, tool arguments/results, command text,
 URLs, credentials and raw error strings. Errors contain classifications, HTTP
-status or SQLite codes where available. Use the job ID and `alina status JOB_ID`
+status or SQLite codes where available. Responses errors also retain bounded
+provider event/code/type, incomplete reason and request ID, without the remote
+message. Use the job ID and `alina status JOB_ID`
 to inspect the separate private job record when more context is necessary.
 That explicit record can contain conversation and tool details; it is not a log.
 
@@ -179,6 +181,13 @@ Recurring and one-shot schedules share limits of 100 enabled and 200 retained
 tasks. When space is needed, submitted inactive one-shots are removed from the
 schedule list; their job records and archive remain. Remove unused paused tasks
 explicitly. A failed save does not change the schedule list in memory.
+
+Recognized temporary Responses failures retry the same inference once after
+one second, rechecking cancellation, model, steering and inference budgets.
+The failed attempt's reported usage is retained. Incomplete output, quota/auth
+rejections and interrupted streams are not automatically retried. Earlier tool
+calls and whole scheduled jobs are never replayed by this retry; a hosted search
+may consume a second provider request. The logs record `model.retrying`.
 
 The scheduler waits for the next due task instead of polling every 15 seconds.
 Adding, pausing, resuming or removing a task recalculates that wait; completion

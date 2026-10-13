@@ -81,6 +81,34 @@ func (m jobModel) Complete(ctx context.Context, session string, messages []Messa
 
 // Auxiliary OpenAI research uses the same gate, budget and usage accounting.
 func (m jobModel) infer(ctx context.Context, purpose string, call func(context.Context) (Message, error)) (Message, error) {
+	answer, err := m.inferOnce(ctx, purpose, call)
+	var response *providerResponseError
+	if ctx.Err() != nil || !errors.As(err, &response) || !response.retryable() {
+		return answer, err
+	}
+	var workDone <-chan struct{}
+	if m.j.workCtx != nil && !m.j.finishing {
+		workDone = m.j.workCtx.Done()
+		if m.j.workCtx.Err() != nil {
+			return answer, err
+		}
+	}
+	// Retry only the rejected inference, never the job or its earlier tools.
+	// Re-enter the gate and revalidate model, steering and budget before dispatch.
+	m.e.Events.emit("model.retrying", err, "job_id", m.j.ID, "purpose", purpose, "attempt", 2, "delay_ms", 1000)
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return answer, ctx.Err()
+	case <-workDone:
+		return answer, m.j.workCtx.Err()
+	case <-timer.C:
+	}
+	return m.inferOnce(ctx, purpose, call)
+}
+
+func (m jobModel) inferOnce(ctx context.Context, purpose string, call func(context.Context) (Message, error)) (Message, error) {
 	if m.j.workCtx != nil && !m.j.finishing {
 		deadline, _ := m.j.workCtx.Deadline()
 		var cancel context.CancelFunc
@@ -101,7 +129,7 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 	if purpose != "search" && m.j.Model != "" && m.e.refreshJobModel(m.j) {
 		return Message{}, errRequestChanged
 	}
-	if (purpose == "turn" || purpose == "finish") && m.e.hasSteering(m.j) {
+	if (purpose == "turn" || purpose == "finish" || purpose == "search") && m.e.hasSteering(m.j) {
 		return Message{}, errRequestChanged
 	}
 
