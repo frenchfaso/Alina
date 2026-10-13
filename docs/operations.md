@@ -184,8 +184,9 @@ explicitly. A failed save does not change the schedule list in memory.
 
 Recognized temporary Responses failures retry the same inference once after
 one second, rechecking cancellation, model, steering and inference budgets.
-The failed attempt's reported usage is retained. Incomplete output, quota/auth
-rejections and interrupted streams are not automatically retried. Earlier tool
+The failed attempt's reported usage is retained. Incomplete output, Responses
+quota/auth errors and interrupted streams are not automatically retried. The
+existing single HTTP 401 credential refresh still applies. Earlier tool
 calls and whole scheduled jobs are never replayed by this retry; a hosted search
 may consume a second provider request. The logs record `model.retrying`.
 

@@ -4,6 +4,28 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Provider recovery — 0.20.2 (2026-10-13)
+
+- Responses failures retain bounded event/code/type, parameter, incomplete reason
+  and request ID in private operational logs, without remote messages. Failed or
+  interrupted streams never expose their partial tool calls as executable output.
+- Recognized temporary provider failures retry the same inference once after
+  one second. The gate, current model, steering, cancellation and autonomy budget
+  are rechecked; earlier tools and entire scheduled jobs are not repeated. Usage
+  reported by failed attempts is counted.
+- Full local `go test -race ./...` passed in 68.891 seconds; vet, gofmt, diff
+  checks and the Android/arm64 build passed. Regression tests cover structured
+  error parsing and redaction, bounded selective retry, tool side effects,
+  cancelled backoff, steering received while awaiting the model gate, and the
+  daily inference budget.
+- A15 updated at idle to 0.20.2-poc; configuration and schedules were preserved
+  during deployment. Installed checksum, startup and offline doctor passed.
+  Binary SHA-256:
+  `1e4d89aec9666be054342396f4531d7fbbe96b44af086d0416e5e48429f8d1f2`.
+- A failed scheduled occurrence was recovered through native job resume, retaining
+  its Telegram recipient/session. The existing recurring task was reactivated;
+  the recovered reply completed and its Telegram delivery receipt was confirmed.
+
 ## Parallel workers — 0.20.1 (2026-10-03)
 
 - Up to four workers run concurrently across the device, alongside the main
