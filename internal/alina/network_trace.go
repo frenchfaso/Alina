@@ -11,15 +11,21 @@ import (
 // Keep only progress metadata: Telegram URLs contain credentials, and trace
 // callbacks can run concurrently or arrive after the request has failed.
 type networkTrace struct {
-	mu       sync.Mutex
-	started  time.Time
-	stage    int
-	gotConn  bool
-	reused   bool
-	protocol string
-	frozen   bool
-	elapsed  int64
+	mu           sync.Mutex
+	started      time.Time
+	stage        int
+	gotConn      bool
+	reused       bool
+	protocol     string
+	frozen       bool
+	elapsed      int64
+	seenGetConn  bool
+	everGotConn  bool
+	everWrite    bool
+	everResponse bool
 }
+
+type networkTraceKey struct{}
 
 var networkStages = [...]string{"connection", "dns", "connect", "tls", "write", "response", "read_response"}
 
@@ -34,11 +40,13 @@ func (t *networkTrace) advance(stage int) {
 }
 
 func (t *networkTrace) context(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, networkTraceKey{}, t)
 	return httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
 		GetConn: func(string) {
 			t.mu.Lock()
 			defer t.mu.Unlock()
 			if !t.frozen {
+				t.seenGetConn = true
 				t.stage, t.gotConn, t.reused, t.protocol = 0, false, false, ""
 			}
 		},
@@ -53,6 +61,7 @@ func (t *networkTrace) context(ctx context.Context) context.Context {
 		GotConn: func(info httptrace.GotConnInfo) {
 			t.mu.Lock()
 			defer t.mu.Unlock()
+			t.everGotConn = true
 			if !t.frozen {
 				t.stage, t.gotConn, t.reused = 4, true, info.Reused
 				if conn, ok := info.Conn.(*tls.Conn); ok {
@@ -64,12 +73,38 @@ func (t *networkTrace) context(ctx context.Context) context.Context {
 			}
 		},
 		WroteRequest: func(info httptrace.WroteRequestInfo) {
-			if info.Err == nil {
-				t.advance(5)
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			// An unsuccessful write may still have sent part of the request.
+			t.everWrite = true
+			if !t.frozen && info.Err == nil && t.stage < 5 {
+				t.stage = 5
 			}
 		},
-		GotFirstResponseByte: func() { t.advance(6) },
+		GotFirstResponseByte: func() {
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			t.everResponse = true
+			if !t.frozen {
+				t.stage = 6
+			}
+		},
 	})
+}
+
+func (t *networkTrace) used() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.seenGetConn || t.stage > 0 || t.everGotConn || t.everWrite || t.everResponse
+}
+
+func (t *networkTrace) requestNotSent() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.frozen {
+		t.frozen, t.elapsed = true, time.Since(t.started).Milliseconds()
+	}
+	return t.seenGetConn && !t.everGotConn && !t.everWrite && !t.everResponse
 }
 
 func (t *networkTrace) fields() []any {

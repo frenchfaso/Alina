@@ -207,6 +207,10 @@ and personal model/effort choices remain in effect until changed.
 ChatGPT HTTP 401 triggers one credential renewal and retry for chat, hosted
 search and catalog loading. If authentication still fails, ask the user to run
 `alina setup login`. Offline doctor cannot prove provider acceptance of a token.
+Temporary provider failures and traced DNS/connection failures before dispatch
+get one inference retry. Requests already connected and interrupted streams
+are not replayed. Failed model calls log their network phase without addresses
+or credentials; a lost connection is not proof that Android suspended Termux.
 
 Context compaction targets a 3500-byte checkpoint (6000-byte hard limit). An
 oversized draft gets one bounded shortening attempt; failures preserve the

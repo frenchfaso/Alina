@@ -82,8 +82,8 @@ func (m jobModel) Complete(ctx context.Context, session string, messages []Messa
 // Auxiliary OpenAI research uses the same gate, budget and usage accounting.
 func (m jobModel) infer(ctx context.Context, purpose string, call func(context.Context) (Message, error)) (Message, error) {
 	answer, err := m.inferOnce(ctx, purpose, call)
-	var response *providerResponseError
-	if ctx.Err() != nil || !errors.As(err, &response) || !response.retryable() {
+	var failure interface{ retryable() bool }
+	if ctx.Err() != nil || !errors.As(err, &failure) || !failure.retryable() {
 		return answer, err
 	}
 	var workDone <-chan struct{}
@@ -104,6 +104,10 @@ func (m jobModel) infer(ctx context.Context, purpose string, call func(context.C
 	case <-workDone:
 		return answer, m.j.workCtx.Err()
 	case <-timer.C:
+	}
+	// Late transport callbacks can only revoke pre-dispatch retry evidence.
+	if !failure.retryable() {
+		return answer, err
 	}
 	return m.inferOnce(ctx, purpose, call)
 }
@@ -185,8 +189,13 @@ func (m jobModel) inferOnce(ctx context.Context, purpose string, call func(conte
 		}
 	}
 	m.e.Events.emit("model.started", nil, "job_id", m.j.ID, "call_id", callID, "provider", provider, "model", model, "purpose", purpose, "reasoning", effort)
-	answer, err := call(ctx)
-	m.e.Events.emit("model.finished", err, "job_id", m.j.ID, "call_id", callID, "duration_ms", time.Since(started).Milliseconds(), "usage", answer.Usage)
+	trace := newNetworkTrace()
+	answer, err := call(trace.context(ctx))
+	fields := []any{"job_id", m.j.ID, "call_id", callID, "duration_ms", time.Since(started).Milliseconds(), "usage", answer.Usage}
+	if err != nil && trace.used() {
+		fields = append(fields, trace.fields()...)
+	}
+	m.e.Events.emit("model.finished", err, fields...)
 	if answer.Usage != nil {
 		m.e.mu.Lock()
 		m.j.Usage.add(*answer.Usage)

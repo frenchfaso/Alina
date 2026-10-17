@@ -4,6 +4,28 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Network recovery — 0.20.3 (2026-10-17)
+
+- Model failures now retain redacted network phase, timing, connection reuse and
+  protocol when available. No hostnames, addresses, credentials or raw errors
+  are logged. Termux DNS settings remain unchanged.
+- Temporary network failures before dispatch share the existing single inference
+  retry. A standard HTTP transport and trace evidence of no connection, write or
+  response are required. Sticky progress survives internal transport attempts
+  and late callbacks. Caller cancellation/deadlines, permanent failures and
+  ambiguous stream/read failures remain excluded; earlier tools are not replayed.
+- Full local `go test -race ./...` passed in 74.603 seconds; vet, gofmt, diff
+  checks and Android/arm64 build passed. Integration fixtures verify two dial
+  attempts with one received request, bounded persistent failures, worker
+  deadlines, redacted logs and no replay after an interrupted stream.
+- A15 updated at idle to 0.20.3-poc; configuration and schedules were preserved.
+  Installed checksum, daemon startup and offline doctor passed. A real local
+  model request returned `ALINA_OK`; Telegram identity and polling configuration
+  checks passed without sending chat messages. The ongoing user research had
+  completed and its Telegram delivery was confirmed before restart.
+  Binary SHA-256:
+  `6a42644f55d6024d843e705ac9ffdbc6445b1cb57776f4e3a83b8f94943220f8`.
+
 ## Provider recovery — 0.20.2 (2026-10-13)
 
 - Responses failures retain bounded event/code/type, parameter, incomplete reason

@@ -360,12 +360,13 @@ func (p *Provider) responses(ctx context.Context, endpoint, model, key, account,
 		req.Header.Set("originator", "alina")
 		req.Header.Set("session-id", session)
 	}
-	r, e := p.modelClient().Do(req)
+	client := p.modelClient()
+	r, e := client.Do(req)
 	if e != nil {
 		if ctx.Err() != nil {
 			return Message{}, ctx.Err()
 		}
-		return Message{}, &networkFailure{cause: e}
+		return Message{}, newNetworkFailure(ctx, client, e)
 	}
 	defer r.Body.Close()
 	if r.StatusCode != 200 {

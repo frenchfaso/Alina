@@ -128,6 +128,8 @@ Events include schema/version, UTC time, level, event name (`msg`), daemon
 starts and results, durations and token usage, approval decisions, steering,
 context compaction, scheduled submissions and Telegram failures. Shell results
 include their exit code. Successful GET polling does not generate log entries.
+Failed model calls also record their network phase and connection reuse when
+available, using the same redacted trace as Telegram polling.
 
 Logs exclude prompts, messages, documents, tool arguments/results, command text,
 URLs, credentials and raw error strings. Errors contain classifications, HTTP
@@ -182,8 +184,12 @@ tasks. When space is needed, submitted inactive one-shots are removed from the
 schedule list; their job records and archive remain. Remove unused paused tasks
 explicitly. A failed save does not change the schedule list in memory.
 
-Recognized temporary Responses failures retry the same inference once after
+Recognized temporary Responses failures and temporary DNS/connection errors
+proven to occur before the request was sent retry the same inference once after
 one second, rechecking cancellation, model, steering and inference budgets.
+Network retries require a traced standard HTTP transport and no connection,
+write or response observed during the entire call. Missing trace evidence,
+unknown hosts, certificate failures and errors after connection are excluded.
 The failed attempt's reported usage is retained. Incomplete output, Responses
 quota/auth errors and interrupted streams are not automatically retried. The
 existing single HTTP 401 credential refresh still applies. Earlier tool
