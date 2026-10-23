@@ -31,7 +31,7 @@ somewhere to work. The device supplies the rest.
 
 **Start simple, stay simple. Less is more.**
 
-Android/Termux first, with Linux, macOS and BSD targets. Build with Go 1.26+:
+Android/Termux first, with Linux, macOS and BSD targets. Build with Go 1.27.3+:
 
 ```sh
 git clone https://github.com/frenchfaso/Alina.git

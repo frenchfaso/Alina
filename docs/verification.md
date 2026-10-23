@@ -4,6 +4,39 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Security maintenance — 0.20.4 (2026-10-23)
+
+- Build/CI now require Go 1.27.3, including the `crypto/x509` certificate denylist
+  for CVE-2026-111943 and earlier standard-library security fixes. Goldmark is
+  updated to 1.7.17 (CVE-2026-5160) and x/net to 0.60.0 (HTTP/2 advisories).
+  Telegram still projects Markdown into text/entities and filters link schemes.
+  [Go advisory](https://pkg.go.dev/vuln/GO-2026-6809),
+  [goldmark advisory](https://pkg.go.dev/vuln/GO-2026-5320).
+- Pinned `govulncheck` 1.9.0 reports no vulnerabilities for linux/amd64,
+  linux/arm64, darwin/amd64, darwin/arm64, android/arm64, freebsd/amd64,
+  openbsd/amd64 and netbsd/amd64, and for the actual Android binary. CI now
+  performs the same source scans. This is a dated database result, not a
+  guarantee against undisclosed vulnerabilities.
+- Full local `go test -race ./...` passed in 78.770 seconds. Vet, formatting,
+  diff checks and the five cross-platform builds passed. Additional Telegram
+  regressions cover mixed-case/entity-encoded JavaScript links, data URLs and
+  malicious image destinations while retaining safe links and visible text.
+- A15 updated at idle to 0.20.4-poc with Go 1.27.3, verified module metadata and
+  checksum. Configuration/schedules are unchanged; offline doctor passed and a
+  real local model request returned `ALINA_OK` without tools or Telegram messages.
+  Telegram `getMe` passed over both HTTP/1.1 and HTTP/2; no polling failures
+  were recorded during the post-deployment observation. SSH supervision and
+  Python/pip, Git, SQLite and the retained user binary passed smoke checks.
+  Binary SHA-256:
+  `6daf42741d08310bff4757e96cc3012e770c4f6cee4c209345eaf704a859ef8a`.
+- Termux cleanup removed an exact, simulated allowlist of 46 unused packages:
+  Rust/Clang/LLVM development tools, Tk/X11/fonts, empty proot tooling, unused
+  tmux, benchmarks and redundant utilities. APT dependency checks and `dpkg
+  --audit` passed. Available space increased by 1,308,499,968 bytes, measured
+  before/after through `statvfs`. Source trees, user data, credentials and user
+  binaries were preserved. The package inventory, removal log and rollback
+  details are private on the device under `~/.local/state/alina-maintenance/`.
+
 ## Network recovery — 0.20.3 (2026-10-17)
 
 - Model failures now retain redacted network phase, timing, connection reuse and

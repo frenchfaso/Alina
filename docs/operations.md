@@ -4,6 +4,13 @@ Alina has eight commands. The former commands are removed, without aliases.
 Run `alina help` for the CLI and `alina api` for the local endpoint catalog.
 There is no additional runtime, remote log collector or telemetry service.
 
+Build and CI use the security-patched Go version in `go.mod` (currently 1.27.3).
+CI runs `govulncheck` with the supported OS/architecture combinations before
+release. Changing Go or a module requires rebuilding the executable: updating
+host packages does not update code already embedded in an Alina binary.
+Use `go version -m /path/to/alina` to verify the compiler and modules of an
+artifact before installing it.
+
 | Command | Purpose |
 | --- | --- |
 | `setup` | Interactive onboarding; `setup login [browser]` reconnects ChatGPT |
@@ -438,6 +445,18 @@ second 401 requires checking access with `alina setup login`; no API-key fallbac
 is used. Offline `doctor` checks local credentials, not provider acceptance.
 
 ## Galaxy A15 autostart
+
+The A15 runtime keeps Python/pip, shell/file/network diagnostics, Git, SQLite,
+Termux:API, OpenSSH and termux-services. Compilation toolchains, GUI libraries,
+unused proot tooling and redundant utilities were removed during the
+0.20.4 maintenance. Build Alina elsewhere and copy the Android executable.
+Additional tools can still be installed with consent when a task needs them.
+The private package inventory and removal journal are under
+`~/.local/state/alina-maintenance/` on that device; source trees and user data
+are preserved.
+
+OpenSSH is enabled through `sv-enable sshd` and the existing Termux:Boot
+`start-services` hook. Verify it with `sv status "$PREFIX/var/service/sshd"`.
 
 The test Galaxy has opt-in autostart configured outside the Alina executable:
 `~/.termux/boot/start-alina` acquires the Termux wake lock and calls the installed

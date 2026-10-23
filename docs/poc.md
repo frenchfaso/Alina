@@ -1,6 +1,6 @@
 # Running the POC
 
-Build with Go 1.26 or newer. No Node.js, Python or Lua runtime is required by
+Build with Go 1.27.3 or newer. No Node.js, Python or Lua runtime is required by
 Alina. External commands remain the user's installed programs.
 
 ```sh
