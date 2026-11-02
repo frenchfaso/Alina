@@ -4,6 +4,24 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## HTML parser security update — 0.20.6 (2026-11-02)
+
+- The new CI scan found GO-2026-6860 / CVE-2026-78661, published after the
+  previous security release, in the HTML parser used for Telegram formatting
+  and web content. x/net is updated from 0.60.0 to the fixed 0.62.0, together
+  with its required x/sys, x/term and x/text versions. The scanner remains
+  enabled for all supported targets.
+  [Official advisory](https://pkg.go.dev/vuln/GO-2026-6860).
+- Full local race tests with the updated modules passed in 116.268 seconds;
+  vet, formatting/diff checks and the Android/arm64 build passed.
+- All eight source-platform vulnerability scans and the actual Android binary
+  scan passed with no known vulnerabilities reported. Module checksums verified.
+- A15 updated at idle to 0.20.6-poc. Checksum, offline doctor and a real model
+  health request (`ALINA_OK`) passed; configuration and schedules are unchanged.
+  The recovered Telegram conversation and its further research were delivered.
+  Binary SHA-256:
+  `9b5c1d66444ae2c64af837091d04a65512f5f414703a91f96190b7c038cf61a7`.
+
 ## Streaming network errors — 0.20.5 (2026-11-02)
 
 - Response-stream reader errors now use the existing generic network failure,
