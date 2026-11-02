@@ -540,7 +540,10 @@ func readSSE(r io.Reader, fn func([]byte) error) error {
 		}
 	}
 	if e := s.Err(); e != nil {
-		return e
+		if errors.Is(e, bufio.ErrTooLong) {
+			return e
+		}
+		return &networkFailure{cause: e}
 	}
 	return flush()
 }

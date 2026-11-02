@@ -145,6 +145,10 @@ provider event/code/type, incomplete reason and request ID, without the remote
 message. Use the job ID and `alina status JOB_ID`
 to inspect the separate private job record when more context is necessary.
 That explicit record can contain conversation and tool details; it is not a log.
+Response-stream read failures are reported as `network request failed`, including
+in saved jobs and Telegram replies; TCP addresses and raw socket errors stay
+private. Their cause remains available for classification. Interrupted streams
+are not retried and their unfinished tool calls are discarded.
 
 Writes are unbuffered by the application and synced on orderly close; logs are
 operational evidence, not the durable memory journal. A write failure is reported

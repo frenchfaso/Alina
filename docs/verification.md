@@ -4,6 +4,25 @@ Entries below are dated release snapshots, not a live device inventory. Earlier
 installation paths, retained binaries and account states describe those test
 runs; they may since have changed.
 
+## Streaming network errors — 0.20.5 (2026-11-02)
+
+- Response-stream reader errors now use the existing generic network failure,
+  preserving the underlying cause for classification while keeping raw TCP
+  addresses out of saved job errors and Telegram notices. Callback/provider
+  errors and the scanner content limit retain their existing semantics.
+  Dispatched streams remain non-retryable; incomplete tool items are discarded.
+- Focused race regressions passed in 6.172 seconds, covering a failing response
+  body after a completed tool item, no tool execution/retry, cause preservation,
+  content-limit classification and the actual Telegram failure payload. Full
+  `go test -race ./...` passed in 126.262 seconds; vet, gofmt, diff checks and
+  the Android/arm64 build passed.
+- A15 updated at idle to 0.20.5-poc. Checksum, offline doctor and a real model
+  health request (`ALINA_OK`) passed. Configuration and schedules are unchanged.
+  The original conversation continued in the same Telegram session, preserving
+  its saved research and recipient rather than starting duplicate work.
+  Binary SHA-256:
+  `c974afac6e4797887b17cb7b9521be0c38374b00516068c695a194907c216bac`.
+
 ## Security maintenance — 0.20.4 (2026-10-23)
 
 - Build/CI now require Go 1.27.3, including the `crypto/x509` certificate denylist
